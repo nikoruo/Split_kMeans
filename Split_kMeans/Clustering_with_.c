@@ -24,7 +24,7 @@ const int MAX_SWAPS = 100; //
 typedef struct
 {
     double* attributes;
-    size_t size;
+    size_t dimensions;
 } DataPoint;
 
 typedef struct
@@ -70,7 +70,7 @@ void freeDataPoints(DataPoints* dataPoints)
 double calculateSquaredEuclideanDistance(const DataPoint* point1, const DataPoint* point2)
 {
     double sum = 0.0;
-    for (size_t i = 0; i < point1->size; ++i)
+    for (size_t i = 0; i < point1->dimensions; ++i)
     {
         sum += pow(point1->attributes[i] - point2->attributes[i], 2);
     }
@@ -144,13 +144,13 @@ DataPoints readDataPoints(const char* filename)
         
         point.attributes = malloc(sizeof(int) * 256);
         handleMemoryError(point.attributes);
-        point.size = 0;
+        point.dimensions = 0;
 
         char* context = NULL;
         char* token = strtok_s(line, " ", &context);
         while (token != NULL)
         {
-            point.attributes[point.size++] = atoi(token);
+            point.attributes[point.dimensions++] = atoi(token);
             token = strtok_s(NULL, " ", &context);
         }
 
@@ -176,7 +176,7 @@ void writeCentroidsToFile(const char* filename, DataPoint* centroids, int numCen
 
     for (int i = 0; i < numCentroids; ++i)
     {
-        for (size_t j = 0; j < centroids[i].size; ++j)
+        for (size_t j = 0; j < centroids[i].dimensions; ++j)
         {
             fprintf(centroidFile, "%f ", centroids[i].attributes[j]);
         }
@@ -212,14 +212,14 @@ void copyCentroids(DataPoints* source, DataPoints* destination, int numCentroids
 {
     for (int i = 0; i < numCentroids; ++i)
     {
-        destination->points[i].size = source->points[i].size;
-        destination->points[i].attributes = malloc(source->points[i].size * sizeof(double));
+        destination->points[i].dimensions = source->points[i].dimensions;
+        destination->points[i].attributes = malloc(source->points[i].dimensions * sizeof(double));
         if (destination->points[i].attributes == NULL)
         {
             fprintf(stderr, "Error: Unable to allocate memory\n");
             exit(EXIT_FAILURE);
         }
-        memcpy(destination->points[i].attributes, source->points[i].attributes, source->points[i].size * sizeof(double));
+        memcpy(destination->points[i].attributes, source->points[i].attributes, source->points[i].dimensions * sizeof(double));
     }
 }
 
@@ -348,12 +348,12 @@ DataPoint findNearestCentroid(DataPoint* queryPoint, DataPoint* clusterPoints, i
 //note: should we even use this, or just work with the indexes?
 bool areDataPointsEqual(DataPoint* point1, DataPoint* point2)
 {
-    if (point1->size != point2->size)
+    if (point1->dimensions != point2->dimensions)
     {
         return false;
     }
 
-    for (size_t i = 0; i < point1->size; ++i)
+    for (size_t i = 0; i < point1->dimensions; ++i)
     {
         if (point1->attributes[i] != point2->attributes[i])
         {
@@ -380,7 +380,7 @@ void updateCentroids(DataPoint* dataPoints, int dataPointsSize, DataPoint* centr
 	// Initialize the centroids to 0
 	for (int i = 0; i < centroidsSize; ++i)
 	{
-		for (size_t j = 0; j < dataPoints->size; ++j)
+		for (size_t j = 0; j < dataPoints->dimensions; ++j)
 		{
 			centroids[i].attributes[j] = 0.0;
 		}
@@ -395,7 +395,7 @@ void updateCentroids(DataPoint* dataPoints, int dataPointsSize, DataPoint* centr
 		{
 			clusterSizes[cIndex]++;
 
-			for (size_t j = 0; j < dataPoints->size; ++j)
+			for (size_t j = 0; j < dataPoints->dimensions; ++j)
 			{
 				centroids[cIndex].attributes[j] += dataPoints[i].attributes[j];
 			}
@@ -412,7 +412,7 @@ void updateCentroids(DataPoint* dataPoints, int dataPointsSize, DataPoint* centr
 	{
 		if (clusterSizes[i] > 0)
 		{
-			for (size_t j = 0; j < dataPoints->size; ++j)
+			for (size_t j = 0; j < dataPoints->dimensions; ++j)
 			{
 				centroids[i].attributes[j] /= clusterSizes[i];
 			}
@@ -473,18 +473,20 @@ DataPoint calculateCentroid(DataPoint* dataPoints, int dataPointsSize)
     }
 
     DataPoint centroid;
-    centroid.attributes = malloc(sizeof(double) * dataPoints[0].size);
+    //BUG tähän kaadutaan
+    //size näyttää olevan äärettömän suuri, mihin tämä sitten kaatuu
+    centroid.attributes = malloc(sizeof(double) * dataPoints[0].dimensions);
     handleMemoryError(centroid.attributes);
-    centroid.size = dataPoints[0].size;
+    centroid.dimensions = dataPoints[0].dimensions;
 
     // Initialize the centroid attributes to 0
-    for (size_t i = 0; i < centroid.size; ++i)
+    for (size_t i = 0; i < centroid.dimensions; ++i)
     {
         centroid.attributes[i] = 0.0;
     }
 
     // Loop through each dimension
-    for (size_t dim = 0; dim < centroid.size; ++dim)
+    for (size_t dim = 0; dim < centroid.dimensions; ++dim)
     {
         double sum = 0.0;
 
@@ -730,14 +732,14 @@ double randomSwapBeta(DataPoints dataPoints, int dataPointsSize, DataPoints ogCe
 
     for (int i = 0; i < numCentroids; ++i)
     {
-        centroids[i].attributes = malloc(sizeof(double) * dataPoints.points[0].size);
+        centroids[i].attributes = malloc(sizeof(double) * dataPoints.points[0].dimensions);
         handleMemoryError(centroids[i].attributes);
-        centroids[i].size = dataPoints.points[0].size;
+        centroids[i].dimensions = dataPoints.points[0].dimensions;
     }
 
     for (int i = 0; i < numCentroids; ++i)
     {
-        for (size_t j = 0; j < dataPoints.points[0].size; ++j)
+        for (size_t j = 0; j < dataPoints.points[0].dimensions; ++j)
         {
             centroids[i].attributes[j] = ogCentroids.points[i].attributes[j];
         }
