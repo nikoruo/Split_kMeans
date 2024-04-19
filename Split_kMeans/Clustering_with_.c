@@ -634,7 +634,6 @@ KMeansResult runKMeans(DataPoint* dataPoints, int dataPointsSize, int iterations
     {
         int* newPartition = optimalPartition(dataPoints, dataPointsSize, centroids, numClusters);
 
-        // BUG: kMeansCentroidStep fails due to memory allocation error
         centroids = kMeansCentroidStep(dataPoints, dataPointsSize, newPartition, numClusters);
 
         double sse = calculateSSE(dataPoints, dataPointsSize, centroids, numClusters, newPartition);
