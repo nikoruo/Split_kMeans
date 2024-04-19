@@ -35,6 +35,12 @@ typedef struct
 
 typedef struct
 {
+    DataPoint* points;
+    int size;
+} Cluster;
+
+typedef struct
+{
     double sse;
     int* partition;
 } KMeansResult;
@@ -135,13 +141,14 @@ DataPoints readDataPoints(const char* filename)
     DataPoints dataPoints;
     dataPoints.points = NULL;
     dataPoints.size = 0;
+    size_t allocatedSize = 0;
 
     char line[256];
 
     while (fgets(line, sizeof(line), file))
     {
         DataPoint point;
-        
+
         point.attributes = malloc(sizeof(int) * 256);
         handleMemoryError(point.attributes);
         point.dimensions = 0;
@@ -154,13 +161,29 @@ DataPoints readDataPoints(const char* filename)
             token = strtok_s(NULL, " ", &context);
         }
 
-        DataPoint* newPoints = realloc(dataPoints.points, sizeof(DataPoint) * (dataPoints.size + 1));
-        handleMemoryError(newPoints);
-        dataPoints.points = newPoints;
+        if (dataPoints.size == allocatedSize)
+        {
+            allocatedSize = allocatedSize > 0 ? allocatedSize * 2 : 1;
+            DataPoint* temp = realloc(dataPoints.points, sizeof(DataPoint) * allocatedSize);
+            handleMemoryError(temp);
+            dataPoints.points = temp;
+        }
+
         dataPoints.points[dataPoints.size++] = point;
     }
 
     fclose(file);
+
+    // Print the attributes of each data point
+    for (size_t i = 0; i < dataPoints.size; ++i)
+    {
+        printf("Data point %zu attributes: ", i);
+        for (size_t j = 0; j < dataPoints.points[i].dimensions; ++j)
+        {
+            printf("%f ", dataPoints.points[i].attributes[j]);
+        }
+        printf("\n");
+    }
 
     return dataPoints;
 }
@@ -473,8 +496,6 @@ DataPoint calculateCentroid(DataPoint* dataPoints, int dataPointsSize)
     }
 
     DataPoint centroid;
-    //BUG tähän kaadutaan
-    //size näyttää olevan äärettömän suuri, mihin tämä sitten kaatuu
     centroid.attributes = malloc(sizeof(double) * dataPoints[0].dimensions);
     handleMemoryError(centroid.attributes);
     centroid.dimensions = dataPoints[0].dimensions;
@@ -527,41 +548,40 @@ void kMeans(DataPoint* dataPoints, int dataPointsSize, DataPoint* centroids, int
 }
 
 // Function to perform the centroid step in k-means
-DataPoint* kMeansCentroidStep(DataPoint* dataPoints, int dataPointsSize, int* partition, int numClusters)
+Cluster* kMeansCentroidStep(DataPoint* dataPoints, int dataPointsSize, int* partition, int numClusters)
 {
-    DataPoint* newCentroids = malloc(sizeof(DataPoint) * numClusters);
-    handleMemoryError(newCentroids);
-
-    // Create an array of DataPoint arrays to hold the clusters
-    DataPoint** clusters = malloc(sizeof(DataPoint*) * numClusters);
-    handleMemoryError(clusters);
+    Cluster* newClusters = malloc(sizeof(Cluster) * numClusters);
+    handleMemoryError(newClusters);
 
     // Initialize the clusters
     for (int i = 0; i < numClusters; ++i)
     {
-        clusters[i] = malloc(sizeof(DataPoint) * dataPointsSize);
-        handleMemoryError(clusters[i]);
+        newClusters[i].points = malloc(sizeof(DataPoint) * dataPointsSize);
+        newClusters[i].size = 0;
+        handleMemoryError(newClusters[i].points);
     }
 
     // Assign each data point to its cluster
     for (int i = 0; i < dataPointsSize; ++i)
     {
         int clusterLabel = partition[i];
-        clusters[clusterLabel][i] = dataPoints[i];
+        newClusters[clusterLabel].points[newClusters[clusterLabel].size++] = dataPoints[i];
     }
 
     // Calculate the new centroids
+    DataPoint* newCentroids = malloc(sizeof(DataPoint) * numClusters);
+    handleMemoryError(newCentroids);
     for (int clusterLabel = 0; clusterLabel < numClusters; ++clusterLabel)
     {
-        newCentroids[clusterLabel] = calculateCentroid(clusters[clusterLabel], dataPointsSize);
+        newCentroids[clusterLabel] = calculateCentroid(newClusters[clusterLabel].points, newClusters[clusterLabel].size);
     }
 
     // Free the memory allocated for the clusters
     for (int i = 0; i < numClusters; ++i)
     {
-        free(clusters[i]);
+        free(newClusters[i].points);
     }
-    free(clusters);
+    free(newClusters);
 
     return newCentroids;
 }
@@ -892,6 +912,7 @@ int main()
         double initialSSE = calculateSSE(dataPoints.points, (int)dataPoints.size, centroids.points, NUM_CENTROIDS, initialPartition);
         printf("Initial Total Sum-of-Squared Errors (SSE): %f\n", initialSSE);
 
+        printf("K-means\n");
         clock_t start = clock();
 
         KMeansResult result = runKMeans(dataPoints.points, (int)dataPoints.size, MAX_ITERATIONS, centroids.points, NUM_CENTROIDS);
@@ -903,6 +924,7 @@ int main()
 
         double bestSse5 = bestSse1;
 
+        printf("Repeated K-means\n");
         for (int repeat = 0; repeat < MAX_REPEATS; ++repeat)
         {
             printf("round: %d\n", repeat);
@@ -922,6 +944,7 @@ int main()
             }
         }
 
+        printf("Random swap\n");
         start = clock();
 
         double bestSse2 = randomSwap(&dataPoints, (int)dataPoints.size, ogCentroids.points, NUM_CENTROIDS);
@@ -930,6 +953,7 @@ int main()
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
         printf("(Random Swap)Time taken: %f seconds\n", duration);
 
+        printf("Split k-means\n");
         start = clock();
 
         //not refactored yet
