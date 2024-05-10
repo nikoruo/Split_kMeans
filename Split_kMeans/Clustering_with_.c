@@ -16,7 +16,7 @@ const char SEPARATOR = ' ';
 const int NUM_CENTROIDS = 15;  // klustereiden lkm: s4 = 15, unbalanced = 8
 const int MAX_ITERATIONS = 100; // k-means rajoitus
 const int MAX_REPEATS = 50; // repeated k-means toistojen lkm
-const int MAX_SWAPS = 1000; // random swap toistojen lkm
+const int MAX_SWAPS = 100; // random swap toistojen lkm
 
 //and for logging
 const int LOGGING = 1; // 1 = basic, 2 = detailed, 3 = debug
@@ -720,38 +720,6 @@ double randomSwap(DataPoints* dataPoints, int dataPointsSize, DataPoint* centroi
 // Main
 //
 //
-int mainTest()
-{
-	// Read data points from a file
-	DataPoints dataPoints = readDataPoints(DATA_FILENAME);
-
-	// Get the number of dimensions in the data
-	int numDimensions = getNumDimensions(DATA_FILENAME);
-
-	// Initialize the centroids
-	DataPoint* centroids = malloc(sizeof(DataPoint) * NUM_CENTROIDS);
-	handleMemoryError(centroids);
-
-	// Generate random centroids
-	generateRandomCentroids(NUM_CENTROIDS, &dataPoints, centroids);
-
-	// Perform repeated k-means
-	KMeansResult result = repeatedKMeans(dataPoints.points, (int)dataPoints.size, NUM_CENTROIDS, MAX_REPEATS);
-
-	// Write the centroids to a file
-	writeCentroidsToFile(CENTROID_FILENAME, centroids, NUM_CENTROIDS);
-
-	// Write the partition to a file
-	writePartitionToFile(result.partition, (int)dataPoints.size, PARTITION_FILENAME);
-
-	// Free the memory allocated for the data points and centroids
-	freeDataPoints(&dataPoints);
-	free(centroids);
-	free(result.partition);
-
-	return 0;
-}
-
 int main()
 {
     int numDimensions = getNumDimensions(DATA_FILENAME);
