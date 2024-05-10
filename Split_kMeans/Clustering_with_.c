@@ -575,34 +575,6 @@ KMeansResult runKMeans(DataPoint* dataPoints, int dataPointsSize, int iterations
     return result;
 }
 
-// Function to perform repeated k-means
-//note: not used yet
-KMeansResult repeatedKMeans(DataPoint* dataPoints, int dataPointsSize, int numClusters, int numRepeats)
-{
-	KMeansResult bestResult;
-	bestResult.sse = DBL_MAX;
-	bestResult.partition = NULL;
-
-	for (int i = 0; i < numRepeats; ++i)
-	{
-		DataPoint* centroids = malloc(sizeof(DataPoint) * numClusters);
-		handleMemoryError(centroids);
-
-		generateRandomCentroids(NUM_CENTROIDS, dataPoints, centroids);
-
-		KMeansResult result = runKMeans(dataPoints, dataPointsSize, MAX_ITERATIONS, centroids, numClusters);
-
-		if (result.sse < bestResult.sse)
-		{
-			bestResult = result;
-		}
-
-		free(centroids);
-	}
-
-	return bestResult;
-}
-
 /*
 
 This requires a lot of work, and is not currently in use
