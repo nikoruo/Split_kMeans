@@ -16,7 +16,7 @@ const char SEPARATOR = ' ';
 const int NUM_CENTROIDS = 15;  // klustereiden lkm: s4 = 15, unbalanced = 8
 const int MAX_ITERATIONS = 100; // k-means rajoitus
 const int MAX_REPEATS = 50; // repeated k-means toistojen lkm
-const int MAX_SWAPS = 100; // random swap toistojen lkm
+const int MAX_SWAPS = 75; // random swap toistojen lkm
 
 //and for logging
 const int LOGGING = 1; // 1 = basic, 2 = detailed, 3 = debug
@@ -87,6 +87,17 @@ void freeCentroids(Centroids* centroids)
 		free(centroids->points[i].attributes);
 	}
 	free(centroids->points);
+}
+
+// Function to free clusters
+void freeClusters(Cluster* clusters)
+{
+    for (int i = 0; i < clusters->size; ++i)
+    {
+        free(clusters->points[i].attributes);
+    }
+    free(clusters->points);
+    free(clusters);
 }
 
 //Helpers
@@ -253,16 +264,25 @@ void writePartitionToFile(int* partition, int partitionSize, const char* fileNam
     printf("Optimal partition written to OptimalPartition.txt\n");
 }
 
+//Funtion to create a deep copy of a data point
+void deepCopyDataPoint(DataPoint* destination, DataPoint* source)
+{
+    destination->dimensions = source->dimensions;
+    destination->attributes = malloc(source->dimensions * sizeof(double));
+    handleMemoryError(destination->attributes);
+    memcpy(destination->attributes, source->attributes, source->dimensions * sizeof(double));
+}
+
 //Funtion to copy centroids
 void copyCentroids(Centroids* source, Centroids* destination, int numCentroids)
 {
     destination->size = source->size;
+    destination->points = malloc(numCentroids * sizeof(DataPoint));
+    handleMemoryError(destination->points);
     for (int i = 0; i < numCentroids; ++i)
     {
         destination->points[i].dimensions = source->points[i].dimensions;
-        destination->points[i].attributes = malloc(source->points[i].dimensions * sizeof(double));
-        handleMemoryError(destination->points[i].attributes);
-        memcpy(destination->points[i].attributes, source->points[i].attributes, source->points[i].dimensions * sizeof(double)); //false positive
+        deepCopyDataPoint(&destination->points[i], &source->points[i]);
     }
 }
 
@@ -284,14 +304,23 @@ void generateRandomCentroids(int numCentroids, DataPoints* dataPoints, DataPoint
     // Create a copy of the dataPoints array
     DataPoint* dataPointsShuffled = malloc(sizeof(DataPoint) * dataPoints->size);
     handleMemoryError(dataPointsShuffled);
+    //memcpy(dataPointsShuffled, dataPoints->points, dataPoints->size * sizeof(DataPoint));
 
+    for (size_t i = 0; i < dataPoints->size; ++i)
+    {
+        dataPointsShuffled[i].dimensions = dataPoints->points[i].dimensions;
+        deepCopyDataPoint(&dataPointsShuffled[i], &dataPoints->points[i]);
+    }
+
+    /*
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
         dataPointsShuffled[i] = dataPoints->points[i];
     }
+    */
 
     // Shuffle the dataPointsShuffled array
-    for (size_t i = dataPoints->size - 1; i > 0; --i)
+    for (size_t i = 0; i < numCentroids; ++i)
     {
         size_t j = rand() % (i + 1);
         DataPoint temp = dataPointsShuffled[i];
@@ -302,9 +331,15 @@ void generateRandomCentroids(int numCentroids, DataPoints* dataPoints, DataPoint
     // Copy the first numCentroids elements of dataPointsShuffled to centroids
     for (int i = 0; i < numCentroids; ++i)
     {
-        centroids[i] = dataPointsShuffled[i];
+        centroids[i].dimensions = dataPointsShuffled[i].dimensions;
+        deepCopyDataPoint(&centroids[i], &dataPointsShuffled[i]);
     }
 
+    // Free the shuffled data points
+    for (size_t i = 0; i < dataPoints->size; ++i)
+    {
+        free(dataPointsShuffled[i].attributes);
+    }
     free(dataPointsShuffled);
 }
 
@@ -432,7 +467,8 @@ int* optimalPartition(DataPoint* dataPoints, int dataPointsSize, DataPoint* cent
         for (int i = 0; i < dataPointsSize; ++i)
         {
             int clusterLabel = partition[i];
-            newClusters[clusterLabel].points[newClusters[clusterLabel].size++] = dataPoints[i];
+            deepCopyDataPoint(&newClusters[clusterLabel].points[newClusters[clusterLabel].size], &dataPoints[i]);
+            newClusters[clusterLabel].size++;
         }
 
         // Check for clusters with size 0
@@ -445,7 +481,7 @@ int* optimalPartition(DataPoint* dataPoints, int dataPointsSize, DataPoint* cent
                 if (LOGGING == 1) printf("Warning: Cluster has size 0\n");
 
                 int randomIndex = rand() % dataPointsSize;
-                centroids[i] = dataPoints[randomIndex];
+                deepCopyDataPoint(&centroids[i], &dataPoints[randomIndex]);
                 emptyClusters = true;
             }
         }
@@ -556,7 +592,14 @@ KMeansResult runKMeans(DataPoint* dataPoints, int dataPointsSize, int iterations
 
         previousSSE = sse;
         previousPartition = newPartition;
-        centroids = newCentroids;
+        //centroids = newCentroids;
+        // Assuming newCentroids is calculated as the average of data points in each cluster
+        for (int i = 0; i < numClusters; ++i)
+        {
+            deepCopyDataPoint(&centroids[i], &newCentroids[i]);
+        }
+        free(newCentroids);
+        newCentroids = NULL;
 
         if (stopCounter == 3)
         {
@@ -569,8 +612,10 @@ KMeansResult runKMeans(DataPoint* dataPoints, int dataPointsSize, int iterations
     result.partition = previousPartition;
     result.centroids = centroids;
 
-    free(newClusters->points);
-    free(newClusters);
+
+
+    freeClusters(newClusters);
+    newClusters = NULL;
 
     return result;
 }
@@ -656,22 +701,24 @@ double runSplit(DataPoint* dataPoints, int dataPointsSize, int size)
 }*/
 
 // Function to perform random swap
-double randomSwap(DataPoints* dataPoints, int dataPointsSize, DataPoint* centroids, int centroidsSize)
+double randomSwap(DataPoint* dataPoints, int dataPointsSize, DataPoint* centroids, int centroidsSize)
 {
     double bestSse = DBL_MAX;
-    DataPoint oldCentroid;
+    //DataPoint oldCentroid;
 
     for (int i = 0; i < MAX_SWAPS; ++i)
     {
         int randomCentroid = rand() % centroidsSize;
-        oldCentroid = centroids[randomCentroid];
-                
-        int randomDataPoint = rand() % dataPoints->size;
+        //oldCentroid = centroids[randomCentroid];
+        DataPoint oldCentroid;
+        deepCopyDataPoint(&oldCentroid, &centroids[randomCentroid]);
+
+        int randomDataPoint = rand() % dataPointsSize;
 
         //random swap
-        centroids[randomCentroid] = dataPoints->points[randomDataPoint];
+        deepCopyDataPoint(&centroids[randomCentroid], &dataPoints[randomDataPoint]);
 
-        KMeansResult result = runKMeans(dataPoints->points, dataPointsSize, MAX_ITERATIONS, centroids, centroidsSize);
+        KMeansResult result = runKMeans(dataPoints, dataPointsSize, MAX_ITERATIONS, centroids, centroidsSize);
 
         //If SSE improves, we keep the change
         //if not, we reverse the swap
@@ -681,8 +728,11 @@ double randomSwap(DataPoints* dataPoints, int dataPointsSize, DataPoint* centroi
         }
         else
         {
-            centroids[randomCentroid] = oldCentroid;
+            //centroids[randomCentroid] = oldCentroid;
+            deepCopyDataPoint(&centroids[randomCentroid], &oldCentroid);
         }
+
+        free(oldCentroid.attributes);
     }
 
     return bestSse;
@@ -707,7 +757,7 @@ int main()
         centroids.points = malloc(NUM_CENTROIDS * sizeof(DataPoint));
         centroids.size = NUM_CENTROIDS;
         generateRandomCentroids(NUM_CENTROIDS, &dataPoints, centroids.points);
-        
+
         Centroids ogCentroids;
         ogCentroids.points = malloc(NUM_CENTROIDS * sizeof(DataPoint));
         ogCentroids.size = NUM_CENTROIDS;
@@ -744,7 +794,7 @@ int main()
         double RKSse = DBL_MAX;
         KMeansResult result;
 
-        result.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint));
+        result.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint)); //since results.centroids = centroids.points, do we need to allocate memory?
         handleMemoryError(result.centroids);
         result.partition = malloc(dataPoints.size * sizeof(int));
         handleMemoryError(result.partition);
@@ -771,16 +821,16 @@ int main()
         
         clock_t end = clock();
         double duration = ((double)(end - start)) / CLOCKS_PER_SEC;
-        printf("(Repeated k-means)Time taken: %f seconds\n", duration);
+        printf("(Repeated k-means)Time taken: %.2f seconds\n", duration);
 
         printf("Random swap\n");
         start = clock();
 
-        double SseRS = randomSwap(&dataPoints, (int)dataPoints.size, ogCentroids.points, NUM_CENTROIDS);
+        double SseRS = randomSwap(dataPoints.points, (int)dataPoints.size, ogCentroids.points, NUM_CENTROIDS);
 
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
-        printf("(Random Swap)Time taken: %f seconds\n", duration);
+        printf("(Random Swap)Time taken: %.2f seconds\n", duration);
 
         printf("Split k-means\n");
         start = clock();
@@ -790,19 +840,26 @@ int main()
 
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
-        printf("(Split)Time taken: %f seconds\n", duration);
+        printf("(Split)Time taken: %.2f seconds\n", duration);
 
         //printf("(K-means)Best Sum-of-Squared Errors (SSE): %.0f\n", bestSse1);
-        printf("(Repeated K-means)Best Sum-of-Squared Errors (SSE): %f\n", RKSse / 10000000);
-        printf("(Random Swap)Best Sum-of-Squared Errors (SSE): %f\n", SseRS / 10000000);
+        printf("(Repeated K-means)Best Sum-of-Squared Errors (SSE): %.4f\n", RKSse / 10000000);
+        printf("(Random Swap)Best Sum-of-Squared Errors (SSE): %.4f\n", SseRS / 10000000);
         //printf("(Split)Best Sum-of-Squared Errors (SSE): %f\n", bestSse4);
 
+       
+        if(LOGGING == 1) printf("Muistin vapautus\n");        
         freeDataPoints(&dataPoints);
+        if(LOGGING == 1) printf("Eka\n");
         freeCentroids(&centroids);
+        if(LOGGING == 1)printf("toka\n");
         freeCentroids(&ogCentroids);
+        if(LOGGING == 1)printf("kolmas\n");
         //free(initialPartition);
-        freeDataPoints(&result.centroids);
+        //freeDataPoints(&result.centroids); result.centroids = centroids.points, joten ei tarvitse vapauttaa
+        //if(LOGGING == 1)printf("neljäs\n");
         free(result.partition);
+        if(LOGGING == 1)printf("neljas\n");
 
         return 0;
     }
