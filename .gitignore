@@ -449,3 +449,4 @@ FodyWeavers.xsd
 # text folders
 */Data/
 */Outputs/
+*/GroundTruth/
