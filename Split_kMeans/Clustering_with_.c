@@ -7,8 +7,8 @@
 #include <float.h>
 
 //Constants for file locations
-const char* DATA_FILENAME = "data/s4.txt";
-const char* GT_FILENAME = "GroundTruth/s4-cb.txt";
+const char* DATA_FILENAME = "data/s3.txt";
+const char* GT_FILENAME = "GroundTruth/s3-cb.txt";
 const char* CENTROID_FILENAME = "outputs/centroid.txt";
 const char* PARTITION_FILENAME = "outputs/partition.txt";
 const char SEPARATOR = ' ';
@@ -16,8 +16,8 @@ const char SEPARATOR = ' ';
 //and for clustering
 const int NUM_CENTROIDS = 15;  // klustereiden lkm: s4 = 15, unbalanced = 8
 const int MAX_ITERATIONS = 100; // k-means rajoitus
-const int MAX_REPEATS = 500; // repeated k-means toistojen lkm
-const int MAX_SWAPS = 750; // random swap toistojen lkm
+const int MAX_REPEATS = 300; // repeated k-means toistojen lkm
+const int MAX_SWAPS = 20000; // random swap toistojen lkm
 
 //and for logging
 const int LOGGING = 1; // 1 = basic, 2 = detailed, 3 = debug
@@ -101,6 +101,34 @@ void freeClusters(Cluster* clusters)
     free(clusters->points);
     free(clusters);
 }
+
+// Function to free KMeansResult
+void freeKMeansResult(KMeansResult* result)
+{
+    // Free the partition array
+    if (result->partition != NULL)
+    {
+        free(result->partition);
+        result->partition = NULL; // Avoid dangling pointer
+    }
+
+    // Free each DataPoint in the centroids array
+    if (result->centroids != NULL)
+    {
+        for (int i = 0; i < result->centroidIndex; ++i)
+        {
+            if (result->centroids[i].attributes != NULL)
+            {
+                free(result->centroids[i].attributes);
+                result->centroids[i].attributes = NULL; // Avoid dangling pointer
+            }
+        }
+        // Free the centroids array itself
+        free(result->centroids);
+        result->centroids = NULL; // Avoid dangling pointer
+    }
+}
+
 
 //Helpers
 //
@@ -274,6 +302,17 @@ void deepCopyDataPoint(DataPoint* destination, DataPoint* source)
     destination->attributes = malloc(source->dimensions * sizeof(double));
     handleMemoryError(destination->attributes);
     memcpy(destination->attributes, source->attributes, source->dimensions * sizeof(double));
+}
+
+void deepCopyDataPoints(DataPoint* destination, DataPoint* source, int size)
+{
+	for (int i = 0; i < size; ++i)
+	{
+		destination[i].dimensions = source[i].dimensions;
+		destination[i].attributes = malloc(source[i].dimensions * sizeof(double));
+		handleMemoryError(destination[i].attributes);
+		memcpy(destination[i].attributes, source[i].attributes, source[i].dimensions * sizeof(double));
+	}
 }
 
 //Funtion to copy centroids
@@ -710,10 +749,17 @@ double runSplit(DataPoint* dataPoints, int dataPointsSize, int size)
 }*/
 
 // Function to perform random swap
-double randomSwap(DataPoint* dataPoints, int dataPointsSize, DataPoint* centroids, int centroidsSize, DataPoints* groundTruth)
+KMeansResult randomSwap(DataPoint* dataPoints, int dataPointsSize, DataPoint* centroids, int centroidsSize, DataPoints* groundTruth)
 {
     double bestSse = DBL_MAX;
+    int bestCI = -1;
     //DataPoint oldCentroid;
+    KMeansResult bestResult;
+
+    bestResult.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint)); //since results.centroids = centroids.points, do we need to allocate memory?
+    handleMemoryError(bestResult.centroids);
+    bestResult.partition = malloc(dataPointsSize * sizeof(int));
+    handleMemoryError(bestResult.partition);
 
     for (int i = 0; i < MAX_SWAPS; ++i)
     {
@@ -731,9 +777,13 @@ double randomSwap(DataPoint* dataPoints, int dataPointsSize, DataPoint* centroid
 
         //If SSE improves, we keep the change
         //if not, we reverse the swap
-        if (result.sse < bestSse)
+        if (bestCI == -1 || result.centroidIndex < bestResult.centroidIndex || result.sse < bestResult.sse)
         {
-            bestSse = result.sse;
+            bestCI = 1;
+            bestResult.sse = result.sse;
+            bestResult.centroidIndex = result.centroidIndex;
+            memcpy(bestResult.partition, result.partition, dataPointsSize * sizeof(int));
+            deepCopyDataPoints(bestResult.centroids, result.centroids, centroidsSize);
         }
         else
         {
@@ -744,7 +794,7 @@ double randomSwap(DataPoint* dataPoints, int dataPointsSize, DataPoint* centroid
         free(oldCentroid.attributes);
     }
 
-    return bestSse;
+    return bestResult;
 }
 
 //function to calculate Centroid Index (CI)
@@ -917,11 +967,20 @@ int main()
         double duration = ((double)(end - start)) / CLOCKS_PER_SEC;
         printf("(Repeated k-means)Time taken: %.2f seconds\n", duration);
 
+
+        KMeansResult result2;
+        int CI2 = -1;
+
+        result2.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint)); //since results.centroids = centroids.points, do we need to allocate memory?
+        handleMemoryError(result2.centroids);
+        result2.partition = malloc(dataPoints.size * sizeof(int));
+        handleMemoryError(result2.partition);
+
         printf("Random swap\n");
         start = clock();
 
         //TODO: palautus oikeaan muotoon, nyt vain SSE
-        double SseRS = randomSwap(dataPoints.points, (int)dataPoints.size, ogCentroids.points, NUM_CENTROIDS, &groundTruth);
+        result2 = randomSwap(dataPoints.points, (int)dataPoints.size, ogCentroids.points, NUM_CENTROIDS, &groundTruth);
 
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
@@ -939,7 +998,7 @@ int main()
 
         //printf("(K-means)Best Sum-of-Squared Errors (SSE): %.0f\n", bestSse1);
         printf("(Repeated K-means)Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (SSE): %.4f\n", CI1, RKSse / 10000000);
-        printf("(Random Swap)Best Sum-of-Squared Errors (SSE): %.4f\n",SseRS / 10000000);
+        printf("(Random Swap)Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (SSE): %.4f\n", result2.centroidIndex, result2.sse / 10000000);
         //printf("(Split)Best Sum-of-Squared Errors (SSE): %f\n", bestSse4);
 
        
@@ -955,6 +1014,8 @@ int main()
         //if(LOGGING == 1)printf("neljäs\n");
         free(result.partition);
         if(LOGGING == 3)printf("neljas\n");
+        free(result2.partition);
+        if (LOGGING == 3)printf("viides\n");
 
         return 0;
     }
