@@ -16,8 +16,8 @@ const char SEPARATOR = ' ';
 //and for clustering
 const int NUM_CENTROIDS = 15;  // klustereiden lkm: s4 = 15, unbalanced = 8
 const int MAX_ITERATIONS = 100; // k-means rajoitus
-const int MAX_REPEATS = 300; // repeated k-means toistojen lkm
-const int MAX_SWAPS = 20000; // random swap toistojen lkm
+const int MAX_REPEATS = 400; // repeated k-means toistojen lkm
+const int MAX_SWAPS = 10000; // random swap toistojen lkm
 
 //and for logging
 const int LOGGING = 1; // 1 = basic, 2 = detailed, 3 = debug
