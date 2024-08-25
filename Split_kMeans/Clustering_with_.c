@@ -7,8 +7,8 @@
 #include <float.h>
 
 //Constants for file locations
-const char* DATA_FILENAME = "data/s3.txt";
-const char* GT_FILENAME = "GroundTruth/s3-cb.txt";
+const char* DATA_FILENAME = "data/s1.txt";
+const char* GT_FILENAME = "GroundTruth/s1-cb.txt";
 const char* CENTROID_FILENAME = "outputs/centroid.txt";
 const char* PARTITION_FILENAME = "outputs/partition.txt";
 const char SEPARATOR = ' ';
@@ -16,8 +16,8 @@ const char SEPARATOR = ' ';
 //and for clustering
 const int NUM_CENTROIDS = 15;  // klustereiden lkm: s4 = 15, unbalanced = 8
 const int MAX_ITERATIONS = 100; // k-means rajoitus
-const int MAX_REPEATS = 400; // repeated k-means toistojen lkm
-const int MAX_SWAPS = 10000; // random swap toistojen lkm
+const int MAX_REPEATS = 40; // repeated k-means toistojen lkm
+const int MAX_SWAPS = 100; // random swap toistojen lkm
 
 //and for logging
 const int LOGGING = 1; // 1 = basic, 2 = detailed, 3 = debug
@@ -332,7 +332,7 @@ void copyCentroids(Centroids* source, Centroids* destination, int numCentroids)
 // Clustering
 //
 // 
-// Function to chooses random data points to be centroids
+// Function to choose random data points to be centroids
 void generateRandomCentroids(int numCentroids, DataPoints* dataPoints, DataPoint* centroids)
 {
     srand((unsigned int)time(NULL));
@@ -532,9 +532,6 @@ int* optimalPartition(DataPoint* dataPoints, int dataPointsSize, DataPoint* cent
     return partition;
 }
 
-// KLU: HUOM!BUG!
-// KLU: random swap + esimerkiksi unbalanced data set sylkee tänne välillä tyhjiä vektoreita
-// KLU: ja koodi kaatuu siten heti ensimmäiseen iffiin. Tämä vaatii gradun tapauksessa tarkastelua
 // Calculate the centroid of a set of data points
 DataPoint calculateCentroid(DataPoint* dataPoints, int dataPointsSize)
 {
@@ -591,7 +588,6 @@ DataPoint* kMeansCentroidStep(Cluster* newClusters , int numClusters)
 KMeansResult runKMeans(DataPoint* dataPoints, int dataPointsSize, int iterations, DataPoint* centroids, int numClusters, DataPoints* groundTruth)
 {
     int stopCounter = 0;
-
     double bestSse = DBL_MAX;
     double previousSSE = DBL_MAX;
     int centroidIndex = -1;
@@ -669,11 +665,11 @@ KMeansResult runKMeans(DataPoint* dataPoints, int dataPointsSize, int iterations
 }
 
 /*
-
+So this need to be refactored into split k-means
 This requires a lot of work, and is not currently in use
 Initial version from KLU course used high level of randomization
-So this need to be refactored into split k-means
 
+// Function to run the split k-means algorithm
 double runSplit(DataPoint* dataPoints, int dataPointsSize, int size)
 {
     DataPoint* centroids = generateRandomCentroids(1, dataPoints, dataPointsSize);
@@ -812,6 +808,9 @@ int calculateCentroidIndex(DataPoint* centroids1, int size1, DataPoint* centroid
         closest[i] = 0;
     }
 
+    //TODO: Voisiko tästä tehdä funktion?'
+    // koska nyt toistetaan C1-> C2 ja C2 -> C1
+    // niin duplikaattikoodia
     // C1 -> C2
     for (int i = 0; i < size1; ++i)
     {
@@ -999,7 +998,7 @@ int main()
         //printf("(K-means)Best Sum-of-Squared Errors (SSE): %.0f\n", bestSse1);
         printf("(Repeated K-means)Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (SSE): %.4f\n", CI1, RKSse / 10000000);
         printf("(Random Swap)Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (SSE): %.4f\n", result2.centroidIndex, result2.sse / 10000000);
-        //printf("(Split)Best Sum-of-Squared Errors (SSE): %f\n", bestSse4);
+        //printf("(Split)Best Centroid Index (CI): %d and best Sum-of-Squared Errors (SSE): %f\n", result3.centroidIndex, result3.sse / 10000000);
 
        
         if(LOGGING == 2) printf("Muistin vapautus\n");        
