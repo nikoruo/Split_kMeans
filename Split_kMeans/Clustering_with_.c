@@ -16,7 +16,7 @@ const char SEPARATOR = ' ';
 //and for clustering
 const int NUM_CENTROIDS = 15;  // klustereiden lkm: s4 = 15, unbalanced = 8
 const int MAX_ITERATIONS = 100; // k-means rajoitus
-const int MAX_REPEATS = 40; // repeated k-means toistojen lkm
+const int MAX_REPEATS = 20; // repeated k-means toistojen lkm
 const int MAX_SWAPS = 1000; // random swap toistojen lkm
 
 //and for logging
@@ -304,6 +304,7 @@ void deepCopyDataPoint(DataPoint* destination, DataPoint* source)
     memcpy(destination->attributes, source->attributes, source->dimensions * sizeof(double));
 }
 
+//Funtion to create deep copies of data points
 void deepCopyDataPoints(DataPoint* destination, DataPoint* source, int size)
 {
 	for (int i = 0; i < size; ++i)
@@ -621,12 +622,12 @@ KMeansResult runKMeans(DataPoint* dataPoints, int dataPointsSize, int iterations
         if(LOGGING == 2) printf("(runKMeans)Total SSE after iteration %d: %.0f\n", iteration + 1, sse / 10000000);
         
         //TODO: tarvitaanko t‰t‰, jos ei niin poista
-        //koska sse pit‰isi olla aina < tai = kuin bestSse
-        if (sse < bestSse)
+        /*if (sse < bestSse)
         {
             bestSse = sse;
         }
-        else if (sse == previousSSE)
+        else*/
+        if(sse == bestSse)
         {
             stopCounter++;
         }
@@ -636,7 +637,7 @@ KMeansResult runKMeans(DataPoint* dataPoints, int dataPointsSize, int iterations
 
         previousSSE = sse;
         previousPartition = newPartition;
-        //centroids = newCentroids;
+
         // Assuming newCentroids is calculated as the average of data points in each cluster
         for (int i = 0; i < numClusters; ++i)
         {
@@ -652,7 +653,7 @@ KMeansResult runKMeans(DataPoint* dataPoints, int dataPointsSize, int iterations
     }
 
     KMeansResult result;
-    result.sse = bestSse;
+    result.sse = previousSSE;
     result.partition = previousPartition;
     result.centroids = centroids;
     result.centroidIndex = centroidIndex;
@@ -748,34 +749,35 @@ double runSplit(DataPoint* dataPoints, int dataPointsSize, int size)
 KMeansResult randomSwap(DataPoint* dataPoints, int dataPointsSize, DataPoint* centroids, int centroidsSize, DataPoints* groundTruth)
 {
     double bestSse = DBL_MAX;
-    int bestCI = -1;
-    //DataPoint oldCentroid;
     KMeansResult bestResult;
 
+    //TODO: tarvitaanko t‰t‰ alustusta, varsinkaan jos alustus tehd‰‰n jo mainissa?
     bestResult.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint)); //since results.centroids = centroids.points, do we need to allocate memory?
     handleMemoryError(bestResult.centroids);
     bestResult.partition = malloc(dataPointsSize * sizeof(int));
     handleMemoryError(bestResult.partition);
+	bestResult.sse = DBL_MAX;
+	bestResult.centroidIndex = INT_MAX;
 
     for (int i = 0; i < MAX_SWAPS; ++i)
     {
-        int randomCentroid = rand() % centroidsSize;
-        //oldCentroid = centroids[randomCentroid];
         DataPoint oldCentroid;
-        deepCopyDataPoint(&oldCentroid, &centroids[randomCentroid]);
+        int randomCentroidId = rand() % centroidsSize;
+        int randomDataPointId = rand() % dataPointsSize;
 
-        int randomDataPoint = rand() % dataPointsSize;
+        //Saving the old centroid
+        deepCopyDataPoint(&oldCentroid, &centroids[randomCentroidId]);    
 
-        //random swap
-        deepCopyDataPoint(&centroids[randomCentroid], &dataPoints[randomDataPoint]);
+        //Swapping
+        deepCopyDataPoint(&centroids[randomCentroidId], &dataPoints[randomDataPointId]);
 
+		//TODO: t‰t‰ ei nyt alusteta, pit‰isikˆ?
         KMeansResult result = runKMeans(dataPoints, dataPointsSize, 2, centroids, centroidsSize, groundTruth);
 
-        //If SSE improves, we keep the change
+        //If 1) CI or 2) SSE improves, we keep the change
         //if not, we reverse the swap
-        if (bestCI == -1 || result.centroidIndex < bestResult.centroidIndex || result.sse < bestResult.sse)
+        if (result.centroidIndex < bestResult.centroidIndex || result.sse < bestResult.sse)
         {
-            bestCI = 1;
             bestResult.sse = result.sse;
             bestResult.centroidIndex = result.centroidIndex;
             memcpy(bestResult.partition, result.partition, dataPointsSize * sizeof(int));
@@ -783,8 +785,7 @@ KMeansResult randomSwap(DataPoint* dataPoints, int dataPointsSize, DataPoint* ce
         }
         else
         {
-            //centroids[randomCentroid] = oldCentroid;
-            deepCopyDataPoint(&centroids[randomCentroid], &oldCentroid);
+            deepCopyDataPoint(&centroids[randomCentroidId], &oldCentroid);
         }
 
         free(oldCentroid.attributes);
@@ -798,19 +799,21 @@ int calculateCentroidIndex(DataPoint* centroids1, int size1, DataPoint* centroid
 {
     int countFrom1to2 = 0;
     int countFrom2to1 = 0;
+	int biggerSize = (size1 > size2) ? size1 : size2;
 
-    //TODO: t‰m‰ pit‰isi pohjustaa isomman (size1 vs. size2) avulla
-    //keksi uusi nimi, esim Diskreetit rakenteet kurssilta se miten c1 piirret‰‰n nuolia c2 jne (transpoosio? yms)
-    int* closest = malloc(sizeof(int) * size1);
+    //TODO: keksi uusi nimi, esim Diskreetit rakenteet kurssilta se miten c1 piirret‰‰n nuolia c2 jne (transpoosio? yms)
+    int* closest = malloc(sizeof(int) * biggerSize);
     handleMemoryError(closest);
-    for (int i = 0; i < size1; ++i)
+
+    //TODO: t‰t‰ ei ehk‰ tarvita?
+    for (int i = 0; i < biggerSize; ++i)
     {
         closest[i] = 0;
     }
 
     //TODO: Voisiko t‰st‰ tehd‰ funktion?'
-    // koska nyt toistetaan C1-> C2 ja C2 -> C1
-    // niin duplikaattikoodia
+    // koska nyt toistetaan C1-> C2 ja C2 -> C1, niin duplikaattikoodia
+    
     // C1 -> C2
     for (int i = 0; i < size1; ++i)
     {
