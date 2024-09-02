@@ -17,7 +17,7 @@ const char SEPARATOR = ' ';
 const int NUM_CENTROIDS = 15;  // klustereiden lkm: s4 = 15, unbalanced = 8
 const int MAX_ITERATIONS = 100; // k-means rajoitus
 const int MAX_REPEATS = 40; // repeated k-means toistojen lkm
-const int MAX_SWAPS = 100; // random swap toistojen lkm
+const int MAX_SWAPS = 1000; // random swap toistojen lkm
 
 //and for logging
 const int LOGGING = 1; // 1 = basic, 2 = detailed, 3 = debug
@@ -41,13 +41,13 @@ typedef struct
 {
     DataPoint* points;
     int size;
-} Cluster;
+} Centroids;
 
 typedef struct
 {
     DataPoint* points;
     int size;
-} Centroids;
+} Cluster;
 
 typedef struct
 {
@@ -901,19 +901,10 @@ int main()
         ogCentroids.size = NUM_CENTROIDS;
         copyCentroids(&centroids, &ogCentroids, NUM_CENTROIDS);
 
-        writeCentroidsToFile(CENTROID_FILENAME, centroids.points, NUM_CENTROIDS);
-        //not used yet, need to be added later in code (would be useless here)
-        //writePartitionToFile();
-        
-        /*
-        * optimalPartition vaatii nyt Clusters structin, mutta se taas alustetaan vasta runKMeansissa
-        int* initialPartition = optimalPartition(dataPoints.points, (int)dataPoints.size, centroids.points, NUM_CENTROIDS);
-        double initialSSE = calculateSSE(dataPoints.points, (int)dataPoints.size, centroids.points, NUM_CENTROIDS, initialPartition);
-        printf("Initial Total Sum-of-Squared Errors (SSE): %.0f\n", initialSSE / 10000000);
-        */
+        writeCentroidsToFile(CENTROID_FILENAME, centroids.points, NUM_CENTROIDS);      
 
         //This runs the k-means algorithm just once
-        //but we wanna use teh repeated k-means
+        //but we wanna use the repeated k-means
         /*
         printf("K-means\n");
         clock_t start = clock();
@@ -929,14 +920,25 @@ int main()
         double bestSse5 = bestSse1;
         */
 
-        double RKSse = DBL_MAX;
+        //
+        // Repeated k-means
+        //
         KMeansResult result;
-        int CI1 = -1;
+        KMeansResult bestResult;
 
         result.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint)); //since results.centroids = centroids.points, do we need to allocate memory?
         handleMemoryError(result.centroids);
         result.partition = malloc(dataPoints.size * sizeof(int));
         handleMemoryError(result.partition);
+		result.sse = DBL_MAX;
+        result.centroidIndex = INT_MAX;
+
+        bestResult.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint)); //since results.centroids = centroids.points, do we need to allocate memory?
+        handleMemoryError(result.centroids);
+        bestResult.partition = malloc(dataPoints.size * sizeof(int));
+        handleMemoryError(result.partition);
+		bestResult.sse = DBL_MAX;
+		bestResult.centroidIndex = INT_MAX;
 
         clock_t start = clock();
         printf("Repeated K-means\n");
@@ -952,23 +954,23 @@ int main()
 
             result = runKMeans(dataPoints.points, (int)dataPoints.size, MAX_ITERATIONS, centroids.points, NUM_CENTROIDS, &groundTruth);
 
-            //TODO: korjaa t‰m‰ koko homma, halutaan ottaa talteen paras tulos, ei pelk‰st‰‰n SSE (RKSse <- pit‰isi olla KMeansResult?)
-            if (result.sse < RKSse)
+            if (result.centroidIndex < bestResult.centroidIndex || result.sse < bestResult.sse)
             {
-                RKSse = result.sse;
-                //TODO: korjaa oikeaan paikkaan ja koko rakenne
-                CI1 = result.centroidIndex;
+				deepCopyDataPoints(bestResult.centroids, result.centroids, NUM_CENTROIDS);
+				bestResult.sse = result.sse;
+				bestResult.centroidIndex = result.centroidIndex;
+				memcpy(bestResult.partition, result.partition, dataPoints.size * sizeof(int));
             }
-
         }
         
         clock_t end = clock();
         double duration = ((double)(end - start)) / CLOCKS_PER_SEC;
         printf("(Repeated k-means)Time taken: %.2f seconds\n", duration);
 
-
+        //
+        // Random Swap
+        //
         KMeansResult result2;
-        int CI2 = -1;
 
         result2.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint)); //since results.centroids = centroids.points, do we need to allocate memory?
         handleMemoryError(result2.centroids);
@@ -985,6 +987,9 @@ int main()
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
         printf("(Random Swap)Time taken: %.2f seconds\n", duration);
 
+        //
+        // Split k-means
+        //
         printf("Split k-means\n");
         start = clock();
 
@@ -996,7 +1001,7 @@ int main()
         printf("(Split)Time taken: %.2f seconds\n", duration);
 
         //printf("(K-means)Best Sum-of-Squared Errors (SSE): %.0f\n", bestSse1);
-        printf("(Repeated K-means)Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (SSE): %.4f\n", CI1, RKSse / 10000000);
+        printf("(Repeated K-means)Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (SSE): %.4f\n", bestResult.centroidIndex, bestResult.sse / 10000000);
         printf("(Random Swap)Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (SSE): %.4f\n", result2.centroidIndex, result2.sse / 10000000);
         //printf("(Split)Best Centroid Index (CI): %d and best Sum-of-Squared Errors (SSE): %f\n", result3.centroidIndex, result3.sse / 10000000);
 
