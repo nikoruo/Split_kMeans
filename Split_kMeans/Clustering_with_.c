@@ -7,17 +7,17 @@
 #include <float.h>
 
 //Constants for file locations
-const char* DATA_FILENAME = "data/s3.txt";
-const char* GT_FILENAME = "GroundTruth/s3-cb.txt";
+const char* DATA_FILENAME = "data/unbalance.txt";
+const char* GT_FILENAME = "GroundTruth/unbalance-gt.txt";
 const char* CENTROID_FILENAME = "outputs/centroid.txt";
 const char* PARTITION_FILENAME = "outputs/partition.txt";
 const char SEPARATOR = ' ';
 
 //and for clustering
-const int NUM_CENTROIDS = 15;  // klustereiden lkm: s = 15, unbalanced = 8, a = 20,35,50
+const int NUM_CENTROIDS = 8;  // klustereiden lkm: s = 15, unbalanced = 8, a = 20,35,50
 const int MAX_ITERATIONS = 1000; // k-means rajoitus
-const int MAX_REPEATS = 200; // repeated k-means toistojen lkm, TODO: lopulliseen 100kpl
-const int MAX_SWAPS = 0; // random swap toistojen lkm, TODO: lopulliseen 1000kpl
+const int MAX_REPEATS = 100; // repeated k-means toistojen lkm, TODO: lopulliseen 100kpl
+const int MAX_SWAPS = 1000; // random swap toistojen lkm, TODO: lopulliseen 1000kpl
 
 //and for logging
 const int LOGGING = 1; // 1 = basic, 2 = detailed, 3 = debug
@@ -355,7 +355,7 @@ void generateRandomCentroids(int numCentroids, DataPoints* dataPoints, DataPoint
     // Shuffle the dataPointsShuffled array
     for (size_t i = 0; i < numCentroids; ++i)
     {
-        size_t j = rand() % (i + 1);
+        size_t j = rand() % dataPoints->size;
         DataPoint temp = dataPointsShuffled[i];
         dataPointsShuffled[i] = dataPointsShuffled[j];
         dataPointsShuffled[j] = temp;
@@ -908,7 +908,7 @@ int main()
         generateRandomCentroids(NUM_CENTROIDS, &dataPoints, centroids.points);
 
         KMeansResult result0 = runKMeans(dataPoints.points, (int)dataPoints.size, MAX_ITERATIONS, centroids.points, NUM_CENTROIDS, &groundTruth);
-        printf("(K-means)Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (SSE): %.4f\n", result0.centroidIndex, result0.sse / 10000000);
+        if (LOGGING == 2) printf("(K-means)Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (SSE): %.4f\n", result0.centroidIndex, result0.sse / 10000000);
 
         clock_t end = clock();
         double duration = ((double)(end - start)) / CLOCKS_PER_SEC;
@@ -946,11 +946,11 @@ int main()
             // K-means
             result = runKMeans(dataPoints.points, (int)dataPoints.size, MAX_ITERATIONS, centroids.points, NUM_CENTROIDS, &groundTruth);
 
-			if(LOGGING == 1) printf("Round %d: Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (SSE): %.4f\n", repeat, result.centroidIndex, result.sse / 10000000);
+			if(LOGGING == 2) printf("(RKM) Round %d: Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (SSE): %.4f\n", repeat, result.centroidIndex, result.sse / 10000000);
             
             if (result.centroidIndex < bestResult.centroidIndex || result.sse < bestResult.sse)
             {
-                printf("in we goooo");
+                if (LOGGING == 2) printf("in we goooo");
 				deepCopyDataPoints(bestResult.centroids, result.centroids, NUM_CENTROIDS);
 				bestResult.sse = result.sse;
 				bestResult.centroidIndex = result.centroidIndex;
