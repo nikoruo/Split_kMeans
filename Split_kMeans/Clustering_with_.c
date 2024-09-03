@@ -14,10 +14,10 @@ const char* PARTITION_FILENAME = "outputs/partition.txt";
 const char SEPARATOR = ' ';
 
 //and for clustering
-const int NUM_CENTROIDS = 15;  // klustereiden lkm: s4 = 15, unbalanced = 8, a = 20,35,50
+const int NUM_CENTROIDS = 15;  // klustereiden lkm: s = 15, unbalanced = 8, a = 20,35,50
 const int MAX_ITERATIONS = 1000; // k-means rajoitus
-const int MAX_REPEATS = 100; // repeated k-means toistojen lkm, TODO: lopulliseen 100kpl
-const int MAX_SWAPS = 5000; // random swap toistojen lkm, TODO: lopulliseen 1000kpl
+const int MAX_REPEATS = 200; // repeated k-means toistojen lkm, TODO: lopulliseen 100kpl
+const int MAX_SWAPS = 0; // random swap toistojen lkm, TODO: lopulliseen 1000kpl
 
 //and for logging
 const int LOGGING = 1; // 1 = basic, 2 = detailed, 3 = debug
@@ -336,8 +336,6 @@ void copyCentroids(Centroids* source, Centroids* destination, int numCentroids)
 // Function to choose random data points to be centroids
 void generateRandomCentroids(int numCentroids, DataPoints* dataPoints, DataPoint* centroids)
 {
-    srand((unsigned int)time(NULL));
-
     if (dataPoints->size < numCentroids)
     {
         fprintf(stderr, "Error: There are less data points than the required number of clusters\n");
@@ -347,20 +345,12 @@ void generateRandomCentroids(int numCentroids, DataPoints* dataPoints, DataPoint
     // Create a copy of the dataPoints array
     DataPoint* dataPointsShuffled = malloc(sizeof(DataPoint) * dataPoints->size);
     handleMemoryError(dataPointsShuffled);
-    //memcpy(dataPointsShuffled, dataPoints->points, dataPoints->size * sizeof(DataPoint));
 
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
         dataPointsShuffled[i].dimensions = dataPoints->points[i].dimensions;
         deepCopyDataPoint(&dataPointsShuffled[i], &dataPoints->points[i]);
     }
-
-    /*
-    for (size_t i = 0; i < dataPoints->size; ++i)
-    {
-        dataPointsShuffled[i] = dataPoints->points[i];
-    }
-    */
 
     // Shuffle the dataPointsShuffled array
     for (size_t i = 0; i < numCentroids; ++i)
@@ -408,6 +398,8 @@ double calculateMSE(DataPoint* dataPoints, int dataPointsSize, DataPoint* centro
 		}
 	}
 
+	mse = mse / dataPointsSize;
+
 	return mse;
 }
 
@@ -449,13 +441,13 @@ int findNearestCentroid(DataPoint* queryPoint, DataPoint* targetPoints, int targ
 
     int nearestCentroidId = -1;
     double minDistance = DBL_MAX;
-	double newDistance = DBL_MAX;
+	double newDistance;
 
     for (int i = 0; i < targetPointsSize; ++i)
     {
         newDistance = calculateEuclideanDistance(queryPoint, &targetPoints[i]);
-
-        if (newDistance <= minDistance)
+		
+        if (newDistance < minDistance)
         {
             minDistance = newDistance;
             nearestCentroidId = i;
@@ -630,7 +622,7 @@ KMeansResult runKMeans(DataPoint* dataPoints, int dataPointsSize, int iterations
         if (LOGGING == 2) printf("(runKMeans)CI after iteration %d: %d\n", iteration + 1, centroidIndex);
 
         //SSE
-        sse = calculateSSE(dataPoints, dataPointsSize, newCentroids, numClusters, partition);        
+        sse = calculateMSE(dataPoints, dataPointsSize, newCentroids, numClusters, partition);        
         if(LOGGING == 2) printf("(runKMeans)Total SSE after iteration %d: %.0f\n", iteration + 1, sse / 10000000);
         
         if (sse < bestSse)
@@ -889,6 +881,9 @@ int calculateCentroidIndex(DataPoint* centroids1, int size1, DataPoint* centroid
 //
 int main()
 {
+	// Seeding the random number generator
+    srand((unsigned int)time(NULL));
+
     int numDimensions = getNumDimensions(DATA_FILENAME);
 
     if (numDimensions > 0)
@@ -902,29 +897,23 @@ int main()
 
         Centroids centroids;
         centroids.points = malloc(NUM_CENTROIDS * sizeof(DataPoint));
-        centroids.size = NUM_CENTROIDS;
-        
-        //this is not in use
-        //writeCentroidsToFile(CENTROID_FILENAME, centroids.points, NUM_CENTROIDS);      
+        centroids.size = NUM_CENTROIDS;      
 
         //////////////
         // K-means //
         ////////////
-        /*
         printf("K-means\n");
         clock_t start = clock();
 
-        KMeansResult result = runKMeans(dataPoints.points, (int)dataPoints.size, MAX_ITERATIONS, centroids.points, NUM_CENTROIDS);
-        double bestSse1 = result.sse;
+        generateRandomCentroids(NUM_CENTROIDS, &dataPoints, centroids.points);
+
+        KMeansResult result0 = runKMeans(dataPoints.points, (int)dataPoints.size, MAX_ITERATIONS, centroids.points, NUM_CENTROIDS, &groundTruth);
+        printf("(K-means)Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (SSE): %.4f\n", result0.centroidIndex, result0.sse / 10000000);
 
         clock_t end = clock();
         double duration = ((double)(end - start)) / CLOCKS_PER_SEC;
         printf("(K-means)Time taken: %f seconds\n", duration);
         
-
-        double bestSse5 = bestSse1;
-        */
-
         ///////////////////////
         // Repeated k-means //
         /////////////////////
@@ -945,7 +934,7 @@ int main()
 		bestResult.sse = DBL_MAX;
 		bestResult.centroidIndex = INT_MAX;
 
-        clock_t start = clock();
+        start = clock();
         printf("Repeated K-means\n");
 
         for (int repeat = 0; repeat < MAX_REPEATS; ++repeat)
@@ -957,8 +946,11 @@ int main()
             // K-means
             result = runKMeans(dataPoints.points, (int)dataPoints.size, MAX_ITERATIONS, centroids.points, NUM_CENTROIDS, &groundTruth);
 
+			if(LOGGING == 1) printf("Round %d: Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (SSE): %.4f\n", repeat, result.centroidIndex, result.sse / 10000000);
+            
             if (result.centroidIndex < bestResult.centroidIndex || result.sse < bestResult.sse)
             {
+                printf("in we goooo");
 				deepCopyDataPoints(bestResult.centroids, result.centroids, NUM_CENTROIDS);
 				bestResult.sse = result.sse;
 				bestResult.centroidIndex = result.centroidIndex;
@@ -966,8 +958,8 @@ int main()
             }
         }
         
-        clock_t end = clock();
-        double duration = ((double)(end - start)) / CLOCKS_PER_SEC;
+        end = clock();
+        duration = ((double)(end - start)) / CLOCKS_PER_SEC;
         printf("(Repeated k-means)Time taken: %.2f seconds\n", duration);
 
         //////////////////
@@ -1008,7 +1000,7 @@ int main()
         /////////////
         // Prints //
         ///////////
-        //printf("(K-means)Best Sum-of-Squared Errors (SSE): %.0f\n", bestSse1);
+        printf("(K-means)Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (SSE): %.4f\n", result0.centroidIndex, result0.sse / 10000000);
         printf("(Repeated K-means)Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (SSE): %.4f\n", bestResult.centroidIndex, bestResult.sse / 10000000);
         printf("(Random Swap)Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (SSE): %.4f\n", result2.centroidIndex, result2.sse / 10000000);
         //printf("(Split)Best Centroid Index (CI): %d and best Sum-of-Squared Errors (SSE): %f\n", result3.centroidIndex, result3.sse / 10000000);
