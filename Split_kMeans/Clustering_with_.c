@@ -460,27 +460,6 @@ int findNearestCentroid(DataPoint* queryPoint, DataPoint* targetPoints, int targ
     return nearestCentroidId;
 }
 
-// Function to check if two data points are equal
-//note: should we even use this, or just work with the indexes?
-//note2: tämän käyttö on poistettu joka paikasta, joten voisi poistaa koko funktion
-bool areDataPointsEqual(DataPoint* point1, DataPoint* point2)
-{
-    if (point1->dimensions != point2->dimensions)
-    {
-        return false;
-    }
-
-    for (size_t i = 0; i < point1->dimensions; ++i)
-    {
-        if (point1->attributes[i] != point2->attributes[i])
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 // Function for optimal partitioning
 int* optimalPartition(DataPoint* dataPoints, int dataPointsSize, DataPoint* centroids, int centroidsSize, Cluster* newClusters)
 {
