@@ -7,17 +7,17 @@
 #include <float.h>
 
 //Constants for file locations
-const char* DATA_FILENAME = "data/unbalance.txt";
-const char* GT_FILENAME = "GroundTruth/unbalance-gt.txt";
+const char* DATA_FILENAME = "data/s3.txt";
+const char* GT_FILENAME = "GroundTruth/s3-cb.txt";
 const char* CENTROID_FILENAME = "outputs/centroid.txt";
 const char* PARTITION_FILENAME = "outputs/partition.txt";
 const char SEPARATOR = ' ';
 
 //and for clustering
-const int NUM_CENTROIDS = 8;  // klustereiden lkm: s = 15, unbalanced = 8, a = 20,35,50
+const int NUM_CENTROIDS = 15;  // klustereiden lkm: s = 15, unbalanced = 8, a = 20,35,50
 const int MAX_ITERATIONS = 1000; // k-means rajoitus
 const int MAX_REPEATS = 100; // repeated k-means toistojen lkm, TODO: lopulliseen 100kpl
-const int MAX_SWAPS = 1000; // random swap toistojen lkm, TODO: lopulliseen 1000kpl
+const int MAX_SWAPS = 5000; // random swap toistojen lkm, TODO: lopulliseen 1000kpl
 
 //and for logging
 const int LOGGING = 1; // 1 = basic, 2 = detailed, 3 = debug
@@ -388,8 +388,8 @@ double calculateMSE(DataPoint* dataPoints, int dataPointsSize, DataPoint* centro
 
 		if (cIndex >= 0 && cIndex < centroidsSize)
 		{
-			// MSE between the data point and its assigned centroid
-			mse += calculateSquaredEuclideanDistance(&dataPoints[i], &centroids[cIndex]);
+			// SSE between the data point and its assigned centroid
+			mse += calculateEuclideanDistance(&dataPoints[i], &centroids[cIndex]);
 		}
 		else
 		{
@@ -506,7 +506,7 @@ int* optimalPartition(DataPoint* dataPoints, int dataPointsSize, DataPoint* cent
             if (LOGGING == 2) printf("Cluster size: %d\n", newClusters[i].size);
             if (newClusters[i].size == 0)
             {
-                if (LOGGING == 1) printf("Warning: Cluster has size 0\n");
+                if (LOGGING == 2) printf("Warning: Cluster has size 0\n");
 
                 int randomIndex = rand() % dataPointsSize;
                 //TODO: kerran miljoonassa case, mutta periaatteessa voisi arpoa saman datapisteen uudestaan sentroidiksi? Tee check jos jää aikaa
@@ -753,8 +753,9 @@ KMeansResult randomSwap(DataPoint* dataPoints, int dataPointsSize, DataPoint* ce
 
         //If 1) CI or 2) SSE improves, we keep the change
         //if not, we reverse the swap
-        if (result.centroidIndex < bestResult.centroidIndex || result.sse < bestResult.sse)
+        if (result.centroidIndex < bestResult.centroidIndex || result.centroidIndex == bestResult.centroidIndex && result.sse < bestResult.sse)
         {
+			if (LOGGING == 1) printf("(RS) Round %d: Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (SSE): %.4f\n", i+1, result.centroidIndex, result.sse / 10000);
             bestResult.sse = result.sse;
             bestResult.centroidIndex = result.centroidIndex;
             memcpy(bestResult.partition, result.partition, dataPointsSize * sizeof(int));
@@ -778,7 +779,7 @@ int calculateCentroidIndex(DataPoint* centroids1, int size1, DataPoint* centroid
     int countFrom2to1 = 0;
 	int biggerSize = (size1 > size2) ? size1 : size2;
 
-    //TODO: keksi uusi nimi, esim Diskreetit rakenteet kurssilta se miten c1 piirretään nuolia c2 jne (transpoosio? yms)
+    //TODO: keksi uusi nimi, esim Diskreetit rakenteet kurssilta se miten c1 piirretään nuolia c2 jne (transpoosio? tmv)
     int* closest = malloc(sizeof(int) * biggerSize);
     handleMemoryError(closest);
 
@@ -788,7 +789,7 @@ int calculateCentroidIndex(DataPoint* centroids1, int size1, DataPoint* centroid
         closest[i] = 0;
     }
 
-    //TODO: Voisiko tästä tehdä funktion?'
+    //TODO: Voisiko tästä tehdä funktion?
     // koska nyt toistetaan C1-> C2 ja C2 -> C1, niin duplikaattikoodia
     
     // C1 -> C2
@@ -799,7 +800,7 @@ int calculateCentroidIndex(DataPoint* centroids1, int size1, DataPoint* centroid
 
         for (int j = 0; j < size2; ++j)
         {
-            double distance = calculateSquaredEuclideanDistance(&centroids1[i], &centroids2[j]);
+            double distance = calculateEuclideanDistance(&centroids1[i], &centroids2[j]);
             if (distance < minDistance)
             {
                 minDistance = distance;
@@ -829,7 +830,7 @@ int calculateCentroidIndex(DataPoint* centroids1, int size1, DataPoint* centroid
 
         for (int j = 0; j < size1; ++j)
         {
-            double distance = calculateSquaredEuclideanDistance(&centroids2[i], &centroids1[j]);
+            double distance = calculateEuclideanDistance(&centroids2[i], &centroids1[j]);
             if (distance < minDistance)
             {
                 minDistance = distance;
