@@ -681,85 +681,8 @@ double runSplit(DataPoint* dataPoints, int dataPointsSize, int size)
     return result.sse;
 }*/
 
-int calculateCentroidIndex(Centroids* centroids1, Centroids* centroids2)
-{
-    int countFrom1to2 = 0;
-    int countFrom2to1 = 0;
-    //TODO vanhaa koodi
-    // int biggerSize = (centroids1->size > centroids2->size) ? centroids1->size : centroids2->size;
-
-    int* closest = calloc(centroids2->size, sizeof(int));   
-    handleMemoryError(closest);
-
-    // C1 -> C2
-    for (int i = 0; i < centroids1->size; ++i)
-    {
-        double minDistance = DBL_MAX;
-        int closestIndex = -1;
-
-        for (int j = 0; j < centroids2->size; ++j)
-        {
-            double distance = calculateEuclideanDistance(&centroids1->points[i], &centroids2->points[j]);
-            if (distance < minDistance)
-            {
-                minDistance = distance;
-                closestIndex = j;
-            }
-        }
-
-        if (closestIndex != -1)
-        {
-            closest[closestIndex]++;
-        }
-    }
-
-    for (int i = 0; i < centroids2->size; ++i)
-    {
-        if (closest[i] == 0)
-        {
-            countFrom1to2++;
-        }
-    }
-
-    free(closest);
-    closest = calloc(centroids2->size, sizeof(int));
-    handleMemoryError(closest);
-    // C2 -> C1
-    for (int i = 0; i < centroids2->size; ++i)
-    {
-        double minDistance = DBL_MAX;
-        int closestIndex = -1;
-
-        for (int j = 0; j < centroids1->size; ++j)
-        {
-            double distance = calculateEuclideanDistance(&centroids2->points[i], &centroids1->points[j]);
-            if (distance < minDistance)
-            {
-                minDistance = distance;
-                closestIndex = j;
-            }
-        }
-
-        if (closestIndex != -1)
-        {
-            closest[closestIndex]++;
-        }
-    }
-
-    for (int i = 0; i < centroids1->size; ++i)
-    {
-        if (closest[i] == 0)
-        {
-            countFrom2to1++;
-        }
-    }
-
-    free(closest);
-    return (countFrom1to2 > countFrom2to1) ? countFrom1to2 : countFrom2to1;
-}
-
 //function to calculate Centroid Index (CI)
-/*int calculateCentroidIndex(Centroids* centroids1, Centroids* centroids2)
+int calculateCentroidIndex(Centroids* centroids1, Centroids* centroids2)
 {
     int countFrom1to2 = countOrphans(centroids1, centroids2);
     int countFrom2to1 = countOrphans(centroids2, centroids1);
@@ -807,7 +730,7 @@ int countOrphans(Centroids* centroids1, Centroids* centroids2)
     free(closest);
 
     return countFrom1to2;
-}*/
+}
 
 ///////////
 // Main //
