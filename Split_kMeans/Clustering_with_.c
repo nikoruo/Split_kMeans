@@ -44,13 +44,6 @@ typedef struct
     int size;
 } Centroids;
 
-//TODO: poista, kun on saatu irrotettua koodista
-/*typedef struct
-{
-    DataPoint* points;
-    int size;
-} Cluster;*/
-
 typedef struct
 {
     double sse;
@@ -92,18 +85,6 @@ void freeCentroids(Centroids* centroids)
 	}
 	free(centroids->points);
 }
-
-// Function to free clusters
-//TODO: poista, kun on saatu irrotettua koodista
-/*void freeClusters(Cluster* clusters)
-{
-    for (int i = 0; i < clusters->size; ++i)
-    {
-        free(clusters->points[i].attributes);
-    }
-    free(clusters->points);
-    free(clusters);
-}*/
 
 // Function to free ClusteringResult
 // TODO: ei vielä käytössä missään
@@ -474,56 +455,12 @@ void optimalPartition(DataPoints* dataPoints, Centroids* centroids)
         exit(EXIT_FAILURE);
     }
 
-    //int* partition = malloc(sizeof(int) * dataPointsSize);
-    //handleMemoryError(partition);
-    bool emptyClusters = true; //TODO: While{} sijaan {}While?
-
-    while(emptyClusters){
-        
-        emptyClusters = false;
-
-        // Iterate through each data point to find its nearest centroid
-        for (int i = 0; i < dataPoints->size; ++i)
-        {
-            int nearestCentroidId = findNearestCentroid(&dataPoints->points[i], centroids);
-			//dataPoints[i].partition = nearestCentroidId;
-			dataPoints->points[i].partition = nearestCentroidId;
-            //partition[i] = nearestCentroidId; //TODO: samalle riville, debuggingin takia tässä
-        }               
-
-        // Initialize the clusters
-		// This is for the empty cluster check
-        /*for (int i = 0; i < centroidsSize; ++i)
-        {
-            newClusters[i].size = 0;
-        }*/
-
-        // Assign each data point to its cluster
-        /*for (int i = 0; i < dataPointsSize; ++i)
-        {
-            int clusterLabel = partition[i];
-            deepCopyDataPoint(&newClusters[clusterLabel].points[newClusters[clusterLabel].size], &dataPoints[i]);
-            newClusters[clusterLabel].size++;
-        }*/
-
-        // Check for clusters with size 0
-        /*for (int i = 0; i < centroidsSize; ++i)
-        {
-            if (LOGGING == 2) printf("Checking: Cluster size\n");
-            if (LOGGING == 2) printf("Cluster size: %d\n", newClusters[i].size);
-            if (newClusters[i].size == 0)
-            {
-                if (LOGGING == 2) printf("Warning: Cluster has size 0\n");
-
-                int randomIndex = rand() % dataPointsSize;
-                //TODO: kerran miljoonassa case, mutta periaatteessa voisi arpoa saman datapisteen uudestaan sentroidiksi? Tee check jos jää aikaa
-                deepCopyDataPoint(&centroids[i], &dataPoints[randomIndex]);
-                emptyClusters = true;
-            }
-        }*/
+    // Iterate through each data point to find its nearest centroid
+    for (int i = 0; i < dataPoints->size; ++i)
+    {
+        int nearestCentroidId = findNearestCentroid(&dataPoints->points[i], centroids);
+        dataPoints->points[i].partition = nearestCentroidId;
     }
-
-    //return partition;
 }
 
 // Calculate the centroid of a cluster
@@ -660,20 +597,18 @@ Centroids* centroidStep(int numClusters, DataPoints* dataPoints)
         }
         else
         {
-            // Handle the case where a cluster has no points (optional, depending on your needs)
+            //TODO: tyhjän klusterin käsittely
             fprintf(stderr, "Warning: Cluster %d has no points assigned.\n", clusterLabel);
-            // You can initialize to some default value or handle it differently.
         }
 
-        free(sums[clusterLabel]); // Free memory for sums of this cluster
+        free(sums[clusterLabel]);
     }
 
-    free(sums);    // Free the array of sums pointers
-    free(counts);  // Free the counts array
+    free(sums);
+    free(counts);
 
     return newCentroids;
 }
-
 
 // Function to run the k-means algorithm
 ClusteringResult runKMeans(DataPoints* dataPoints, int iterations, Centroids* centroids, Centroids* groundTruth)
@@ -685,17 +620,6 @@ ClusteringResult runKMeans(DataPoints* dataPoints, int iterations, Centroids* ce
 
     int* partition = malloc(sizeof(int) * dataPoints->size);
     handleMemoryError(partition);
-
-    //Cluster* newClusters = malloc(sizeof(Cluster) * numClusters);
-    //handleMemoryError(newClusters);
-
-    // Initialize the clusters
-    /*for (int i = 0; i < numClusters; ++i)
-    {
-        newClusters[i].points = malloc(sizeof(DataPoint) * dataPointsSize);
-        newClusters[i].size = 0;
-        handleMemoryError(newClusters[i].points);
-    }*/
 
     for (int iteration = 0; iteration < iterations; ++iteration)
     {
@@ -743,9 +667,6 @@ ClusteringResult runKMeans(DataPoints* dataPoints, int iterations, Centroids* ce
     result.partition = partition;
     result.centroids = centroids;
     result.centroidIndex = centroidIndex;
-
-    /*freeClusters(newClusters);
-    newClusters = NULL;*/
 
     return result;
 }
