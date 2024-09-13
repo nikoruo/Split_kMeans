@@ -7,17 +7,17 @@
 #include <float.h>
 
 //Constants for file locations
-const char* DATA_FILENAME = "data/a2.txt";
-const char* GT_FILENAME = "GroundTruth/a2-ga-cb.txt";
+const char* DATA_FILENAME = "data/s3.txt";
+const char* GT_FILENAME = "GroundTruth/s3-cb.txt";
 const char* CENTROID_FILENAME = "outputs/centroid.txt";
 const char* PARTITION_FILENAME = "outputs/partition.txt";
 const char SEPARATOR = ' ';
 
 //and for clustering
-const int NUM_CENTROIDS = 35;  // klustereiden lkm: s = 15, unbalanced = 8, a = 20,35,50 TODO: tarkasta loput aineistot
+const int NUM_CENTROIDS = 15;  // klustereiden lkm: s = 15, unbalanced = 8, a = 20,35,50 TODO: tarkasta loput aineistot
 const int MAX_ITERATIONS = 1000; // k-means rajoitus
 const int MAX_REPEATS = 100; // repeated k-means toistojen lkm, TODO: lopulliseen 100kpl
-const int MAX_SWAPS = 1000; // random swap toistojen lkm, TODO: lopulliseen 1000kpl
+const int MAX_SWAPS = 5000; // random swap toistojen lkm, TODO: lopulliseen 1000kpl
 
 //and for logging
 const int LOGGING = 1; // 1 = basic, 2 = detailed, 3 = debug
@@ -528,8 +528,9 @@ ClusteringResult runKMeans(DataPoints* dataPoints, int iterations, Centroids* ce
         centroidStep(centroids, dataPoints);
 
         // Centroid Index
-        centroidIndex = calculateCentroidIndex(centroids, groundTruth);
-        //DEBUGGING if (LOGGING == 2) printf("(runKMeans)CI after iteration %d: %d\n", iteration + 1, centroidIndex);
+        // DEBUGGING
+        // centroidIndex = calculateCentroidIndex(centroids, groundTruth);
+        // if (LOGGING == 2) printf("(runKMeans)CI after iteration %d: %d\n", iteration + 1, centroidIndex);
 
         // SSE Calculation
         sse = calculateSSE(dataPoints, centroids);
@@ -547,7 +548,7 @@ ClusteringResult runKMeans(DataPoints* dataPoints, int iterations, Centroids* ce
 
     ClusteringResult result;
     result.sse = bestSse;
-    result.centroidIndex = centroidIndex;
+    result.centroidIndex = calculateCentroidIndex(centroids, groundTruth);
 
     return result;
 }
@@ -587,7 +588,7 @@ void randomSwap(DataPoints* dataPoints, Centroids* centroids, Centroids* groundT
         if (result.centroidIndex < bestResult->centroidIndex 
             || result.centroidIndex == bestResult->centroidIndex && result.sse < bestResult->sse)
         {
-			//DEBUGGING if (LOGGING == 1) printf("(RS) Round %d: Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (SSE): %.4f\n", i+1, result.centroidIndex, result.sse / 10000);
+			if (LOGGING == 1) printf("(RS) Round %d: Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (SSE): %.4f\n", i+1, result.centroidIndex, result.sse / 10000);
             
             bestResult->sse = result.sse;
             bestResult->centroidIndex = result.centroidIndex;
@@ -680,8 +681,85 @@ double runSplit(DataPoint* dataPoints, int dataPointsSize, int size)
     return result.sse;
 }*/
 
-//function to calculate Centroid Index (CI)
 int calculateCentroidIndex(Centroids* centroids1, Centroids* centroids2)
+{
+    int countFrom1to2 = 0;
+    int countFrom2to1 = 0;
+    //TODO vanhaa koodi
+    // int biggerSize = (centroids1->size > centroids2->size) ? centroids1->size : centroids2->size;
+
+    int* closest = calloc(centroids2->size, sizeof(int));   
+    handleMemoryError(closest);
+
+    // C1 -> C2
+    for (int i = 0; i < centroids1->size; ++i)
+    {
+        double minDistance = DBL_MAX;
+        int closestIndex = -1;
+
+        for (int j = 0; j < centroids2->size; ++j)
+        {
+            double distance = calculateEuclideanDistance(&centroids1->points[i], &centroids2->points[j]);
+            if (distance < minDistance)
+            {
+                minDistance = distance;
+                closestIndex = j;
+            }
+        }
+
+        if (closestIndex != -1)
+        {
+            closest[closestIndex]++;
+        }
+    }
+
+    for (int i = 0; i < centroids2->size; ++i)
+    {
+        if (closest[i] == 0)
+        {
+            countFrom1to2++;
+        }
+    }
+
+    free(closest);
+    closest = calloc(centroids2->size, sizeof(int));
+    handleMemoryError(closest);
+    // C2 -> C1
+    for (int i = 0; i < centroids2->size; ++i)
+    {
+        double minDistance = DBL_MAX;
+        int closestIndex = -1;
+
+        for (int j = 0; j < centroids1->size; ++j)
+        {
+            double distance = calculateEuclideanDistance(&centroids2->points[i], &centroids1->points[j]);
+            if (distance < minDistance)
+            {
+                minDistance = distance;
+                closestIndex = j;
+            }
+        }
+
+        if (closestIndex != -1)
+        {
+            closest[closestIndex]++;
+        }
+    }
+
+    for (int i = 0; i < centroids1->size; ++i)
+    {
+        if (closest[i] == 0)
+        {
+            countFrom2to1++;
+        }
+    }
+
+    free(closest);
+    return (countFrom1to2 > countFrom2to1) ? countFrom1to2 : countFrom2to1;
+}
+
+//function to calculate Centroid Index (CI)
+/*int calculateCentroidIndex(Centroids* centroids1, Centroids* centroids2)
 {
     int countFrom1to2 = countOrphans(centroids1, centroids2);
     int countFrom2to1 = countOrphans(centroids2, centroids1);
@@ -692,9 +770,10 @@ int calculateCentroidIndex(Centroids* centroids1, Centroids* centroids2)
 //function to count orphans (helper for calculateCentroidIndex)
 int countOrphans(Centroids* centroids1, Centroids* centroids2)
 {
-    int unmatchedCount = 0;
     int* closest = calloc(centroids2->size, sizeof(int));
     handleMemoryError(closest);
+
+	int countFrom1to2 = 0;
 
     for (int i = 0; i < centroids1->size; ++i)
     {
@@ -721,13 +800,14 @@ int countOrphans(Centroids* centroids1, Centroids* centroids2)
     {
         if (closest[i] == 0)
         {
-            unmatchedCount++;
+            countFrom1to2++;
         }
     }
 
     free(closest);
-    return unmatchedCount;
-}
+
+    return countFrom1to2;
+}*/
 
 ///////////
 // Main //
