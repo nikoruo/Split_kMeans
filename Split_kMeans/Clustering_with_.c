@@ -613,7 +613,6 @@ Centroids* centroidStep(int numClusters, DataPoints* dataPoints)
 // Function to run the k-means algorithm
 ClusteringResult runKMeans(DataPoints* dataPoints, int iterations, Centroids* centroids, Centroids* groundTruth)
 {
-    int stopCounter = 0;
     double bestSse = DBL_MAX;
     int centroidIndex = -1;
     double sse = DBL_MAX;
@@ -640,11 +639,10 @@ ClusteringResult runKMeans(DataPoints* dataPoints, int iterations, Centroids* ce
         if (sse < bestSse)
         {
             bestSse = sse;
-			stopCounter = 0;
         }
         else
         {
-            stopCounter++;
+            break; //TODO: break toimii, mutta on aika ruma ratkaisu
         }
 
         // Assuming newCentroids is calculated as the average of data points in each cluster
@@ -655,11 +653,6 @@ ClusteringResult runKMeans(DataPoints* dataPoints, int iterations, Centroids* ce
         }
         free(newCentroids); //freeDataPoints(newCentroids) <- TODO: miksei toimi?
         newCentroids = NULL;
-
-        if (stopCounter == 3)
-        {
-            break;
-        }
     }
 
     ClusteringResult result;
