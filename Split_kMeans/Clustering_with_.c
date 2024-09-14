@@ -23,7 +23,7 @@ const int NUM_CENTROIDS = 15;
 // for clustering
 const int MAX_ITERATIONS = 1000; // k-means rajoitus
 const int MAX_REPEATS = 100; // repeated k-means toistojen lkm, TODO: lopulliseen 100kpl
-const int MAX_SWAPS = 5000; // random swap toistojen lkm, TODO: lopulliseen 1000kpl
+const int MAX_SWAPS = 1000; // random swap toistojen lkm, TODO: lopulliseen 1000kpl
 
 // for logging
 const int LOGGING = 1; // 1 = basic, 2 = detailed, 3 = debug
@@ -47,7 +47,7 @@ typedef struct
 typedef struct
 {
     DataPoint* points;
-    int size;
+    size_t size;
 } Centroids;
 
 typedef struct
@@ -288,10 +288,10 @@ void writeCentroidsToFile(const char* filename, DataPoint* centroids, int numCen
         {
             fprintf(centroidFile, "%f ", centroids[i].attributes[j]);
         }
-        fprintf(centroidFile, "\n"); //false positive
+        fprintf(centroidFile, "\n");
     }
 
-    fclose(centroidFile); //false positive
+    fclose(centroidFile);
     printf("Centroid file created successfully: %s\n", filename);
 }
 
@@ -326,9 +326,9 @@ void deepCopyDataPoint(DataPoint* destination, DataPoint* source)
 }
 
 //Funtion to create deep copies of data points
-void deepCopyDataPoints(DataPoint* destination, DataPoint* source, int size)
+void deepCopyDataPoints(DataPoint* destination, DataPoint* source, size_t size)
 {
-	for (int i = 0; i < size; ++i)
+	for (size_t i = 0; i < size; ++i)
 	{
 		destination[i].dimensions = source[i].dimensions;
 		destination[i].attributes = malloc(source[i].dimensions * sizeof(double));
@@ -338,12 +338,12 @@ void deepCopyDataPoints(DataPoint* destination, DataPoint* source, int size)
 }
 
 //Funtion to copy centroids
-void copyCentroids(Centroids* source, Centroids* destination, int numCentroids)
+void copyCentroids(Centroids* source, Centroids* destination, size_t numCentroids)
 {
     destination->size = source->size;
     destination->points = malloc(numCentroids * sizeof(DataPoint));
     handleMemoryError(destination->points);
-    for (int i = 0; i < numCentroids; ++i)
+    for (size_t i = 0; i < numCentroids; ++i)
     {
         destination->points[i].dimensions = source->points[i].dimensions;
         deepCopyDataPoint(&destination->points[i], &source->points[i]);
@@ -356,7 +356,7 @@ void copyCentroids(Centroids* source, Centroids* destination, int numCentroids)
 // 
 // Function to choose random data points to be centroids
 //TODO poista numCentroids täältä
-void generateRandomCentroids(int numCentroids, DataPoints* dataPoints, DataPoint* centroids)
+void generateRandomCentroids(size_t numCentroids, DataPoints* dataPoints, DataPoint* centroids)
 {    
     /*DEBUGGING
     if (dataPoints->size < numCentroids)
@@ -375,8 +375,8 @@ void generateRandomCentroids(int numCentroids, DataPoints* dataPoints, DataPoint
 
     for (size_t i = 0; i < numCentroids; ++i)
     {
-        int j = i + rand() % (dataPoints->size - i);
-        int temp = indices[i];
+        size_t j = i + rand() % (dataPoints->size - i);
+        size_t temp = indices[i];
         indices[i] = indices[j];
         indices[j] = temp;
     }
@@ -426,7 +426,7 @@ size_t findNearestCentroid(DataPoint* queryPoint, Centroids* targetCentroids)
         exit(EXIT_FAILURE);
     }*/
 
-    size_t nearestCentroidId = -1;
+    size_t nearestCentroidId = SIZE_MAX;
     double minDistance = DBL_MAX;
 	double newDistance = DBL_MAX;
 
@@ -454,7 +454,7 @@ void optimalPartition(DataPoints* dataPoints, Centroids* centroids)
         exit(EXIT_FAILURE);
     }*/
 
-	size_t nearestCentroidId = -1;
+	size_t nearestCentroidId = SIZE_MAX;
 
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
@@ -466,7 +466,7 @@ void optimalPartition(DataPoints* dataPoints, Centroids* centroids)
 // Function to perform the centroid step in k-means
 void centroidStep(Centroids* centroids, DataPoints* dataPoints)
 {
-    int numClusters = centroids->size;
+    size_t numClusters = centroids->size;
     size_t dimensions = dataPoints->points[0].dimensions;
 
     // Temporary storage for sums and counts
@@ -517,7 +517,7 @@ void centroidStep(Centroids* centroids, DataPoints* dataPoints)
     free(counts);
 }
 
-//function to count orphans (helper for calculateCentroidIndex)
+// Function to count orphans (helper for calculateCentroidIndex)
 size_t countOrphans(Centroids* centroids1, Centroids* centroids2)
 {
     size_t* closest = calloc(centroids2->size, sizeof(size_t));
@@ -571,7 +571,7 @@ size_t calculateCentroidIndex(Centroids* centroids1, Centroids* centroids2)
 ClusteringResult runKMeans(DataPoints* dataPoints, int iterations, Centroids* centroids, Centroids* groundTruth)
 {
     double bestSse = DBL_MAX;
-    int centroidIndex = -1;
+    size_t centroidIndex = SIZE_MAX;
     double sse = DBL_MAX;
 
     for (int iteration = 0; iteration < iterations; ++iteration)
@@ -591,7 +591,7 @@ ClusteringResult runKMeans(DataPoints* dataPoints, int iterations, Centroids* ce
         sse = calculateMSE(dataPoints, centroids);
         //DEBUGGING if (LOGGING == 2) printf("(runKMeans)Total SSE after iteration %d: %.0f\n", iteration + 1, sse / 10000000);
 
-        if (LOGGING == 2) printf("(runKMeans)After iteration %d: CI = %d and MSE = %.5f\n", iteration + 1, centroidIndex, sse/10000);
+        if (LOGGING == 2) printf("(runKMeans)After iteration %d: CI = %zu and MSE = %.5f\n", iteration + 1, centroidIndex, sse/10000);
 
 
         if (sse < bestSse)
@@ -646,7 +646,7 @@ void randomSwap(DataPoints* dataPoints, Centroids* centroids, Centroids* groundT
         if (result.centroidIndex < bestResult->centroidIndex 
             || result.centroidIndex == bestResult->centroidIndex && result.sse < bestResult->sse)
         {
-			if (LOGGING == 1) printf("(RS) Round %d: Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (MSE): %.4f\n", i+1, result.centroidIndex, result.sse / 10000);
+			if (LOGGING == 1) printf("(RS) Round %d: Best Centroid Index (CI): %zu and Best Sum-of-Squared Errors (MSE): %.5f\n", i+1, result.centroidIndex, result.sse / 10000);
             
             bestResult->sse = result.sse;
             bestResult->centroidIndex = result.centroidIndex;
@@ -659,92 +659,205 @@ void randomSwap(DataPoints* dataPoints, Centroids* centroids, Centroids* groundT
     }
 }
 
-/*
-So this need to be refactored into split k-means
-This requires a lot of work, and is not currently in use
-Initial version from KLU course used high level of randomization
-
-// Function to run the split k-means algorithm
-double runSplit(DataPoint* dataPoints, int dataPointsSize, int size)
+//TODO: huono toteutus, jotta pääsee muuta koodia testaamaaan
+//tässä luotetaan nyt siihen, että voi verrata onko piste = piste
+//mitä ei missään tapauksessa pitäisi tehdä
+//refaktoroi myöhemmin käyttämään indeksejä
+int findOriginalIndex(DataPoints* originalDataPoints, DataPoint point)
 {
-    DataPoint* centroids = generateRandomCentroids(1, dataPoints, dataPointsSize);
-    int* partition = malloc(sizeof(int) * dataPointsSize);
-    handleMemoryError(partition);
-
-    for (int i = 0; i < dataPointsSize; ++i)
+    for (int i = 0; i < originalDataPoints->size; ++i)
     {
-        partition[i] = 0;
-    }
-
-    double sse = 0;
-
-    while (numCentroids(centroids) != size)
-    {
-        int c = selectRandomly(centroids);
-
-        int* indexes = malloc(sizeof(int) * dataPointsSize);
-        handleMemoryError(indexes);
-        DataPoint* dpoints = malloc(sizeof(DataPoint) * dataPointsSize);
-        handleMemoryError(dpoints);
-
-        int indexCount = 0;
-        for (int i = 0; i < dataPointsSize; ++i)
+        if (memcmp(originalDataPoints->points[i].attributes, point.attributes, point.dimensions * sizeof(double)) == 0)
         {
-            if (partition[i] == c)
+            return i;
+        }
+    }
+    return -1;
+}
+
+// Function to run the split k-means algorithm with random splitting
+//TODO: kesken
+ClusteringResult runRandomSplit(DataPoints* dataPoints, Centroids* centroids, int maxCentroids, int maxIterations, Centroids* groundTruth)
+{
+    double sse = 0.0;
+    size_t currentNumCentroids = centroids->size;
+
+    optimalPartition(dataPoints, centroids);
+
+    centroidStep(centroids, dataPoints);
+
+    while(centroids->size < maxCentroids)
+    {
+        //TODO: 1.versio valitaan randomilla
+        size_t clusterToSplit = rand() % centroids->size;
+
+		//TODO: Pitääkö kerätä kaikki pisteet, jotka kuuluvat klusteriin?
+        DataPoints pointsInCluster;
+        pointsInCluster.size = 0;
+        pointsInCluster.points = malloc(dataPoints->size * sizeof(DataPoint));
+        handleMemoryError(pointsInCluster.points);
+
+        for (int i = 0; i < dataPoints->size; ++i)
+        {
+            if (dataPoints->points[i].partition == clusterToSplit)
             {
-                indexes[indexCount] = i;
-                dpoints[indexCount] = dataPoints[i];
-                indexCount++;
+                pointsInCluster.points[pointsInCluster.size++] = dataPoints->points[i];
             }
         }
 
-        int c1 = indexes[selectRandomly(indexes)];
-        int c2 = c1;
-        centroids[c] = dataPoints[c1];
-
-        while (c2 == c1)
+        //TODO: testaa myös ilman tätä <- tehokkuus
+        if (pointsInCluster.size < 2)
         {
-            c2 = indexes[selectRandomly(indexes)];
-        }
-        addCentroid(&centroids, dataPoints[c2]);
-
-        DataPoint* newCentroids = malloc(sizeof(DataPoint) * 2);
-        handleMemoryError(newCentroids);
-        newCentroids[0] = dataPoints[c1];
-        newCentroids[1] = dataPoints[c2];
-
-        ClusteringResult result = runKMeans(dpoints, indexCount, 5, newCentroids, 2);
-
-        int c1index = findCentroidIndex(centroids, dataPoints[c1]);
-        int c2index = findCentroidIndex(centroids, dataPoints[c2]);
-
-        for (int i = 0; i < result.partitionSize; ++i)
-        {
-            partition[indexes[i]] = result.partition[i] == 0 ? c1index : c2index;
+            free(pointsInCluster.points);
+            continue;
         }
 
-        sse = result.sse;
+        //TODO: Klusterin jakaminen
+            //TODO: Valitaan randomilla kaksi pistettä
+        int index1 = rand() % pointsInCluster.size;
+        int index2 = index1;
+        while (index2 == index1)
+        {
+            index2 = rand() % pointsInCluster.size;
+        }
 
-        free(indexes);
-        free(dpoints);
-        free(newCentroids);
+        //TODO: Lokaali k-means
+        Centroids localCentroids;
+        localCentroids.size = 2;
+        localCentroids.points = malloc(2 * sizeof(DataPoint));
+        handleMemoryError(localCentroids.points);
+        deepCopyDataPoint(&localCentroids.points[0], &pointsInCluster.points[index1]);
+        deepCopyDataPoint(&localCentroids.points[1], &pointsInCluster.points[index2]);
+
+		    //TODO: rajoitetaanko lokaalin k-meansin iteraatiot?
+        ClusteringResult localResult = runKMeans(&pointsInCluster, MAX_ITERATIONS, &localCentroids, groundTruth);
+
+        //TODO: rakenteiden päivitys
+        for (int i = 0; i < pointsInCluster.size; ++i)
+        {
+			int originalIndex = findOriginalIndex(dataPoints, pointsInCluster.points[i]); //<-- Refaktoroi käyttämään indeksejä, piste == piste on huono
+            dataPoints->points[originalIndex].partition = (pointsInCluster.points[i].partition == 0) ? clusterToSplit : centroids->size;
+        }
+
+        centroids->size++;
+        centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint));
+        handleMemoryError(centroids->points);
+        deepCopyDataPoint(&centroids->points[centroids->size - 1], &localCentroids.points[1]);
+
+		size_t ci = calculateCentroidIndex(centroids, groundTruth);
+		double mse = calculateMSE(dataPoints, centroids);
+
+        if(LOGGING == 1) printf("Number of centroids: %zu, CI: %zu, and MSE: %.5f \n", centroids->size, ci, mse / 10000);
+
+        free(pointsInCluster.points);
+        free(localCentroids.points);
+        //free(localResult.partition);
+
+        currentNumCentroids++;
+    }	
+
+    //TODO: globaali k-means  
+    ClusteringResult finalResult = runKMeans(dataPoints, MAX_ITERATIONS, centroids, groundTruth);
+
+    return finalResult;
+}
+
+// Function to run the split k-means algorithm with tentative splitting (choosing to split the one that reduces the MSE the most)
+//TODO: kesken
+ClusteringResult runTentativeSplit(DataPoints* dataPoints, Centroids* centroids, int maxCentroids, int maxIterations, Centroids* groundTruth)
+{
+    double sse = 0.0;
+    size_t currentNumCentroids = centroids->size;
+
+    optimalPartition(dataPoints, centroids);
+    centroidStep(centroids, dataPoints);
+
+    while (centroids->size < maxCentroids)
+    {
+        //TODO: 2.versio valitaan siten, että MSE pienenee eniten
+        //Tähän pitää kehittää MSE laskentaa, jotta voidaan valita paras jako
+        int clusterToSplit = rand() % centroids->size;
+
+        //TODO: Pitääkö kerätä kaikki pisteet, jotka kuuluvat klusteriin?
+        DataPoints pointsInCluster;
+        pointsInCluster.size = 0;
+        pointsInCluster.points = malloc(dataPoints->size * sizeof(DataPoint));
+        handleMemoryError(pointsInCluster.points);
+
+        for (int i = 0; i < dataPoints->size; ++i)
+        {
+            if (dataPoints->points[i].partition == clusterToSplit)
+            {
+                pointsInCluster.points[pointsInCluster.size++] = dataPoints->points[i];
+            }
+        }
+
+        //TODO: testaa myös ilman tätä <- tehokkuus
+        if (pointsInCluster.size < 2)
+        {
+            free(pointsInCluster.points);
+            continue;
+        }
+
+        //TODO: Klusterin jakaminen
+            //TODO: Valitaan randomilla kaksi pistettä
+        int index1 = rand() % pointsInCluster.size;
+        int index2 = index1;
+        while (index2 == index1)
+        {
+            index2 = rand() % pointsInCluster.size;
+        }
+
+        //TODO: Lokaali k-means
+        Centroids localCentroids;
+        localCentroids.size = 2;
+        localCentroids.points = malloc(2 * sizeof(DataPoint));
+        handleMemoryError(localCentroids.points);
+        deepCopyDataPoint(&localCentroids.points[0], &pointsInCluster.points[index1]);
+        deepCopyDataPoint(&localCentroids.points[1], &pointsInCluster.points[index2]);
+
+        //TODO: rajoitetaanko lokaalin k-meansin iteraatiot?
+        ClusteringResult localResult = runKMeans(&pointsInCluster, MAX_ITERATIONS, &localCentroids, groundTruth);
+
+        //TODO: rakenteiden päivitys
+        for (int i = 0; i < pointsInCluster.size; ++i)
+        {
+            int originalIndex = findOriginalIndex(dataPoints, pointsInCluster.points[i]); //<-- Refaktoroi käyttämään indeksejä, piste == piste on huono
+            dataPoints->points[originalIndex].partition = (pointsInCluster.points[i].partition == 0) ? clusterToSplit : centroids->size;
+        }
+
+        centroids->size++;
+        centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint));
+        handleMemoryError(centroids->points);
+        deepCopyDataPoint(&centroids->points[centroids->size - 1], &localCentroids.points[1]);
+
+        size_t ci = calculateCentroidIndex(centroids, groundTruth);
+        double mse = calculateMSE(dataPoints, centroids);
+
+        if (LOGGING == 1) printf("Number of centroids: %zu, CI: %zu, and MSE: %.5f \n", centroids->size, ci, mse / 10000);
+
+        free(pointsInCluster.points);
+        free(localCentroids.points);
+        //free(localResult.partition);
+
+        currentNumCentroids++;
     }
 
-    ClusteringResult result = runKMeans(dataPoints, dataPointsSize, MAX_ITERATIONS, centroids, numCentroids(centroids));
-    printf("Split without global kmeans : %f\n", calculateSSE(dataPoints, dataPointsSize, centroids, numCentroids(centroids), partition));
+    //TODO: globaali k-means  
+    ClusteringResult finalResult = runKMeans(dataPoints, MAX_ITERATIONS, centroids, groundTruth);
 
-    free(partition);
-    free(centroids);
-
-    return result.sse;
-}*/
-
-
-//TODO käy läpi size_t muuttujat, int on parempi jos voi olla negatiivinen
+    return finalResult;
+}
 
 ///////////
 // Main //
 /////////
+
+//TODO käy läpi size_t muuttujat, int on parempi jos voi olla negatiivinen
+//TODO disabloidaanko false positive varoitukset?
+//TODO: tee consteista paikallisia muuttujia
+//TODO: kommentoi kaikki muistintarkastukset pois lopullisesta versiosta <-tehokkuus?
+
 int main()
 {
 	// Seeding the random number generator
@@ -808,7 +921,7 @@ int main()
         }
 
         //printf("(K-means)Best Centroid Index (CI): %d and Best Mean Sum-of-Squared Errors (MSE): %.4f\n\n", result0.centroidIndex, result0.sse / 10000);
-                
+        /*
         ///////////////////////
         // Repeated k-means //
         /////////////////////
@@ -829,7 +942,7 @@ int main()
         bestResult1.centroidIndex = INT_MAX;
 
         Centroids centroids1;
-        centroids1.size = NUM_CENTROIDS; //TODO: tee constista paikallinen muuttuja
+        centroids1.size = NUM_CENTROIDS;
         centroids1.points = malloc(NUM_CENTROIDS * sizeof(DataPoint));
         handleMemoryError(centroids1.points);
         for (int i = 0; i < NUM_CENTROIDS; ++i)
@@ -851,7 +964,7 @@ int main()
             // K-means
             result1 = runKMeans(&dataPoints, maxIterations, &centroids1, &groundTruth);
 
-			if(LOGGING == 2) printf("(RKM) Round %d: Latest Centroid Index (CI): %d and Latest Mean Sum-of-Squared Errors (MSE): %.4f\n", repeat, result1.centroidIndex, result1.sse / 10000);
+			if(LOGGING == 2) printf("(RKM) Round %d: Latest Centroid Index (CI): %zu and Latest Mean Sum-of-Squared Errors (MSE): %.4f\n", repeat, result1.centroidIndex, result1.sse / 10000);
             
             if (result1.centroidIndex < bestResult1.centroidIndex 
                 || (result1.centroidIndex == bestResult1.centroidIndex && result1.sse < bestResult1.sse))
@@ -869,7 +982,7 @@ int main()
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
         printf("(Repeated k-means)Time taken: %.2f seconds\n\n", duration);
-        //printf("(Repeated K-means)Best Centroid Index (CI): %d and Best Mean Sum-of-Squared Errors (MSE): %.4f\n", bestResult1.centroidIndex, bestResult1.sse / 10000);
+        //printf("(Repeated K-means)Best Centroid Index (CI): %zu and Best Mean Sum-of-Squared Errors (MSE): %.4f\n", bestResult1.centroidIndex, bestResult1.sse / 10000);
         
         
         //////////////////
@@ -914,15 +1027,41 @@ int main()
         memcpy(result2.partition, dataPoints.points, dataPoints.size * sizeof(int));
 
         printf("(Random Swap)Time taken: %.2f seconds\n\n", duration);
-
+        */
         ////////////////////
         // Split k-means //
         //////////////////
+        ClusteringResult result3;
+
+        result3.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint));
+        handleMemoryError(result3.centroids);
+        for (int i = 0; i < NUM_CENTROIDS; ++i)
+        {
+            result3.centroids[i].attributes = malloc(numDimensions * sizeof(double));
+            handleMemoryError(result3.centroids[i].attributes);
+        }
+        result3.partition = malloc(dataPoints.size * sizeof(int));
+        handleMemoryError(result3.partition);
+        result3.centroidIndex = INT_MAX;
+        result3.sse = DBL_MAX;
+
+        Centroids centroids3;
+        centroids3.size = 1;
+        centroids3.points = malloc(NUM_CENTROIDS * sizeof(DataPoint));
+        handleMemoryError(centroids3.points);
+        for (int i = 0; i < NUM_CENTROIDS; ++i)
+        {
+            centroids3.points[i].attributes = malloc(numDimensions * sizeof(double));
+            handleMemoryError(centroids3.points[i].attributes);
+        }
+
+        generateRandomCentroids(centroids.size, &dataPoints, centroids3.points);
+
         printf("Split k-means\n");
+
         start = clock();
 
-        //not refactored yet
-        //double bestSse4 = runSplit(dataPoints, dataPoints.size, NUM_CENTROIDS);
+        result3 = runRandomSplit(&dataPoints, &centroids3, NUM_CENTROIDS, 2, &groundTruth);
 
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
@@ -931,28 +1070,28 @@ int main()
         /////////////
         // Prints //
         ///////////
-        printf("(K-means)Best Centroid Index (CI): %d and Best Mean Sum-of-Squared Errors (MSE): %.4f\n", result0.centroidIndex, result0.sse / 10000);
-        printf("(Repeated K-means)Best Centroid Index (CI): %d and Mean Best Sum-of-Squared Errors (MSE): %.4f\n", bestResult1.centroidIndex, bestResult1.sse / 10000);
-        printf("(Random Swap)Best Centroid Index (CI): %d and Best Mean Sum-of-Squared Errors (MSE): %.4f\n", result2.centroidIndex, result2.sse / 10000);
-        //printf("(Split)Best Centroid Index (CI): %d and best Sum-of-Squared Errors (MSE): %f\n", result3.centroidIndex, result3.sse / 10000000);
+        printf("(K-means)Best Centroid Index (CI): %zu and Best Mean Sum-of-Squared Errors (MSE): %.4f\n", result0.centroidIndex, result0.sse / 10000);
+        //printf("(Repeated K-means)Best Centroid Index (CI): %zu and Mean Best Sum-of-Squared Errors (MSE): %.4f\n", bestResult1.centroidIndex, bestResult1.sse / 10000);
+        //printf("(Random Swap)Best Centroid Index (CI): %zu and Best Mean Sum-of-Squared Errors (MSE): %.4f\n", result2.centroidIndex, result2.sse / 10000);
+        printf("(Split)Best Centroid Index (CI): %zu and best Sum-of-Squared Errors (MSE): %f\n", result3.centroidIndex, result3.sse / 10000);
 
 
         ///////////////
         // Clean up //
         /////////////
         
-        //DEBUGGING if (LOGGING == 2) printf("Muistin vapautus\n");
+        //DEBUGGING if (LOGGING == 2) printf("Freeing memory\n");
         //K-means
 		freeClusteringResult(&result0);
         freeCentroids(&centroids);
 
 		//Repeated k-means
-        freeClusteringResult(&bestResult1);
+        /*freeClusteringResult(&bestResult1);
 		freeCentroids(&centroids1);
 
         //Random Swap
 		freeClusteringResult(&result2);
-		freeCentroids(&centroids2);
+		freeCentroids(&centroids2);*/
 
         //Split k-means
 
@@ -961,7 +1100,7 @@ int main()
         freeDataPoints(&dataPoints);
 
 		//Ground truth
-		freeDataPoints(&groundTruth);
+		freeCentroids(&groundTruth);
         
         return 0;
     }
