@@ -1223,7 +1223,7 @@ int main()
         //printf("(Repeated K-means)Best Centroid Index (CI): %zu and Mean Best Sum-of-Squared Errors (MSE): %.5f\n", bestResult1.centroidIndex, bestResult1.mse / 10000);
         printf("(Random Swap)Best Centroid Index (CI): %zu and Best Mean Sum-of-Squared Errors (MSE): %.5f\n", result2.centroidIndex, result2.mse / 10000);
         printf("(Split1)Best Centroid Index (CI): %zu and best Sum-of-Squared Errors (MSE): %.5f\n", result3.centroidIndex, result3.mse / 10000);
-        printf("(Split2)Best Centroid Index (CI): %zu and best Sum-of-Squared Errors (MSE): %f\n", result4.centroidIndex, result4.mse / 10000);
+        printf("(Split2)Best Centroid Index (CI): %zu and best Sum-of-Squared Errors (MSE): %.5f\n", result4.centroidIndex, result4.mse / 10000);
 
 
         ///////////////
