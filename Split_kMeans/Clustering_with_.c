@@ -553,10 +553,9 @@ size_t calculateCentroidIndex(Centroids* centroids1, Centroids* centroids2)
 }
 
 // Function to run the k-means algorithm
-ClusteringResult runKMeans(DataPoints* dataPoints, int iterations, Centroids* centroids, Centroids* groundTruth)
+ClusteringResult runKMeans(DataPoints* dataPoints, int iterations, Centroids* centroids, Centroids* groundTruth) //TODO: groundTruth ei tarvita t‰‰ll‰, niin pois?
 {
     double bestMse = DBL_MAX;
-    size_t centroidIndex = SIZE_MAX;
     double mse = DBL_MAX;
 
     for (size_t iteration = 0; iteration < iterations; ++iteration)
@@ -566,24 +565,20 @@ ClusteringResult runKMeans(DataPoints* dataPoints, int iterations, Centroids* ce
 
         // Centroid step
         centroidStep(centroids, dataPoints);
-                
-        /*DEBUGGING Centroid Index
-        if (LOGGING == 1)
-        {
-            centroidIndex = calculateCentroidIndex(centroids, groundTruth);
-            printf("(runKMeans)CI after iteration %d: %d\n", iteration + 1, centroidIndex);
-        }*/
-
+        
         // MSE Calculation
         mse = calculateMSE(dataPoints, centroids);
-        //DEBUGGING if (LOGGING == 2) printf("(runKMeans)Total MSE after iteration %d: %.0f\n", iteration + 1, mse / 10000000);
 
-        if (LOGGING == 2) printf("(runKMeans)After iteration %zu: CI = %zu and MSE = %.5f\n", iteration + 1, centroidIndex, mse /10000);
+        if (LOGGING == 2)
+        {
+			size_t centroidIndex = calculateCentroidIndex(centroids, groundTruth);
+            printf("(runKMeans)After iteration %zu: CI = %zu and MSE = %.5f\n", iteration + 1, centroidIndex, mse / 10000);
+        }
 
 
         if (mse < bestMse)
         {
-			//printf("Best MSE so far: %.0f\n", mse);
+			//if (LOGGING == 2) printf("Best MSE so far: %.5f\n", mse / 10000);
             bestMse = mse;
         }
         else
@@ -594,7 +589,6 @@ ClusteringResult runKMeans(DataPoints* dataPoints, int iterations, Centroids* ce
 
     ClusteringResult result;
     result.mse = bestMse;
-    result.centroidIndex = calculateCentroidIndex(centroids, groundTruth);
     return result;
 }
 
@@ -629,15 +623,17 @@ void randomSwap(DataPoints* dataPoints, Centroids* centroids, Centroids* groundT
         //K-means
         ClusteringResult result = runKMeans(dataPoints, kMeansIterations, centroids, groundTruth);
 
-        //If 1) CI or 2) MSE improves, we keep the change
+        //If 1) MSE improves, we keep the change
         //if not, we reverse the swap
-        if (result.centroidIndex < bestResult->centroidIndex 
-            || result.centroidIndex == bestResult->centroidIndex && result.mse < bestResult->mse)
+        if (result.mse < bestResult->mse)
         {
-			if (LOGGING == 1) printf("(RS) Round %d: Best Centroid Index (CI): %zu and Best Sum-of-Squared Errors (MSE): %.5f\n", i+1, result.centroidIndex, result.mse / 10000);
+            if (LOGGING == 1)
+            {
+				result.centroidIndex = calculateCentroidIndex(centroids, groundTruth);
+                printf("(RS) Round %d: Best Centroid Index (CI): %zu and Best Sum-of-Squared Errors (MSE): %.5f\n", i + 1, result.centroidIndex, result.mse / 10000);
+            }
             
             bestResult->mse = result.mse;
-            bestResult->centroidIndex = result.centroidIndex;
             deepCopyDataPoints(bestResult->centroids, centroids->points, centroids->size);
         }
         else
@@ -902,8 +898,11 @@ int main()
         clock_t start = clock();
 
         generateRandomCentroids(NUM_CENTROIDS, &dataPoints, centroids.points);
-		size_t centroidIndex = calculateCentroidIndex(&centroids, &groundTruth);
-		if (LOGGING == 1) printf("(K-means)Initial Centroid Index (CI): %zu\n", centroidIndex);
+		
+        if (LOGGING == 1) { 
+            size_t centroidIndex = calculateCentroidIndex(&centroids, &groundTruth);
+            printf("(K-means)Initial Centroid Index (CI): %zu\n", centroidIndex); 
+        }
 
         ClusteringResult result0 = runKMeans(&dataPoints, maxIterations, &centroids, &groundTruth);
         //DEBUGGING if(LOGGING == 2) printf("(K-means)Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (MSE): %.4f\n", result0.centroidIndex, result0.mse / 10000000);
@@ -912,6 +911,8 @@ int main()
         double duration = ((double)(end - start)) / CLOCKS_PER_SEC;
 
         printf("(K-means)Time taken: %f seconds\n\n", duration);
+
+		result0.centroidIndex = calculateCentroidIndex(&centroids, &groundTruth);
 
         result0.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint));
         handleMemoryError(result0.centroids);
@@ -927,7 +928,7 @@ int main()
         ///////////////////////
         // Repeated k-means //
         /////////////////////
-        printf("Repeated K-means\n");
+        /*printf("Repeated K-means\n");
 
         ClusteringResult result1;        
         ClusteringResult bestResult1;
@@ -968,13 +969,11 @@ int main()
 
 			if(LOGGING == 2) printf("(RKM) Round %d: Latest Centroid Index (CI): %zu and Latest Mean Sum-of-Squared Errors (MSE): %.4f\n", repeat, result1.centroidIndex, result1.mse / 10000);
             
-            if (result1.centroidIndex < bestResult1.centroidIndex 
-                || (result1.centroidIndex == bestResult1.centroidIndex && result1.mse < bestResult1.mse))
+            if (result1.mse < bestResult1.mse)
             {
 				deepCopyDataPoints(bestResult1.centroids, centroids1.points, NUM_CENTROIDS);
                 bestResult1.mse = result1.mse;
-                bestResult1.centroidIndex = result1.centroidIndex;
-                for (size_t i = 0; i < dataPoints.size; ++i)
+                for (size_t i = 0; i < dataPoints.size; ++i) //TODO: halutaanko t‰t‰ loopata timerin sis‰ll‰?
                 {
                     bestResult1.partition[i] = dataPoints.points[i].partition;
                 }
@@ -984,8 +983,10 @@ int main()
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
         printf("(Repeated k-means)Time taken: %.2f seconds\n\n", duration);
+
+		bestResult1.centroidIndex = calculateCentroidIndex(&bestResult1.centroids, &groundTruth);
         //printf("(Repeated K-means)Best Centroid Index (CI): %zu and Best Mean Sum-of-Squared Errors (MSE): %.4f\n", bestResult1.centroidIndex, bestResult1.mse / 10000);
-        
+        */
         
         //////////////////
         // Random Swap //
@@ -1024,6 +1025,8 @@ int main()
 
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
+
+		result2.centroidIndex = calculateCentroidIndex(&centroids2, &groundTruth);
 
         //Update partition array
         memcpy(result2.partition, dataPoints.points, dataPoints.size * sizeof(int));
@@ -1069,11 +1072,13 @@ int main()
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
         printf("(Split1)Time taken: %.2f seconds\n\n", duration);
 
+		result3.centroidIndex = calculateCentroidIndex(&centroids3, &groundTruth);
+
         /////////////
         // Prints //
         ///////////
         printf("(K-means)Best Centroid Index (CI): %zu and Best Mean Sum-of-Squared Errors (MSE): %.5f\n", result0.centroidIndex, result0.mse / 10000);
-        printf("(Repeated K-means)Best Centroid Index (CI): %zu and Mean Best Sum-of-Squared Errors (MSE): %.5f\n", bestResult1.centroidIndex, bestResult1.mse / 10000);
+        //printf("(Repeated K-means)Best Centroid Index (CI): %zu and Mean Best Sum-of-Squared Errors (MSE): %.5f\n", bestResult1.centroidIndex, bestResult1.mse / 10000);
         printf("(Random Swap)Best Centroid Index (CI): %zu and Best Mean Sum-of-Squared Errors (MSE): %.5f\n", result2.centroidIndex, result2.mse / 10000);
         printf("(Split1)Best Centroid Index (CI): %zu and best Sum-of-Squared Errors (MSE): %.5f\n", result3.centroidIndex, result3.mse / 10000);
         //printf("(Split2)Best Centroid Index (CI): %zu and best Sum-of-Squared Errors (MSE): %f\n", result4.centroidIndex, result4.mse / 10000);
