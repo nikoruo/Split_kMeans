@@ -7,14 +7,14 @@
 #include <float.h>
 
 //Constants for file locations
-const char* DATA_FILENAME = "data/unbalance.txt";
-const char* GT_FILENAME = "GroundTruth/unbalance-gt.txt";
+const char* DATA_FILENAME = "data/s3.txt";
+const char* GT_FILENAME = "GroundTruth/s3-cb.txt";
 const char* CENTROID_FILENAME = "outputs/centroid.txt";
 const char* PARTITION_FILENAME = "outputs/partition.txt";
 const char SEPARATOR = ' ';
 
 //for centroids
-const int NUM_CENTROIDS = 8;
+const int NUM_CENTROIDS = 15;
 // s            = 15
 // unbalanced   = 8 
 // a            = 20,35,50 
@@ -401,7 +401,6 @@ double calculateSSE(DataPoints* dataPoints, Centroids* centroids)
     {
         int cIndex = dataPoints->points[i].partition;
 
-        //TODO: squared vai ei?
         sse += calculateEuclideanDistance(&dataPoints->points[i], &centroids->points[cIndex]);
     }
 
@@ -459,7 +458,7 @@ size_t findNearestCentroid(DataPoint* queryPoint, Centroids* targetCentroids)
 
     for (size_t i = 0; i < targetCentroids->size; ++i)
     {
-        newDistance = calculateEuclideanDistance(queryPoint, &targetCentroids->points[i]);
+        newDistance = calculateSquaredEuclideanDistance(queryPoint, &targetCentroids->points[i]);
 		
         if (newDistance < minDistance)
         {
@@ -575,6 +574,11 @@ size_t calculateCentroidIndex(Centroids* centroids1, Centroids* centroids2)
 {
     size_t countFrom1to2 = countOrphans(centroids1, centroids2);
     size_t countFrom2to1 = countOrphans(centroids2, centroids1);
+
+    if (LOGGING == 1)
+    {
+        printf("Count from 1 to 2: %zu AND 2 to 1: %zu\n\n", countFrom1to2, countFrom2to1);
+    }
 
     return (countFrom1to2 > countFrom2to1) ? countFrom1to2 : countFrom2to1;
 }
