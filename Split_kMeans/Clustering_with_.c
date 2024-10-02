@@ -877,13 +877,16 @@ void splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t clu
 
 // Function to run local repartitioning
 // TODO: vain split k-means, haluanko myös random swappiin?
+// TODO: kesken
 void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, bool* clustersAffected)
 {
-    // Reassign data points from the split clusters to their nearest centroids
-    for (size_t i = 0; i < dataPoints->size; ++i)
+    size_t newClusterIndex = centroids->size - 1;
+
+    // new clusters -> old clusters
+    /*for (size_t i = 0; i < dataPoints->size; ++i)
     {
-        if (dataPoints->points[i].partition == clusterToSplit || dataPoints->points[i].partition == centroids->size - 1)
-        {
+        //if (dataPoints->points[i].partition == clusterToSplit || dataPoints->points[i].partition == newClusterIndex)
+        //{
             size_t nearestCentroid = findNearestCentroid(&dataPoints->points[i], centroids);
 
             if (dataPoints->points[i].partition != nearestCentroid)
@@ -892,28 +895,30 @@ void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clust
                 clustersAffected[nearestCentroid] = true;                 // Mark the new cluster as affected
                 dataPoints->points[i].partition = nearestCentroid;
             }
-        }
-    }
+        //}
+    }*/
 
-    // Attract data points from other clusters to the new cluster
-    size_t newClusterIndex = centroids->size - 1; // Index of the new centroid
+    // old clusters -> new clusters
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
         size_t currentCluster = dataPoints->points[i].partition;
 
-        // Skip if the point is in the split clusters
+        // skip new cluster -> old cluster
         if (currentCluster == clusterToSplit || currentCluster == newClusterIndex)
             continue;
 
         size_t nearestCentroid = findNearestCentroid(&dataPoints->points[i], centroids);
 
-        if (nearestCentroid == newClusterIndex)
+        if (nearestCentroid == newClusterIndex || nearestCentroid == clusterToSplit)
         {
-            clustersAffected[currentCluster] = true;    // Mark the old cluster as affected
-            clustersAffected[newClusterIndex] = true;   // Mark the new cluster as affected
-            dataPoints->points[i].partition = newClusterIndex;
+            if (LOGGING == 3) printf("Local repartition: Success, point %zu is reassigned\n", i);
+
+            clustersAffected[currentCluster] = true;    // Mark old as true
+            dataPoints->points[i].partition = nearestCentroid;
         }
     }
+
+    if(LOGGING == 3) printf("Local repartition is over\n\n");
 }
 
 double tentativeMseDrop(DataPoints* dataPoints, Centroids* centroids, size_t clusterLabel, size_t localMaxIterations, double originalClusterMSE)
@@ -1020,7 +1025,7 @@ ClusteringResult runRandomSplit(DataPoints* dataPoints, Centroids* centroids, si
 // splitType 0 = intra-cluster, 1 = global, 2 = local
 ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, Centroids* groundTruth, int splitType)
 {
-    size_t localMaxIterations = splitType == 0 ? MAX_ITERATIONS : splitType == 1 ? 5 : 2; //TODO: pohdi tarkemmat arvot, globaaliin 5 näyttää toimivan hyvin
+    size_t iterations = splitType == 0 ? MAX_ITERATIONS : splitType == 1 ? 5 : 1000; //TODO: pohdi tarkemmat arvot, globaaliin 5 näyttää toimivan hyvin
 	
     double* clusterMSEs = malloc(centroids->size * sizeof(double));
     handleMemoryError(clusterMSEs);
@@ -1033,12 +1038,12 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
 
     //Only 1 cluster, so no need for decision making
     size_t initialClusterToSplit = 0;
-    splitClusterIntraCluster(dataPoints, centroids, initialClusterToSplit, localMaxIterations, groundTruth);
+    splitClusterIntraCluster(dataPoints, centroids, initialClusterToSplit, iterations, groundTruth);
 
     for (size_t i = 0; i < centroids->size; ++i)
     {
         clusterMSEs[i] = calculateClusterMSE(dataPoints, centroids, i); //TODO: tarvitaanko omaa rakennetta?
-        MseDrops[i] = tentativeMseDrop(dataPoints, centroids, i, localMaxIterations, clusterMSEs[i]);
+        MseDrops[i] = tentativeMseDrop(dataPoints, centroids, i, iterations, clusterMSEs[i]);
     }
 
     while (centroids->size < maxCentroids)
@@ -1061,9 +1066,9 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
             break;
         }
 
-        if(splitType == 0) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, localMaxIterations, groundTruth);
-		else if (splitType == 1) splitClusterGlobal(dataPoints, centroids, clusterToSplit, localMaxIterations, groundTruth);
-		else if (splitType == 2) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, localMaxIterations, groundTruth);
+        if(splitType == 0) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, iterations, groundTruth);
+		else if (splitType == 1) splitClusterGlobal(dataPoints, centroids, clusterToSplit, iterations, groundTruth);
+		else if (splitType == 2) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, iterations, groundTruth);
 
         if (splitType == 0)
         {
@@ -1074,10 +1079,10 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
             clusterMSEs[centroids->size - 1] = calculateClusterMSE(dataPoints, centroids, centroids->size - 1);
 
             // Update MseDrops for the affected clusters
-            MseDrops[clusterToSplit] = tentativeMseDrop(dataPoints, centroids, clusterToSplit, localMaxIterations, clusterMSEs[clusterToSplit]);
+            MseDrops[clusterToSplit] = tentativeMseDrop(dataPoints, centroids, clusterToSplit, iterations, clusterMSEs[clusterToSplit]);
             MseDrops = realloc(MseDrops, centroids->size * sizeof(double));
             handleMemoryError(MseDrops);
-            MseDrops[centroids->size - 1] = tentativeMseDrop(dataPoints, centroids, centroids->size - 1, localMaxIterations, clusterMSEs[centroids->size - 1]);
+            MseDrops[centroids->size - 1] = tentativeMseDrop(dataPoints, centroids, centroids->size - 1, iterations, clusterMSEs[centroids->size - 1]);
         }
         else if (splitType == 1)
         {
@@ -1089,7 +1094,7 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
             for (size_t i = 0; i < centroids->size; ++i)
             {
                 clusterMSEs[i] = calculateClusterMSE(dataPoints, centroids, i);
-                MseDrops[i] = tentativeMseDrop(dataPoints, centroids, i, localMaxIterations, clusterMSEs[i]);
+                MseDrops[i] = tentativeMseDrop(dataPoints, centroids, i, iterations, clusterMSEs[i]);
             }
         }
         else if(splitType == 2)
@@ -1110,11 +1115,17 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
             {
                 if (clustersAffected[i])
                 {
+                    if (LOGGING == 1) printf("Affected cluster: %zu\n", i);
+
                     clusterMSEs[i] = calculateClusterMSE(dataPoints, centroids, i);
-                    MseDrops[i] = tentativeMseDrop(dataPoints, centroids, i, localMaxIterations, clusterMSEs[i]);
+                    MseDrops[i] = tentativeMseDrop(dataPoints, centroids, i, iterations, clusterMSEs[i]);
                 }
             }
         }
+
+        free(clustersAffected); //TODO: JATKA TÄSTÄ
+
+        if (LOGGING == 1) printf("Round over\n\n");
 
         if (LOGGING == 2)
         {
@@ -1123,8 +1134,6 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
             printf("(MseSplit) Number of centroids: %zu, CI: %zu, and MSE: %.5f \n", centroids->size, ci, mse / 10000);
         }
     }
-
-    //free(clustersAffected);
 
     //TODO: globaali k-means  
     ClusteringResult finalResult = runKMeans(dataPoints, MAX_ITERATIONS, centroids, groundTruth);
