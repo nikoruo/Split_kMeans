@@ -1033,7 +1033,7 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
     size_t* MseDrops = calloc(centroids->size, sizeof(size_t));
     handleMemoryError(MseDrops);
 
-    bool* clustersAffected = calloc(maxCentroids, sizeof(bool));
+    bool* clustersAffected = calloc(maxCentroids*2, sizeof(bool));
     handleMemoryError(clustersAffected);
 
     //Only 1 cluster, so no need for decision making
@@ -1121,9 +1121,9 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
                     MseDrops[i] = tentativeMseDrop(dataPoints, centroids, i, iterations, clusterMSEs[i]);
                 }
             }
-        }
 
-        free(clustersAffected); //TODO: JATKA TÄSTÄ
+            memset(clustersAffected, 0, (maxCentroids * 2) * sizeof(bool));
+        }
 
         if (LOGGING == 1) printf("Round over\n\n");
 
@@ -1134,6 +1134,10 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
             printf("(MseSplit) Number of centroids: %zu, CI: %zu, and MSE: %.5f \n", centroids->size, ci, mse / 10000);
         }
     }
+
+    free(clusterMSEs);
+	free(MseDrops);
+	free(clustersAffected);
 
     //TODO: globaali k-means  
     ClusteringResult finalResult = runKMeans(dataPoints, MAX_ITERATIONS, centroids, groundTruth);
