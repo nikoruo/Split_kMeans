@@ -7,8 +7,8 @@
 #include <float.h>
 
 //Constants for file locations
-const char* DATA_FILENAME = "data/s3.txt";
-const char* GT_FILENAME = "GroundTruth/s3-cb.txt";
+const char* DATA_FILENAME = "data/s2.txt";
+const char* GT_FILENAME = "GroundTruth/s2-cb.txt";
 const char* CENTROID_FILENAME = "outputs/centroid.txt";
 const char* PARTITION_FILENAME = "outputs/partition.txt";
 const char SEPARATOR = ' ';
@@ -875,7 +875,46 @@ void splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t clu
     free(globalResult.partition); // assuming runKMeans dynamically allocates the partition array
 }
 
+// Function to run local repartitioning
+// TODO: vain split k-means, haluanko myös random swappiin?
+void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, bool* clustersAffected)
+{
+    // Reassign data points from the split clusters to their nearest centroids
+    for (size_t i = 0; i < dataPoints->size; ++i)
+    {
+        if (dataPoints->points[i].partition == clusterToSplit || dataPoints->points[i].partition == centroids->size - 1)
+        {
+            size_t nearestCentroid = findNearestCentroid(&dataPoints->points[i], centroids);
 
+            if (dataPoints->points[i].partition != nearestCentroid)
+            {
+                clustersAffected[dataPoints->points[i].partition] = true; // Mark the old cluster as affected
+                clustersAffected[nearestCentroid] = true;                 // Mark the new cluster as affected
+                dataPoints->points[i].partition = nearestCentroid;
+            }
+        }
+    }
+
+    // Attract data points from other clusters to the new cluster
+    size_t newClusterIndex = centroids->size - 1; // Index of the new centroid
+    for (size_t i = 0; i < dataPoints->size; ++i)
+    {
+        size_t currentCluster = dataPoints->points[i].partition;
+
+        // Skip if the point is in the split clusters
+        if (currentCluster == clusterToSplit || currentCluster == newClusterIndex)
+            continue;
+
+        size_t nearestCentroid = findNearestCentroid(&dataPoints->points[i], centroids);
+
+        if (nearestCentroid == newClusterIndex)
+        {
+            clustersAffected[currentCluster] = true;    // Mark the old cluster as affected
+            clustersAffected[newClusterIndex] = true;   // Mark the new cluster as affected
+            dataPoints->points[i].partition = newClusterIndex;
+        }
+    }
+}
 
 double tentativeMseDrop(DataPoints* dataPoints, Centroids* centroids, size_t clusterLabel, size_t localMaxIterations, double originalClusterMSE)
 {
@@ -978,16 +1017,19 @@ ClusteringResult runRandomSplit(DataPoints* dataPoints, Centroids* centroids, si
 }
 
 // Function to run the split k-means algorithm with tentative splitting (choosing to split the one that reduces the MSE the most)
-//TODO: kesken
+// splitType 0 = intra-cluster, 1 = global, 2 = local
 ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, Centroids* groundTruth, int splitType)
 {
-    size_t localMaxIterations = splitType == 0 ? MAX_ITERATIONS : 2; //TODO: pohdi tarkemmat arvot, globaaliin 5 näyttää toimivan hyvin
+    size_t localMaxIterations = splitType == 0 ? MAX_ITERATIONS : splitType == 1 ? 5 : 2; //TODO: pohdi tarkemmat arvot, globaaliin 5 näyttää toimivan hyvin
 	
     double* clusterMSEs = malloc(centroids->size * sizeof(double));
     handleMemoryError(clusterMSEs);
 
     size_t* MseDrops = calloc(centroids->size, sizeof(size_t));
     handleMemoryError(MseDrops);
+
+    bool* clustersAffected = calloc(maxCentroids, sizeof(bool));
+    handleMemoryError(clustersAffected);
 
     //Only 1 cluster, so no need for decision making
     size_t initialClusterToSplit = 0;
@@ -1021,6 +1063,7 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
 
         if(splitType == 0) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, localMaxIterations, groundTruth);
 		else if (splitType == 1) splitClusterGlobal(dataPoints, centroids, clusterToSplit, localMaxIterations, groundTruth);
+		else if (splitType == 2) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, localMaxIterations, groundTruth);
 
         if (splitType == 0)
         {
@@ -1049,6 +1092,29 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
                 MseDrops[i] = tentativeMseDrop(dataPoints, centroids, i, localMaxIterations, clusterMSEs[i]);
             }
         }
+        else if(splitType == 2)
+        {
+            localRepartition(dataPoints, centroids, clusterToSplit, clustersAffected);
+            
+			clustersAffected[clusterToSplit] = true;
+			clustersAffected[centroids->size - 1] = true;
+
+            // +1 for sizes
+            clusterMSEs = realloc(clusterMSEs, centroids->size * sizeof(double));
+            handleMemoryError(clusterMSEs);
+            MseDrops = realloc(MseDrops, centroids->size * sizeof(double));
+            handleMemoryError(MseDrops);
+
+			// Recalculate MseDrop for affected clusters (old and new)
+            for (size_t i = 0; i < centroids->size - 1; ++i)
+            {
+                if (clustersAffected[i])
+                {
+                    clusterMSEs[i] = calculateClusterMSE(dataPoints, centroids, i);
+                    MseDrops[i] = tentativeMseDrop(dataPoints, centroids, i, localMaxIterations, clusterMSEs[i]);
+                }
+            }
+        }
 
         if (LOGGING == 2)
         {
@@ -1057,6 +1123,8 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
             printf("(MseSplit) Number of centroids: %zu, CI: %zu, and MSE: %.5f \n", centroids->size, ci, mse / 10000);
         }
     }
+
+    //free(clustersAffected);
 
     //TODO: globaali k-means  
     ClusteringResult finalResult = runKMeans(dataPoints, MAX_ITERATIONS, centroids, groundTruth);
@@ -1308,9 +1376,9 @@ int main()
 		result3.centroidIndex = calculateCentroidIndex(&centroids3, &groundTruth);
 
 
-        ///////////////////////
-        // MSE Split, Local //
-        /////////////////////
+        ///////////////////////////////
+        // MSE Split, Intra-cluster //
+        /////////////////////////////
         ClusteringResult result4;
 
         result4.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint));
@@ -1392,6 +1460,48 @@ int main()
         result5.centroidIndex = calculateCentroidIndex(&centroids5, &groundTruth);
 
 
+        ///////////////////////////////////
+        // MSE Split, Local repartition //
+        /////////////////////////////////
+        ClusteringResult result6;
+
+        result6.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint));
+        handleMemoryError(result6.centroids);
+        for (int i = 0; i < NUM_CENTROIDS; ++i)
+        {
+            result6.centroids[i].attributes = malloc(numDimensions * sizeof(double));
+            handleMemoryError(result6.centroids[i].attributes);
+        }
+        result6.partition = malloc(dataPoints.size * sizeof(int));
+        handleMemoryError(result6.partition);
+        result6.centroidIndex = INT_MAX;
+        result6.mse = DBL_MAX;
+
+        Centroids centroids6;
+        centroids6.size = 1;
+        centroids6.points = malloc(NUM_CENTROIDS * sizeof(DataPoint));
+        handleMemoryError(centroids6.points);
+        for (int i = 0; i < NUM_CENTROIDS; ++i)
+        {
+            centroids6.points[i].attributes = malloc(numDimensions * sizeof(double));
+            handleMemoryError(centroids6.points[i].attributes);
+        }
+
+        printf("MSE Split k-means (Repartition)\n");
+
+        start = clock();
+
+        generateRandomCentroids(centroids.size, &dataPoints, centroids6.points);
+
+        result6 = runMseSplit(&dataPoints, &centroids6, NUM_CENTROIDS, &groundTruth, 2);
+
+        end = clock();
+        duration = ((double)(end - start)) / CLOCKS_PER_SEC;
+        printf("(Split4)Time taken: %.2f seconds\n\n", duration);
+
+        result6.centroidIndex = calculateCentroidIndex(&centroids6, &groundTruth);
+
+
         /////////////
         // Prints //
         ///////////
@@ -1401,6 +1511,7 @@ int main()
         printf("(RandomSplit)Best Centroid Index (CI): %zu and best Sum-of-Squared Errors (MSE): %.5f\n", result3.centroidIndex, result3.mse / 10000);
         printf("(MseSplit_intra)Best Centroid Index (CI): %zu and best Sum-of-Squared Errors (MSE): %.5f\n", result4.centroidIndex, result4.mse / 10000);
         printf("(MseSplit_global)Best Centroid Index (CI): %zu and best Sum-of-Squared Errors (MSE): %.5f\n", result5.centroidIndex, result5.mse / 10000);
+        printf("(MseSplit_repartition)Best Centroid Index (CI): %zu and best Sum-of-Squared Errors (MSE): %.5f\n", result6.centroidIndex, result6.mse / 10000);
 
 		writeCentroidsToFile("outputs/testifile.txt", &centroids);
 
@@ -1425,6 +1536,18 @@ int main()
         //random Split
         //freeClusteringResult(&result3); TODO: centroideja ei tallenneta vielä tähän
 		freeCentroids(&centroids3);
+
+		//MSE Split, Intra
+        //freeClusteringResult(&result3); TODO: centroideja ei tallenneta vielä tähän
+        freeCentroids(&centroids4);
+
+		//MSE Split, Global
+        //freeClusteringResult(&result3); TODO: centroideja ei tallenneta vielä tähän
+        freeCentroids(&centroids5);
+
+		//MS Split, Local repartition
+        //freeClusteringResult(&result3); TODO: centroideja ei tallenneta vielä tähän
+        freeCentroids(&centroids6);
 
 		//Datapoints
         freeDataPoints(&dataPoints);
