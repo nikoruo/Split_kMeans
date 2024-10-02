@@ -1125,9 +1125,9 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
             memset(clustersAffected, 0, (maxCentroids * 2) * sizeof(bool));
         }
 
-        if (LOGGING == 1) printf("Round over\n\n");
+        if (LOGGING == 1 && splitType == 2) printf("Round over\n\n");
 
-        if (LOGGING == 2)
+        if (LOGGING == 1 && splitType == 2)
         {
             size_t ci = calculateCentroidIndex(centroids, groundTruth);
             double mse = calculateMSE(dataPoints, centroids);
