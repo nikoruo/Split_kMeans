@@ -390,6 +390,30 @@ void printCentroidsInfo(const Centroids* centroids)
     printf("\n");
 }
 
+// Function to print partition assignments for data points with partition >= cMax
+void printDataPointsPartitions(const DataPoints* dataPoints, size_t cMax)
+{
+    printf("Data Points Partition Assignments (Partition <= %zu):\n", cMax);
+    printf("Data Points size: %zu\n", dataPoints->size);
+    for (size_t i = 0; i < dataPoints->size; ++i)
+    {
+        if (dataPoints->points[i].partition >= cMax)
+        {
+            printf("Data Point %zu: Partition %d\n", i, dataPoints->points[i].partition);
+        }
+    }
+    printf("\n");
+}
+
+// Function to reset all partitions to 0
+void resetPartitions(DataPoints* dataPoints)
+{
+    for (size_t i = 0; i < dataPoints->size; ++i)
+    {
+        dataPoints->points[i].partition = 0;
+    }
+}
+
 
 // Clustering
 //
@@ -1025,7 +1049,7 @@ ClusteringResult runRandomSplit(DataPoints* dataPoints, Centroids* centroids, si
 // splitType 0 = intra-cluster, 1 = global, 2 = local
 ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, Centroids* groundTruth, int splitType)
 {
-    size_t iterations = splitType == 0 ? MAX_ITERATIONS : splitType == 1 ? 5 : 1000; //TODO: pohdi tarkemmat arvot, globaaliin 5 näyttää toimivan hyvin
+    size_t iterations = splitType == 0 ? MAX_ITERATIONS : splitType == 1 ? 3 : 1000; //TODO: pohdi tarkemmat arvot, globaaliin 5 näyttää toimivan hyvin
 	
     double* clusterMSEs = malloc(centroids->size * sizeof(double));
     handleMemoryError(clusterMSEs);
@@ -1066,6 +1090,11 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
             break;
         }
 
+        if (splitType == 3)
+        {
+            printf("--2--\n");
+            printDataPointsPartitions(dataPoints, centroids->size);
+        }
         if(splitType == 0) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, iterations, groundTruth);
 		else if (splitType == 1) splitClusterGlobal(dataPoints, centroids, clusterToSplit, iterations, groundTruth);
 		else if (splitType == 2) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, iterations, groundTruth);
@@ -1098,7 +1127,7 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
             }
         }
         else if(splitType == 2)
-        {
+        {            
             localRepartition(dataPoints, centroids, clusterToSplit, clustersAffected);
             
 			clustersAffected[clusterToSplit] = true;
@@ -1115,7 +1144,7 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
             {
                 if (clustersAffected[i])
                 {
-                    if (LOGGING == 1) printf("Affected cluster: %zu\n", i);
+                    if (LOGGING == 2) printf("Affected cluster: %zu\n", i);
 
                     clusterMSEs[i] = calculateClusterMSE(dataPoints, centroids, i);
                     MseDrops[i] = tentativeMseDrop(dataPoints, centroids, i, iterations, clusterMSEs[i]);
@@ -1125,14 +1154,15 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
             memset(clustersAffected, 0, (maxCentroids * 2) * sizeof(bool));
         }
 
-        if (LOGGING == 1 && splitType == 2) printf("Round over\n\n");
-
-        if (LOGGING == 1 && splitType == 2)
+        if (LOGGING == 2 && splitType == 2)
         {
             size_t ci = calculateCentroidIndex(centroids, groundTruth);
             double mse = calculateMSE(dataPoints, centroids);
             printf("(MseSplit) Number of centroids: %zu, CI: %zu, and MSE: %.5f \n", centroids->size, ci, mse / 10000);
         }
+
+
+        if (LOGGING == 2 && splitType == 2) printf("Round over\n\n");
     }
 
     free(clusterMSEs);
@@ -1392,6 +1422,8 @@ int main()
         ///////////////////////////////
         // MSE Split, Intra-cluster //
         /////////////////////////////
+        resetPartitions(&dataPoints);
+
         ClusteringResult result4;
 
         result4.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint));
@@ -1434,6 +1466,8 @@ int main()
         ////////////////////////
         // MSE Split, Global //
         //////////////////////
+        resetPartitions(&dataPoints);
+
         ClusteringResult result5;
 
         result5.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint));
@@ -1476,6 +1510,8 @@ int main()
         ///////////////////////////////////
         // MSE Split, Local repartition //
         /////////////////////////////////
+        resetPartitions(&dataPoints);
+
         ClusteringResult result6;
 
         result6.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint));
@@ -1506,6 +1542,8 @@ int main()
 
         generateRandomCentroids(centroids.size, &dataPoints, centroids6.points);
 
+        if(LOGGING == 3) printDataPointsPartitions(&dataPoints, centroids6.size);
+        
         result6 = runMseSplit(&dataPoints, &centroids6, NUM_CENTROIDS, &groundTruth, 2);
 
         end = clock();
