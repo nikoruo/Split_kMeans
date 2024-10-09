@@ -906,11 +906,12 @@ void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clust
 {
     size_t newClusterIndex = centroids->size - 1;
 
+    /* QA: Kysy, että tarvitaanko tätä? Oma oletus on, että ei tarvita
     // new clusters -> old clusters
-    /*for (size_t i = 0; i < dataPoints->size; ++i)
+    for (size_t i = 0; i < dataPoints->size; ++i)
     {
-        //if (dataPoints->points[i].partition == clusterToSplit || dataPoints->points[i].partition == newClusterIndex)
-        //{
+        if (dataPoints->points[i].partition == clusterToSplit || dataPoints->points[i].partition == newClusterIndex)
+        {
             size_t nearestCentroid = findNearestCentroid(&dataPoints->points[i], centroids);
 
             if (dataPoints->points[i].partition != nearestCentroid)
@@ -919,7 +920,7 @@ void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clust
                 clustersAffected[nearestCentroid] = true;                 // Mark the new cluster as affected
                 dataPoints->points[i].partition = nearestCentroid;
             }
-        //}
+        }
     }*/
 
     // old clusters -> new clusters
@@ -1049,8 +1050,9 @@ ClusteringResult runRandomSplit(DataPoints* dataPoints, Centroids* centroids, si
 // splitType 0 = intra-cluster, 1 = global, 2 = local
 ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, Centroids* groundTruth, int splitType)
 {
-    size_t iterations = splitType == 0 ? MAX_ITERATIONS : splitType == 1 ? 3 : 1000; //TODO: pohdi tarkemmat arvot, globaaliin 5 näyttää toimivan hyvin
-	
+    size_t iterations = splitType == 0 ? MAX_ITERATIONS : splitType == 1 ? 4 : 1000; //TODO: pohdi tarkemmat arvot, globaaliin 5 näyttää toimivan hyvin
+	iterations = splitType == 2 ? 100 : iterations;
+
     double* clusterMSEs = malloc(centroids->size * sizeof(double));
     handleMemoryError(clusterMSEs);
 
@@ -1140,7 +1142,7 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
             handleMemoryError(MseDrops);
 
 			// Recalculate MseDrop for affected clusters (old and new)
-            for (size_t i = 0; i < centroids->size - 1; ++i)
+            for (size_t i = 0; i < centroids->size; ++i)
             {
                 if (clustersAffected[i])
                 {
@@ -1240,7 +1242,7 @@ int main()
         clock_t end = clock();
         double duration = ((double)(end - start)) / CLOCKS_PER_SEC;
 
-        printf("(K-means)Time taken: %f seconds\n\n", duration);
+        printf("(K-means)Time taken: %.2f seconds\n\n", duration);
 
 		result0.centroidIndex = calculateCentroidIndex(&centroids, &groundTruth);
 
@@ -1414,7 +1416,7 @@ int main()
 
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
-        printf("(Split1)Time taken: %.5f seconds\n\n", duration);
+        printf("(Split1)Time taken: %.2f seconds\n\n", duration);
 
 		result3.centroidIndex = calculateCentroidIndex(&centroids3, &groundTruth);
 
@@ -1556,9 +1558,9 @@ int main()
         /////////////
         // Prints //
         ///////////
-        printf("(K-means)Best Centroid Index (CI): %zu and Best Mean Sum-of-Squared Errors (MSE): %.5f\n", result0.centroidIndex, result0.mse / 10000);
+        printf("(K-means)Best Centroid Index (CI): %zu and Best Mean Sum-of-Squared Errors (MSE): %.5f\n\n", result0.centroidIndex, result0.mse / 10000);
         printf("(Repeated K-means)Best Centroid Index (CI): %zu and Mean Best Sum-of-Squared Errors (MSE): %.5f\n", bestResult1.centroidIndex, bestResult1.mse / 10000);
-        printf("(Random Swap)Best Centroid Index (CI): %zu and Best Mean Sum-of-Squared Errors (MSE): %.5f\n", result2.centroidIndex, result2.mse / 10000);
+        printf("(Random Swap)Best Centroid Index (CI): %zu and Best Mean Sum-of-Squared Errors (MSE): %.5f\n\n", result2.centroidIndex, result2.mse / 10000);
         printf("(RandomSplit)Best Centroid Index (CI): %zu and best Sum-of-Squared Errors (MSE): %.5f\n", result3.centroidIndex, result3.mse / 10000);
         printf("(MseSplit_intra)Best Centroid Index (CI): %zu and best Sum-of-Squared Errors (MSE): %.5f\n", result4.centroidIndex, result4.mse / 10000);
         printf("(MseSplit_global)Best Centroid Index (CI): %zu and best Sum-of-Squared Errors (MSE): %.5f\n", result5.centroidIndex, result5.mse / 10000);
