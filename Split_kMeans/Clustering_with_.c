@@ -1051,7 +1051,6 @@ ClusteringResult runRandomSplit(DataPoints* dataPoints, Centroids* centroids, si
 ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, Centroids* groundTruth, int splitType)
 {
     size_t iterations = splitType == 0 ? MAX_ITERATIONS : splitType == 1 ? 4 : 1000; //TODO: pohdi tarkemmat arvot, globaaliin 5 näyttää toimivan hyvin
-	iterations = splitType == 2 ? 100 : iterations;
 
     double* clusterMSEs = malloc(centroids->size * sizeof(double));
     handleMemoryError(clusterMSEs);
