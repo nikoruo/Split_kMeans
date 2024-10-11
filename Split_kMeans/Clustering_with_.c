@@ -7,18 +7,21 @@
 #include <float.h>
 
 //Constants for file locations
-const char* DATA_FILENAME = "data/s3.txt";
-const char* GT_FILENAME = "GroundTruth/s3-cb.txt";
+const char* DATA_FILENAME = "data/birch3.txt";
+const char* GT_FILENAME = "GroundTruth/b3-gt.txt";
 const char* CENTROID_FILENAME = "outputs/centroid.txt";
 const char* PARTITION_FILENAME = "outputs/partition.txt";
 const char SEPARATOR = ' ';
 
 //for centroids
-const int NUM_CENTROIDS = 15;
-// s            = 15
-// unbalanced   = 8 
-// a            = 20,35,50 
-// TODO: tarkasta loput aineistot
+const int NUM_CENTROIDS = 100;
+// S            = 15
+// Unbalance    = 8
+// A            = 20,35,50
+// Birch        = 100
+// G2           = 2
+// Dim (high)   = 16
+// Dim (low)	= 9
 
 // for clustering
 const int MAX_ITERATIONS = 1000; // k-means rajoitus
@@ -28,9 +31,10 @@ const int MAX_SWAPS = 1000; // random swap toistojen lkm, TODO: lopulliseen 1000
 // for logging
 const int LOGGING = 1; // 1 = basic, 2 = detailed, 3 = debug, TODO: käy kaikki läpi ja tarkista, että käytetään oikeita muuttujia
 
-//Structs
-//
-//
+//////////////
+// Structs //
+////////////
+
 typedef struct
 {
     double* attributes;
@@ -59,10 +63,9 @@ typedef struct
     size_t centroidIndex;
 } ClusteringResult;
 
-
-//Memories
-//
-//
+///////////////
+// Memories //
+/////////////
 
 // Function to handle memory error
 void handleMemoryError(void* ptr)
@@ -125,10 +128,10 @@ void freeClusteringResult(ClusteringResult* result)
     }
 }
 
+//////////////
+// Helpers //
+////////////
 
-//Helpers
-//
-// 
 // Function to calculate the squared Euclidean distance between two data points
 double calculateSquaredEuclideanDistance(const DataPoint* point1, const DataPoint* point2)
 {
@@ -286,7 +289,6 @@ Centroids readCentroids(const char* filename)
 }
 
 // Function to write the centroids to a file
-//TODO: ei käytössä tällä hetkellä
 void writeCentroidsToFile(const char* filename, Centroids* centroids)
 {
     FILE* centroidFile = fopen(filename, "w");
@@ -309,25 +311,24 @@ void writeCentroidsToFile(const char* filename, Centroids* centroids)
     printf("\nCentroid file created successfully: %s\n", filename);
 }
 
-// Function to write partition to a text file
-//TODO: ei käytössä tällä hetkellä
-void writePartitionToFile(int* partition, int partitionSize, const char* fileName)
+// Function to write data point partitions to a file
+// TODO: refaktoroi käyttämäänn resulttia DataPointsin sijaan
+void writeDataPointPartitionsToFile(const char* filename, DataPoints* dataPoints)
 {
-    FILE* outFile = fopen(fileName, "w");
-    if (outFile == NULL)
+    FILE* file = fopen(filename, "w");
+    if (file == NULL)
     {
-        handleFileError(fileName);
+        handleFileError(filename);
+        return;
     }
 
-    // Write each data point and its corresponding cluster to the file
-    for (int i = 0; i < partitionSize; ++i)
+    for (size_t i = 0; i < dataPoints->size; ++i)
     {
-        fprintf(outFile, "Data Point %d: Cluster %d\n", i, partition[i]);
+        fprintf(file, "%d\n", dataPoints->points[i].partition);
     }
 
-    fclose(outFile);
-
-    printf("Optimal partition written to OptimalPartition.txt\n");
+    fclose(file);
+    printf("Data point partitions written to file: %s\n", filename);
 }
 
 //Funtion to create a deep copy of a data point
@@ -414,10 +415,10 @@ void resetPartitions(DataPoints* dataPoints)
     }
 }
 
+/////////////////
+// Clustering //
+///////////////
 
-// Clustering
-//
-// 
 // Function to choose random data points to be centroids
 void generateRandomCentroids(size_t numCentroids, DataPoints* dataPoints, DataPoint* centroids)
 {    
@@ -906,7 +907,7 @@ void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clust
 {
     size_t newClusterIndex = centroids->size - 1;
 
-    /* QA: Kysy, että tarvitaanko tätä? Oma oletus on, että ei tarvita
+    /* TODO: Q: Kysy/selvitä, että tarvitaanko tätä? Oma oletus on, että ei tarvita
     // new clusters -> old clusters
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
@@ -1186,8 +1187,6 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
 //TODO: kommentoi kaikki muistintarkastukset pois lopullisesta versiosta <-tehokkuus?
 //TODO: "static inline..." sellaisten funktioiden eteen jotka eivät muuta mitään ja joita kutsutaan? Saattaa tehostaa suoritusta
 //TODO: partition on int, mutta se voisi olla size_t. Jotta onnistuu niin -1 alustukset pitää käydä läpi
-
-//Q: lasketaanko MSE clusterin datapisteillä vai koko datasetillä splitissä?
 
 int main()
 {
@@ -1565,7 +1564,8 @@ int main()
         printf("(MseSplit_global)Best Centroid Index (CI): %zu and best Sum-of-Squared Errors (MSE): %.5f\n", result5.centroidIndex, result5.mse / 10000);
         printf("(MseSplit_repartition)Best Centroid Index (CI): %zu and best Sum-of-Squared Errors (MSE): %.5f\n", result6.centroidIndex, result6.mse / 10000);
 
-		writeCentroidsToFile("outputs/testifile.txt", &centroids);
+		writeCentroidsToFile("outputs/centroids.txt", &centroids6);
+        writeDataPointPartitionsToFile("outputs/partitions.txt", &dataPoints);
 
         ///////////////
         // Clean up //
