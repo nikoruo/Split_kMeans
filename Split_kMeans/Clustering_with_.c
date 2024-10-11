@@ -7,8 +7,8 @@
 #include <float.h>
 
 //Constants for file locations
-const char* DATA_FILENAME = "data/s2.txt";
-const char* GT_FILENAME = "GroundTruth/s2-cb.txt";
+const char* DATA_FILENAME = "data/s3.txt";
+const char* GT_FILENAME = "GroundTruth/s3-cb.txt";
 const char* CENTROID_FILENAME = "outputs/centroid.txt";
 const char* PARTITION_FILENAME = "outputs/partition.txt";
 const char SEPARATOR = ' ';
