@@ -447,6 +447,6 @@ FodyWeavers.xsd
 *.sln.iml
 
 # text folders
-*/Data/
-*/Outputs/
-*/GroundTruth/
+*/data/
+*/outputs/
+*/gt/

@@ -5,16 +5,18 @@
 #include <time.h>
 #include <stdbool.h>
 #include <float.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 //Constants for file locations
-const char* DATA_FILENAME = "data/birch3.txt";
-const char* GT_FILENAME = "GroundTruth/b3-gt.txt";
-const char* CENTROID_FILENAME = "outputs/centroid.txt";
-const char* PARTITION_FILENAME = "outputs/partition.txt";
+const char* DATA_FILENAME = "a1.txt";
+const char* GT_FILENAME = "a1-ga-cb.txt";
+const char* CENTROID_FILENAME = "outputs/centroid.txt"; //TODO: ei k‰ytˆss‰
+const char* PARTITION_FILENAME = "outputs/partition.txt"; //TODO: ei k‰ytˆss‰
 const char SEPARATOR = ' ';
 
 //for centroids
-const int NUM_CENTROIDS = 100;
+const int NUM_CENTROIDS = 20;
 // S            = 15
 // Unbalance    = 8
 // A            = 20,35,50
@@ -27,6 +29,7 @@ const int NUM_CENTROIDS = 100;
 const int MAX_ITERATIONS = 1000; // k-means rajoitus
 const int MAX_REPEATS = 10; // repeated k-means toistojen lkm, TODO: lopulliseen 100kpl
 const int MAX_SWAPS = 1000; // random swap toistojen lkm, TODO: lopulliseen 1000kpl
+const size_t MAX_LOOPS = 1000;
 
 // for logging
 const int LOGGING = 1; // 1 = basic, 2 = detailed, 3 = debug, TODO: k‰y kaikki l‰pi ja tarkista, ett‰ k‰ytet‰‰n oikeita muuttujia
@@ -111,7 +114,8 @@ void freeCentroids(Centroids* centroids)
 }
 
 // Function to free ClusteringResult
-void freeClusteringResult(ClusteringResult* result)
+// TODO: ei k‰ytˆss‰
+void freeClusteringResult(ClusteringResult* result, int numCentroids)
 {
     if (result == NULL) return;
 
@@ -123,9 +127,42 @@ void freeClusteringResult(ClusteringResult* result)
 
     if (result->centroids != NULL)
     {
-        freeDataPointArray(result->centroids, NUM_CENTROIDS);
+        freeDataPointArray(result->centroids, numCentroids);
         result->centroids = NULL;
     }
+}
+
+// Function to create a string list
+char** createStringList(size_t size)
+{
+    char** list = malloc(size * sizeof(char*));
+    if (list == NULL)
+    {
+        fprintf(stderr, "Memory allocation failed\n");
+        exit(EXIT_FAILURE);
+    }
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        list[i] = malloc(256 * sizeof(char));
+        if (list[i] == NULL)
+        {
+            fprintf(stderr, "Memory allocation failed\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    return list;
+}
+
+// Function to free a string list
+void freeStringList(char** list, size_t size)
+{
+    for (size_t i = 0; i < size; ++i)
+    {
+        free(list[i]);
+    }
+    free(list);
 }
 
 //////////////
@@ -413,6 +450,40 @@ void resetPartitions(DataPoints* dataPoints)
     {
         dataPoints->points[i].partition = 0;
     }
+}
+
+// Function to write results to a file
+void writeResultsToFile(const char* filename, double ciSum, double mseSum, double timeSum, double successRate, int numCentroids, char* header, size_t loopCount, size_t scaling, char* outputDirectory)
+{
+    char outputFilePath[256];
+    snprintf(outputFilePath, sizeof(outputFilePath), "%s/%s", outputDirectory, filename);
+
+    FILE* file = fopen(outputFilePath, "a"); // "a" = appends
+    if (file == NULL)
+    {
+        fprintf(stderr, "Error: Cannot open file %s for writing\n", filename);
+        return;
+    }
+
+    fprintf(file, "%s\n", header);
+    fprintf(file, "Average CI: %.2f and MSE: %.2f\n", ciSum / loopCount, mseSum / loopCount / scaling);
+    fprintf(file, "Relative CI: %.2f\n", ciSum / loopCount / numCentroids);
+    fprintf(file, "Average time taken: %.2f seconds\n", timeSum / loopCount);
+    fprintf(file, "Success rate: %.2f%%\n\n", successRate / loopCount * 100);
+
+    fclose(file);
+    if(LOGGING == 3) printf("Metrics written to file: %s\n", filename);
+}
+
+// Function to create a unique directory based on the current date and time
+void createUniqueDirectory(char* outputDirectory, size_t size)
+{
+    time_t now = time(NULL);
+    struct tm* t = localtime(&now);
+
+    strftime(outputDirectory, size, "outputs/%Y-%m-%d_%H-%M-%S", t);
+
+    mkdir(outputDirectory, 0777);
 }
 
 /////////////////
@@ -1190,423 +1261,648 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
 
 int main()
 {
-	// Seeding the random number generator
-    srand((unsigned int)time(NULL));
+    size_t size = 7;
 
-    printf("Starting the process\n");
-    printf("File name: %s\n", DATA_FILENAME);
+    char** datasetList = createStringList(size);
+    strcpy_s(datasetList[0], 20, "a1.txt");
+    strcpy_s(datasetList[1], 20, "a2.txt");
+    strcpy_s(datasetList[2], 20, "a3.txt");
+    strcpy_s(datasetList[3], 20, "s1.txt");
+    strcpy_s(datasetList[4], 20, "s2.txt");
+    strcpy_s(datasetList[5], 20, "s3.txt");
+    strcpy_s(datasetList[6], 20, "s4.txt");
 
-    int numDimensions = getNumDimensions(DATA_FILENAME);
+    char** gtList = createStringList(size);
+    strcpy_s(gtList[0], 20, "a1-ga-cb.txt");
+    strcpy_s(gtList[1], 20, "a2-ga-cb.txt");
+    strcpy_s(gtList[2], 20, "a3-ga-cb.txt");
+    strcpy_s(gtList[3], 20, "s1-cb.txt");
+    strcpy_s(gtList[4], 20, "s2-cb.txt");
+    strcpy_s(gtList[5], 20, "s3-cb.txt");
+    strcpy_s(gtList[6], 20, "s4-cb.txt");
 
-    if (numDimensions > 0)
-    {        
-        printf("Number of dimensions in the data: %d\n", numDimensions);
+    int kNumList[] = {
+    20,   // A1
+    35,   // A2
+    50,   // A3
+    15,   // S1
+    15,   // S2
+    15,   // S3
+    15,   // S4
+    8,    // Unbalance    
+    100,  // Birch1
+    100,  // Birch2
+    2,    // G2
+    16,   // Dim (high)
+    9     // Dim (low)
+    };
 
-		int maxIterations = MAX_ITERATIONS;//TODO tarkasta kaikki, ett‰ k‰ytet‰‰n oikeita muuttujia
+    char outputDirectory[256];
+    createUniqueDirectory(outputDirectory, sizeof(outputDirectory));
 
-        DataPoints dataPoints = readDataPoints(DATA_FILENAME);
-        printf("Dataset size: %zu\n\n", dataPoints.size);
+    for (size_t i = 0; i < 1; ++i)
+    {
+        int maxIterations = MAX_ITERATIONS;//TODO tarkasta kaikki, ett‰ k‰ytet‰‰n oikeita muuttujia
+        int numCentroids = kNumList[i];
+        char* fileName = datasetList[i];
+        char* dataFile[256];
+        snprintf(dataFile, sizeof(dataFile), "data/%s", fileName);
+		char* gtName = gtList[i];
+        char* gtFile[256];
+        snprintf(gtFile, sizeof(gtFile), "gt/%s", gtName);
 
-        Centroids groundTruth = readCentroids(GT_FILENAME);
+        size_t loopCount = MAX_LOOPS;
+        size_t scaling = 10000;        
 
-        //////////////
-        // K-means //
-        ////////////
-        printf("K-means\n");
+        // Seeding the random number generator
+        srand((unsigned int)time(NULL));
 
-        Centroids centroids;
-        centroids.size = NUM_CENTROIDS;
-        centroids.points = malloc(NUM_CENTROIDS * sizeof(DataPoint));
-        handleMemoryError(centroids.points); //TODO: pit‰isikˆ lopullisesta versiosta kommentoida n‰m‰ pois? Helpottavat l‰hinn‰ debuggausta
-		for (int i = 0; i < NUM_CENTROIDS; ++i)
-		{
-			centroids.points[i].attributes = malloc(numDimensions * sizeof(double));
-			handleMemoryError(centroids.points[i].attributes);
-            centroids.points[i].dimensions = numDimensions; //TODO tarkista tehd‰‰nkˆ muualla
-		}
+        printf("Starting the process\n");
+        printf("File name: %s\n", dataFile);
 
-        clock_t start = clock();
+        int numDimensions = getNumDimensions(dataFile);
 
-        generateRandomCentroids(NUM_CENTROIDS, &dataPoints, centroids.points);
-		
-        if (LOGGING == 2) { 
-            size_t centroidIndex = calculateCentroidIndex(&centroids, &groundTruth);
-            printf("(K-means)Initial Centroid Index (CI): %zu\n", centroidIndex); 
-        }
-
-        ClusteringResult result0 = runKMeans(&dataPoints, maxIterations, &centroids, &groundTruth);
-        //DEBUGGING if(LOGGING == 2) printf("(K-means)Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (MSE): %.4f\n", result0.centroidIndex, result0.mse / 10000000);
-
-        clock_t end = clock();
-        double duration = ((double)(end - start)) / CLOCKS_PER_SEC;
-
-        printf("(K-means)Time taken: %.2f seconds\n\n", duration);
-
-		result0.centroidIndex = calculateCentroidIndex(&centroids, &groundTruth);
-
-        result0.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint));
-        handleMemoryError(result0.centroids);
-        deepCopyDataPoints(result0.centroids, centroids.points, NUM_CENTROIDS);
-
-        result0.partition = malloc(dataPoints.size * sizeof(int));
-        handleMemoryError(result0.partition);
-        for (size_t i = 0; i < dataPoints.size; ++i)
+        if (numDimensions > 0)
         {
-            result0.partition[i] = dataPoints.points[i].partition;
-        }
-        
-        //DEBUGGING
-        //printCentroidsInfo(&centroids);
+            printf("Number of dimensions in the data: %d\n", numDimensions);
 
-        ///////////////////////
-        // Repeated k-means //
-        /////////////////////
-        printf("Repeated K-means\n");
+            DataPoints dataPoints = readDataPoints(dataFile);
+            printf("Dataset size: %zu\n", dataPoints.size);
 
-        ClusteringResult result1;        
-        ClusteringResult bestResult1;
-        bestResult1.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint));
-        handleMemoryError(bestResult1.centroids);
-        for (int i = 0; i < NUM_CENTROIDS; ++i)
-        {
-            bestResult1.centroids[i].attributes = malloc(numDimensions * sizeof(double));
-            handleMemoryError(bestResult1.centroids[i].attributes);
-        }
-        bestResult1.partition = malloc(dataPoints.size * sizeof(int));
-        handleMemoryError(bestResult1.partition);
-        bestResult1.mse = DBL_MAX;
-        bestResult1.centroidIndex = INT_MAX;
+            printf("Number of clusters in the data: %d\n", numCentroids);
 
-        Centroids centroids1;
-        centroids1.size = NUM_CENTROIDS;
-        centroids1.points = malloc(NUM_CENTROIDS * sizeof(DataPoint));
-        handleMemoryError(centroids1.points);
-        for (int i = 0; i < NUM_CENTROIDS; ++i)
-        {
-            centroids1.points[i].attributes = malloc(numDimensions * sizeof(double));
-            handleMemoryError(centroids1.points[i].attributes);
-        }
+            Centroids groundTruth = readCentroids(gtFile);
 
-        Centroids bestCentroids1;
-        bestCentroids1.size = NUM_CENTROIDS;
-        bestCentroids1.points = malloc(NUM_CENTROIDS * sizeof(DataPoint));
-        handleMemoryError(bestCentroids1.points);
-        for (int i = 0; i < NUM_CENTROIDS; ++i)
-        {
-            bestCentroids1.points[i].attributes = malloc(numDimensions * sizeof(double));
-            handleMemoryError(bestCentroids1.points[i].attributes);
-        }
+            printf("Number of loops: %zu\n\n", loopCount);
 
-        start = clock();        
+            //////////////
+            // K-means //
+            ////////////
 
-        for (int repeat = 0; repeat < MAX_REPEATS; ++repeat)
-        {
-            //DEBUGGING if(LOGGING == 3) printf("round: %d\n", repeat);
+            double mseSum = 0;
+            double ciSum = 0;
+            double timeSum = 0;
+            double successRate = 0;
 
-            generateRandomCentroids(NUM_CENTROIDS, &dataPoints, centroids1.points);
-            int centroidIndex = calculateCentroidIndex(&centroids1, &groundTruth);
-            if (LOGGING == 2) printf("(K-means)Initial Centroid Index (CI): %d\n", centroidIndex);
+            clock_t start = clock();
+            clock_t end = clock();
+            double duration = 0;
 
-            // K-means
-            result1 = runKMeans(&dataPoints, maxIterations, &centroids1, &groundTruth);
+            printf("K-means\n");
 
-			if(LOGGING == 2) printf("(RKM) Round %d: Latest Centroid Index (CI): %zu and Latest Mean Sum-of-Squared Errors (MSE): %.4f\n", repeat, result1.centroidIndex, result1.mse / 10000);
-            
-            if (result1.mse < bestResult1.mse)
+            for (int i = 0; i < loopCount; i++)
             {
-				//deepCopyDataPoints(bestResult1.centroids, centroids1.points, NUM_CENTROIDS);
-				deepCopyCentroids(&centroids1, &bestCentroids1, NUM_CENTROIDS);
-                bestResult1.mse = result1.mse;
-                for (size_t i = 0; i < dataPoints.size; ++i) //TODO: halutaanko t‰t‰ loopata timerin sis‰ll‰?
+                Centroids centroids;
+                centroids.size = numCentroids;
+                centroids.points = malloc(numCentroids * sizeof(DataPoint));
+                handleMemoryError(centroids.points); //TODO: pit‰isikˆ lopullisesta versiosta kommentoida n‰m‰ pois? Helpottavat l‰hinn‰ debuggausta
+                for (int i = 0; i < numCentroids; ++i)
                 {
-                    bestResult1.partition[i] = dataPoints.points[i].partition;
+                    centroids.points[i].attributes = malloc(numDimensions * sizeof(double));
+                    handleMemoryError(centroids.points[i].attributes);
+                    centroids.points[i].dimensions = numDimensions; //TODO tarkista tehd‰‰nkˆ muualla
                 }
+
+                start = clock();
+
+                generateRandomCentroids(numCentroids, &dataPoints, centroids.points);
+
+                if (LOGGING == 2)
+                {
+                    size_t centroidIndex = calculateCentroidIndex(&centroids, &groundTruth);
+                    printf("(K-means)Initial Centroid Index (CI): %zu\n", centroidIndex);
+                }
+
+                ClusteringResult result0 = runKMeans(&dataPoints, maxIterations, &centroids, &groundTruth);
+                //DEBUGGING if(LOGGING == 2) printf("(K-means)Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (MSE): %.4f\n", result0.centroidIndex, result0.mse / 10000000);
+
+                end = clock();
+                duration = ((double)(end - start)) / CLOCKS_PER_SEC;
+
+                if (LOGGING == 3) printf("(K-means)Time taken: %.2f seconds\n\n", duration);
+
+                result0.centroidIndex = calculateCentroidIndex(&centroids, &groundTruth);
+
+                result0.centroids = malloc(numCentroids * sizeof(DataPoint));
+                handleMemoryError(result0.centroids);
+                deepCopyDataPoints(result0.centroids, centroids.points, numCentroids);
+
+                result0.partition = malloc(dataPoints.size * sizeof(int));
+                handleMemoryError(result0.partition);
+                for (size_t i = 0; i < dataPoints.size; ++i)
+                {
+                    result0.partition[i] = dataPoints.points[i].partition;
+                }
+                mseSum += result0.mse;
+                ciSum += result0.centroidIndex;
+                timeSum += duration;
+                if (result0.centroidIndex == 0) successRate++;
+
+                //TODO: free() muistit?
+
+                if (LOGGING == 3) printf("Round %zu\n", i + 1);
             }
+
+            printf("(K-means)Average CI: %.2f and MSE: %.2f\n", ciSum / loopCount, mseSum / loopCount / scaling);
+            printf("(K-means)Relative CI: %.2f\n", ciSum / loopCount / numCentroids);
+            printf("(K-means)Average time taken: %.2f seconds\n", timeSum / loopCount);
+            printf("(K-means)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
+
+            writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "K-means", loopCount, scaling, outputDirectory);
+
+            ///////////////////////
+            // Repeated k-means //
+            /////////////////////
+            /*
+            mseSum = 0;
+            ciSum = 0;
+            timeSum = 0;
+            successRate = 0;
+
+            printf("Repeated K-means\n");
+
+            for (int i = 0; i < loopCount; i++)
+            {
+                ClusteringResult result1;
+                ClusteringResult bestResult1;
+                bestResult1.centroids = malloc(numCentroids * sizeof(DataPoint));
+                handleMemoryError(bestResult1.centroids);
+                for (int i = 0; i < numCentroids; ++i)
+                {
+                    bestResult1.centroids[i].attributes = malloc(numDimensions * sizeof(double));
+                    handleMemoryError(bestResult1.centroids[i].attributes);
+                }
+                bestResult1.partition = malloc(dataPoints.size * sizeof(int));
+                handleMemoryError(bestResult1.partition);
+                bestResult1.mse = DBL_MAX;
+                bestResult1.centroidIndex = INT_MAX;
+
+                Centroids centroids1;
+                centroids1.size = numCentroids;
+                centroids1.points = malloc(numCentroids * sizeof(DataPoint));
+                handleMemoryError(centroids1.points);
+                for (int i = 0; i < numCentroids; ++i)
+                {
+                    centroids1.points[i].attributes = malloc(numDimensions * sizeof(double));
+                    handleMemoryError(centroids1.points[i].attributes);
+                }
+
+                Centroids bestCentroids1;
+                bestCentroids1.size = numCentroids;
+                bestCentroids1.points = malloc(numCentroids * sizeof(DataPoint));
+                handleMemoryError(bestCentroids1.points);
+                for (int i = 0; i < numCentroids; ++i)
+                {
+                    bestCentroids1.points[i].attributes = malloc(numDimensions * sizeof(double));
+                    handleMemoryError(bestCentroids1.points[i].attributes);
+                }
+
+                start = clock();
+
+                for (int repeat = 0; repeat < MAX_REPEATS; ++repeat)
+                {
+                    //DEBUGGING if(LOGGING == 3) printf("round: %d\n", repeat);
+
+                    generateRandomCentroids(numCentroids, &dataPoints, centroids1.points);
+                    int centroidIndex = calculateCentroidIndex(&centroids1, &groundTruth);
+                    if (LOGGING == 2) printf("(K-means)Initial Centroid Index (CI): %d\n", centroidIndex);
+
+                    // K-means
+                    result1 = runKMeans(&dataPoints, maxIterations, &centroids1, &groundTruth);
+
+                    if (LOGGING == 2) printf("(RKM) Round %d: Latest Centroid Index (CI): %zu and Latest Mean Sum-of-Squared Errors (MSE): %.4f\n", repeat, result1.centroidIndex, result1.mse / 10000);
+
+                    if (result1.mse < bestResult1.mse)
+                    {
+                        //deepCopyDataPoints(bestResult1.centroids, centroids1.points, numCentroids);
+                        deepCopyCentroids(&centroids1, &bestCentroids1, numCentroids);
+                        bestResult1.mse = result1.mse;
+                        for (size_t i = 0; i < dataPoints.size; ++i) //TODO: halutaanko t‰t‰ loopata timerin sis‰ll‰?
+                        {
+                            bestResult1.partition[i] = dataPoints.points[i].partition;
+                        }
+                    }
+                }
+
+                end = clock();
+                duration = ((double)(end - start)) / CLOCKS_PER_SEC;
+                if (LOGGING == 3) printf("(Repeated k-means)Time taken: %.2f seconds\n\n", duration);
+
+                bestResult1.centroidIndex = calculateCentroidIndex(&bestCentroids1, &groundTruth);
+                //printf("(Repeated K-means)Best Centroid Index (CI): %zu and Best Mean Sum-of-Squared Errors (MSE): %.4f\n", bestResult1.centroidIndex, bestResult1.mse / 10000);
+
+                mseSum += bestResult1.mse;
+                ciSum += bestResult1.centroidIndex;
+                timeSum += duration;
+                if (bestResult1.centroidIndex == 0) successRate++;
+
+                //TODO: free() muistit?
+
+                if (LOGGING == 3) printf("Round %zu\n", i + 1);
+            }
+
+            printf("(Repeated k-means)Average CI: %.2f and MSE: %.2f\n", ciSum / loopCount, mseSum / loopCount / scaling);
+            printf("(Repeated k-means)Relative CI: %.2f\n", ciSum / loopCount / numCentroids);
+            printf("(Repeated k-means)Average time taken: %.2f seconds\n", timeSum / loopCount);
+            printf("(Repeated k-means)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
+
+            writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "Repeated K-means", loopCount, scaling, outputDirectory);
+            */
+            //////////////////
+            // Random Swap //
+            ////////////////
+            /*mseSum = 0;
+            ciSum = 0;
+            timeSum = 0;
+            successRate = 0;
+
+            printf("Random swap\n");
+
+            for (int i = 0; i < loopCount; i++)
+            {
+                ClusteringResult result2;
+
+                result2.centroids = malloc(numCentroids * sizeof(DataPoint));
+                handleMemoryError(result2.centroids);
+                for (int i = 0; i < numCentroids; ++i)
+                {
+                    result2.centroids[i].attributes = malloc(numDimensions * sizeof(double));
+                    handleMemoryError(result2.centroids[i].attributes);
+                }
+                result2.partition = malloc(dataPoints.size * sizeof(int));
+                handleMemoryError(result2.partition);
+                result2.centroidIndex = INT_MAX;
+                result2.mse = DBL_MAX;
+
+                Centroids centroids2;
+                centroids2.size = numCentroids;
+                centroids2.points = malloc(numCentroids * sizeof(DataPoint));
+                handleMemoryError(centroids2.points);
+                for (int i = 0; i < numCentroids; ++i)
+                {
+                    centroids2.points[i].attributes = malloc(numDimensions * sizeof(double));
+                    handleMemoryError(centroids2.points[i].attributes);
+                }
+
+                start = clock();
+
+                generateRandomCentroids(numCentroids, &dataPoints, centroids2.points);
+
+                // Random Swap
+                randomSwap(&dataPoints, &centroids2, &groundTruth, &result2);
+
+                end = clock();
+                duration = ((double)(end - start)) / CLOCKS_PER_SEC;
+
+                result2.centroidIndex = calculateCentroidIndex(&centroids2, &groundTruth);
+
+                //Update partition array
+                memcpy(result2.partition, dataPoints.points, dataPoints.size * sizeof(int));
+
+                if (LOGGING == 3) printf("(Random Swap)Time taken: %.2f seconds\n\n", duration);
+
+                mseSum += result2.mse;
+                ciSum += result2.centroidIndex;
+                timeSum += duration;
+                if (result2.centroidIndex == 0) successRate++;
+
+                //TODO: free() muistit?
+
+                if (LOGGING == 3) printf("Round %zu\n", i + 1);
+            }
+
+            printf("(Random Swap)Average CI: %.2f and MSE: %.2f\n", ciSum / loopCount, mseSum / loopCount / scaling);
+            printf("(Random Swap)Relative CI: %.2f\n", ciSum / loopCount / numCentroids);
+            printf("(Random Swap)Average time taken: %.2f seconds\n", timeSum / loopCount);
+            printf("(Random Swap)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
+
+            writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "Random swap", loopCount, scaling, outputDirectory);
+            */
+            ///////////////////
+            // Random Split //
+            /////////////////
+            mseSum = 0;
+            ciSum = 0;
+            timeSum = 0;
+            successRate = 0;
+
+            printf("Random Split k-means\n");
+
+            for (size_t i = 0; i < loopCount; i++)
+            {
+                ClusteringResult result3;
+
+                result3.centroids = malloc(numCentroids * sizeof(DataPoint));
+                handleMemoryError(result3.centroids);
+                for (int i = 0; i < numCentroids; ++i) //TODO: Muuta loopit size_t
+                {
+                    result3.centroids[i].attributes = malloc(numDimensions * sizeof(double));
+                    handleMemoryError(result3.centroids[i].attributes);
+                }
+                result3.partition = malloc(dataPoints.size * sizeof(int));
+                handleMemoryError(result3.partition);
+                result3.centroidIndex = INT_MAX;
+                result3.mse = DBL_MAX;
+
+                Centroids centroids3;
+                centroids3.size = 1;
+                centroids3.points = malloc(numCentroids * sizeof(DataPoint));
+                handleMemoryError(centroids3.points);
+                for (int i = 0; i < numCentroids; ++i)
+                {
+                    centroids3.points[i].attributes = malloc(numDimensions * sizeof(double));
+                    handleMemoryError(centroids3.points[i].attributes);
+                }
+
+                start = clock();
+
+                generateRandomCentroids(centroids3.size, &dataPoints, centroids3.points);
+
+                result3 = runRandomSplit(&dataPoints, &centroids3, numCentroids, &groundTruth);
+
+                end = clock();
+                duration = ((double)(end - start)) / CLOCKS_PER_SEC;
+                if (LOGGING == 3) printf("(Split1)Time taken: %.2f seconds\n\n", duration);
+
+                result3.centroidIndex = calculateCentroidIndex(&centroids3, &groundTruth);
+
+                mseSum += result3.mse;
+                ciSum += result3.centroidIndex;
+                timeSum += duration;
+                if (result3.centroidIndex == 0) successRate++;
+
+                //TODO: free() muistit?
+
+                if (LOGGING == 3) printf("Round %zu\n", i + 1);
+            }
+
+            printf("(Random Split)Average CI: %.2f and MSE: %.2f\n", ciSum / loopCount, mseSum / loopCount / scaling);
+            printf("(Random Split)Relative CI: %.2f\n", ciSum / loopCount / numCentroids);
+            printf("(Random Split)Average time taken: %.2f seconds\n", timeSum / loopCount);
+            printf("(Random Split)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
+
+            writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "Random Split", loopCount, scaling, outputDirectory);
+
+            ///////////////////////////////
+            // MSE Split, Intra-cluster //
+            /////////////////////////////
+
+            mseSum = 0;
+            ciSum = 0;
+            timeSum = 0;
+            successRate = 0;
+
+            printf("MSE Split k-means (Intra)\n");
+
+            for (int i = 0; i < loopCount; i++)
+            {
+
+                resetPartitions(&dataPoints);
+
+                ClusteringResult result4;
+
+                result4.centroids = malloc(numCentroids * sizeof(DataPoint));
+                handleMemoryError(result4.centroids);
+                for (int i = 0; i < numCentroids; ++i)
+                {
+                    result4.centroids[i].attributes = malloc(numDimensions * sizeof(double));
+                    handleMemoryError(result4.centroids[i].attributes);
+                }
+                result4.partition = malloc(dataPoints.size * sizeof(int));
+                handleMemoryError(result4.partition);
+                result4.centroidIndex = INT_MAX;
+                result4.mse = DBL_MAX;
+
+                Centroids centroids4;
+                centroids4.size = 1;
+                centroids4.points = malloc(numCentroids * sizeof(DataPoint));
+                handleMemoryError(centroids4.points);
+                for (int i = 0; i < numCentroids; ++i)
+                {
+                    centroids4.points[i].attributes = malloc(numDimensions * sizeof(double));
+                    handleMemoryError(centroids4.points[i].attributes);
+                }
+
+                start = clock();
+
+                generateRandomCentroids(centroids4.size, &dataPoints, centroids4.points);
+
+                result4 = runMseSplit(&dataPoints, &centroids4, numCentroids, &groundTruth, 0);
+
+                end = clock();
+                duration = ((double)(end - start)) / CLOCKS_PER_SEC;
+                if (LOGGING == 3) printf("(Split2)Time taken: %.2f seconds\n\n", duration);
+
+                result4.centroidIndex = calculateCentroidIndex(&centroids4, &groundTruth);
+
+                mseSum += result4.mse;
+                ciSum += result4.centroidIndex;
+                timeSum += duration;
+                if (result4.centroidIndex == 0) successRate++;
+
+                //TODO: free() muistit?
+
+                if (LOGGING == 3) printf("Round %zu\n", i + 1);
+            }
+
+            printf("(Split2)Average CI: %.2f and MSE: %.2f\n", ciSum / loopCount, mseSum / loopCount / scaling);
+            printf("(Split2)Relative CI: %.2f\n", ciSum / loopCount / numCentroids);
+            printf("(Split2)Average time taken: %.2f seconds\n", timeSum / loopCount);
+            printf("(Split2)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
+
+            writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "MSE Split, Intra-cluster", loopCount, scaling, outputDirectory);
+
+            ////////////////////////
+            // MSE Split, Global //
+            //////////////////////
+            mseSum = 0;
+            ciSum = 0;
+            timeSum = 0;
+            successRate = 0;
+
+            printf("MSE Split k-means (Global)\n");
+
+            for (int i = 0; i < loopCount; i++)
+            {
+                resetPartitions(&dataPoints);
+
+                ClusteringResult result5;
+
+                result5.centroids = malloc(numCentroids * sizeof(DataPoint));
+                handleMemoryError(result5.centroids);
+                for (int i = 0; i < numCentroids; ++i)
+                {
+                    result5.centroids[i].attributes = malloc(numDimensions * sizeof(double));
+                    handleMemoryError(result5.centroids[i].attributes);
+                }
+                result5.partition = malloc(dataPoints.size * sizeof(int));
+                handleMemoryError(result5.partition);
+                result5.centroidIndex = INT_MAX;
+                result5.mse = DBL_MAX;
+
+                Centroids centroids5;
+                centroids5.size = 1;
+                centroids5.points = malloc(numCentroids * sizeof(DataPoint));
+                handleMemoryError(centroids5.points);
+                for (int i = 0; i < numCentroids; ++i)
+                {
+                    centroids5.points[i].attributes = malloc(numDimensions * sizeof(double));
+                    handleMemoryError(centroids5.points[i].attributes);
+                }
+
+                start = clock();
+
+                generateRandomCentroids(centroids5.size, &dataPoints, centroids5.points);
+
+                result5 = runMseSplit(&dataPoints, &centroids5, numCentroids, &groundTruth, 1);
+
+                end = clock();
+                duration = ((double)(end - start)) / CLOCKS_PER_SEC;
+                if (LOGGING == 3) printf("(Split3)Time taken: %.2f seconds\n\n", duration);
+
+                result5.centroidIndex = calculateCentroidIndex(&centroids5, &groundTruth);
+
+                mseSum += result5.mse;
+                ciSum += result5.centroidIndex;
+                timeSum += duration;
+                if (result5.centroidIndex == 0) successRate++;
+
+                //TODO: free() muistit?
+
+                if (LOGGING == 3) printf("Round %zu\n", i + 1);
+            }
+
+            printf("(Split3)Average CI: %.2f and MSE: %.2f\n", ciSum / loopCount, mseSum / loopCount / scaling);
+            printf("(Split3)Relative CI: %.2f\n", ciSum / loopCount / numCentroids);
+            printf("(Split3)Average time taken: %.2f seconds\n", timeSum / loopCount);
+            printf("(Split3)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
+
+            writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "MSE Split, Global", loopCount, scaling, outputDirectory);
+
+            ///////////////////////////////////
+            // MSE Split, Local repartition //
+            /////////////////////////////////
+            mseSum = 0;
+            ciSum = 0;
+            timeSum = 0;
+            successRate = 0;
+
+            printf("MSE Split k-means (Repartition)\n");
+
+            for (int i = 0; i < loopCount; i++)
+            {
+                resetPartitions(&dataPoints);
+
+                ClusteringResult result6;
+
+                result6.centroids = malloc(numCentroids * sizeof(DataPoint));
+                handleMemoryError(result6.centroids);
+                for (int i = 0; i < numCentroids; ++i)
+                {
+                    result6.centroids[i].attributes = malloc(numDimensions * sizeof(double));
+                    handleMemoryError(result6.centroids[i].attributes);
+                }
+                result6.partition = malloc(dataPoints.size * sizeof(int));
+                handleMemoryError(result6.partition);
+                result6.centroidIndex = INT_MAX;
+                result6.mse = DBL_MAX;
+
+                Centroids centroids6;
+                centroids6.size = 1;
+                centroids6.points = malloc(numCentroids * sizeof(DataPoint));
+                handleMemoryError(centroids6.points);
+                for (int i = 0; i < numCentroids; ++i)
+                {
+                    centroids6.points[i].attributes = malloc(numDimensions * sizeof(double));
+                    handleMemoryError(centroids6.points[i].attributes);
+                }
+
+                start = clock();
+
+                generateRandomCentroids(centroids6.size, &dataPoints, centroids6.points);
+
+                if (LOGGING == 3) printDataPointsPartitions(&dataPoints, centroids6.size);
+
+                result6 = runMseSplit(&dataPoints, &centroids6, numCentroids, &groundTruth, 2);
+
+                end = clock();
+                duration = ((double)(end - start)) / CLOCKS_PER_SEC;
+                if (LOGGING == 3) printf("(Split4)Time taken: %.2f seconds\n\n", duration);
+
+                result6.centroidIndex = calculateCentroidIndex(&centroids6, &groundTruth);
+
+                mseSum += result6.mse;
+                ciSum += result6.centroidIndex;
+                timeSum += duration;
+                if (result6.centroidIndex == 0) successRate++;
+
+                //TODO: free() muistit?
+
+                if (LOGGING == 3) printf("Round %zu\n", i + 1);
+            }
+
+            printf("(Split4)Average CI: %.2f and MSE: %.2f\n", ciSum / loopCount, mseSum / loopCount / scaling);
+            printf("(Split4)Relative CI: %.2f\n", ciSum / loopCount / numCentroids);
+            printf("(Split4)Average time taken: %.2f seconds\n", timeSum / loopCount);
+            printf("(Split4)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
+
+            writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "MSE Split, Local repartition", loopCount, scaling, outputDirectory);
+
+            /////////////
+            // Prints //
+            ///////////
+            /*printf("(K-means) CI: %zu and MSE: %.5f\n\n", result0.centroidIndex, result0.mse / 10000);
+            printf("(Repeated K-means) CI: %zu and MSE: %.5f\n", bestResult1.centroidIndex, bestResult1.mse / 10000);
+            printf("(Random Swap) CI: %zu and MSE: %.5f\n\n", result2.centroidIndex, result2.mse / 10000);
+            printf("(RandomSplit) CI: %zu and MSE: %.5f\n", result3.centroidIndex, result3.mse / 10000);
+            printf("(MseSplit_intra) CI: %zu and MSE: %.5f\n", result4.centroidIndex, result4.mse / 10000);
+            printf("(MseSplit_global) CI: %zu and MSE: %.5f\n", result5.centroidIndex, result5.mse / 10000);
+            printf("(MseSplit_repartition) CI: %zu and MSE: %.5f\n", result6.centroidIndex, result6.mse / 10000);*/
+
+            //writeCentroidsToFile("outputs/centroids.txt", &centroids6);
+            //writeDataPointPartitionsToFile("outputs/partitions.txt", &dataPoints);
+
+            ///////////////
+            // Clean up //
+            /////////////
+
+            //DEBUGGING if (LOGGING == 2) printf("Freeing memory\n");
+            //K-means
+            //freeClusteringResult(&result0, numCentroids);
+            //freeCentroids(&centroids);
+
+            //Repeated k-means
+            //freeClusteringResult(&bestResult1, numCentroids);
+            //freeCentroids(&centroids1);
+            //freeCentroids(&bestCentroids1);
+
+            //Random Swap
+            //freeClusteringResult(&result2, numCentroids);
+            //freeCentroids(&centroids2);
+
+            //random Split
+            //freeClusteringResult(&result3, numCentroids); TODO: centroideja ei tallenneta viel‰ t‰h‰n
+            //freeCentroids(&centroids3);
+
+            //MSE Split, Intra
+            //freeClusteringResult(&result4, numCentroids); TODO: centroideja ei tallenneta viel‰ t‰h‰n
+            //freeCentroids(&centroids4);
+
+            //MSE Split, Global
+            //freeClusteringResult(&result5, numCentroids); TODO: centroideja ei tallenneta viel‰ t‰h‰n
+            //freeCentroids(&centroids5);
+
+            //MS Split, Local repartition
+            //freeClusteringResult(&result6, numCentroids); TODO: centroideja ei tallenneta viel‰ t‰h‰n
+            //freeCentroids(&centroids6);
+
+            //Datapoints
+            //freeDataPoints(&dataPoints);
+
+            //Ground truth
+            //freeCentroids(&groundTruth);
         }
-        
-        end = clock();
-        duration = ((double)(end - start)) / CLOCKS_PER_SEC;
-        printf("(Repeated k-means)Time taken: %.2f seconds\n\n", duration);
-
-		bestResult1.centroidIndex = calculateCentroidIndex(&bestCentroids1, &groundTruth);
-        //printf("(Repeated K-means)Best Centroid Index (CI): %zu and Best Mean Sum-of-Squared Errors (MSE): %.4f\n", bestResult1.centroidIndex, bestResult1.mse / 10000);
-        
-
-        //////////////////
-        // Random Swap //
-        ////////////////
-        ClusteringResult result2;
-
-        result2.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint));
-        handleMemoryError(result2.centroids);
-        for (int i = 0; i < NUM_CENTROIDS; ++i)
-        {
-            result2.centroids[i].attributes = malloc(numDimensions * sizeof(double));
-            handleMemoryError(result2.centroids[i].attributes);
-        }
-        result2.partition = malloc(dataPoints.size * sizeof(int));
-        handleMemoryError(result2.partition);
-		result2.centroidIndex = INT_MAX;
-		result2.mse = DBL_MAX;
-
-        Centroids centroids2;
-        centroids2.size = NUM_CENTROIDS;
-        centroids2.points = malloc(NUM_CENTROIDS * sizeof(DataPoint));
-        handleMemoryError(centroids2.points);
-        for (int i = 0; i < NUM_CENTROIDS; ++i)
-        {
-            centroids2.points[i].attributes = malloc(numDimensions * sizeof(double));
-            handleMemoryError(centroids2.points[i].attributes);
-        }
-
-        printf("Random swap\n");
-        start = clock();
-
-        generateRandomCentroids(NUM_CENTROIDS, &dataPoints, centroids2.points);
-
-        // Random Swap
-        randomSwap(&dataPoints, &centroids2, &groundTruth, &result2);
-
-        end = clock();
-        duration = ((double)(end - start)) / CLOCKS_PER_SEC;
-
-		result2.centroidIndex = calculateCentroidIndex(&centroids2, &groundTruth);
-
-        //Update partition array
-        memcpy(result2.partition, dataPoints.points, dataPoints.size * sizeof(int));
-
-        printf("(Random Swap)Time taken: %.2f seconds\n\n", duration);
-        
-        ///////////////////
-        // Random Split //
-        /////////////////
-        ClusteringResult result3;
-
-        result3.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint));
-        handleMemoryError(result3.centroids);
-        for (int i = 0; i < NUM_CENTROIDS; ++i)
-        {
-            result3.centroids[i].attributes = malloc(numDimensions * sizeof(double));
-            handleMemoryError(result3.centroids[i].attributes);
-        }
-        result3.partition = malloc(dataPoints.size * sizeof(int));
-        handleMemoryError(result3.partition);
-        result3.centroidIndex = INT_MAX;
-        result3.mse = DBL_MAX;
-
-        Centroids centroids3;
-        centroids3.size = 1;
-        centroids3.points = malloc(NUM_CENTROIDS * sizeof(DataPoint));
-        handleMemoryError(centroids3.points);
-        for (int i = 0; i < NUM_CENTROIDS; ++i)
-        {
-            centroids3.points[i].attributes = malloc(numDimensions * sizeof(double));
-            handleMemoryError(centroids3.points[i].attributes);
-        }
-
-        printf("Random Split k-means\n");
-
-        start = clock();
-
-        generateRandomCentroids(centroids.size, &dataPoints, centroids3.points);
-
-        result3 = runRandomSplit(&dataPoints, &centroids3, NUM_CENTROIDS, &groundTruth);
-
-        end = clock();
-        duration = ((double)(end - start)) / CLOCKS_PER_SEC;
-        printf("(Split1)Time taken: %.2f seconds\n\n", duration);
-
-		result3.centroidIndex = calculateCentroidIndex(&centroids3, &groundTruth);
-
-
-        ///////////////////////////////
-        // MSE Split, Intra-cluster //
-        /////////////////////////////
-        resetPartitions(&dataPoints);
-
-        ClusteringResult result4;
-
-        result4.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint));
-        handleMemoryError(result4.centroids);
-        for (int i = 0; i < NUM_CENTROIDS; ++i)
-        {
-            result4.centroids[i].attributes = malloc(numDimensions * sizeof(double));
-            handleMemoryError(result4.centroids[i].attributes);
-        }
-        result4.partition = malloc(dataPoints.size * sizeof(int));
-        handleMemoryError(result4.partition);
-        result4.centroidIndex = INT_MAX;
-        result4.mse = DBL_MAX;
-
-        Centroids centroids4;
-        centroids4.size = 1;
-        centroids4.points = malloc(NUM_CENTROIDS * sizeof(DataPoint));
-        handleMemoryError(centroids4.points);
-        for (int i = 0; i < NUM_CENTROIDS; ++i)
-        {
-            centroids4.points[i].attributes = malloc(numDimensions * sizeof(double));
-            handleMemoryError(centroids4.points[i].attributes);
-        }
-
-        printf("MSE Split k-means (Intra)\n");
-
-        start = clock();
-
-        generateRandomCentroids(centroids.size, &dataPoints, centroids4.points);
-
-        result4 = runMseSplit(&dataPoints, &centroids4, NUM_CENTROIDS, &groundTruth, 0);
-
-        end = clock();
-        duration = ((double)(end - start)) / CLOCKS_PER_SEC;
-        printf("(Split2)Time taken: %.2f seconds\n\n", duration);
-
-        result4.centroidIndex = calculateCentroidIndex(&centroids4, &groundTruth);
-        
-
-        ////////////////////////
-        // MSE Split, Global //
-        //////////////////////
-        resetPartitions(&dataPoints);
-
-        ClusteringResult result5;
-
-        result5.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint));
-        handleMemoryError(result5.centroids);
-        for (int i = 0; i < NUM_CENTROIDS; ++i)
-        {
-            result5.centroids[i].attributes = malloc(numDimensions * sizeof(double));
-            handleMemoryError(result5.centroids[i].attributes);
-        }
-        result5.partition = malloc(dataPoints.size * sizeof(int));
-        handleMemoryError(result5.partition);
-        result5.centroidIndex = INT_MAX;
-        result5.mse = DBL_MAX;
-
-        Centroids centroids5;
-        centroids5.size = 1;
-        centroids5.points = malloc(NUM_CENTROIDS * sizeof(DataPoint));
-        handleMemoryError(centroids5.points);
-        for (int i = 0; i < NUM_CENTROIDS; ++i)
-        {
-            centroids5.points[i].attributes = malloc(numDimensions * sizeof(double));
-            handleMemoryError(centroids5.points[i].attributes);
-        }
-
-        printf("MSE Split k-means (Global)\n");
-
-        start = clock();
-
-        generateRandomCentroids(centroids.size, &dataPoints, centroids5.points);
-
-        result5 = runMseSplit(&dataPoints, &centroids5, NUM_CENTROIDS, &groundTruth, 1);
-
-        end = clock();
-        duration = ((double)(end - start)) / CLOCKS_PER_SEC;
-        printf("(Split3)Time taken: %.2f seconds\n\n", duration);
-
-        result5.centroidIndex = calculateCentroidIndex(&centroids5, &groundTruth);
-
-
-        ///////////////////////////////////
-        // MSE Split, Local repartition //
-        /////////////////////////////////
-        resetPartitions(&dataPoints);
-
-        ClusteringResult result6;
-
-        result6.centroids = malloc(NUM_CENTROIDS * sizeof(DataPoint));
-        handleMemoryError(result6.centroids);
-        for (int i = 0; i < NUM_CENTROIDS; ++i)
-        {
-            result6.centroids[i].attributes = malloc(numDimensions * sizeof(double));
-            handleMemoryError(result6.centroids[i].attributes);
-        }
-        result6.partition = malloc(dataPoints.size * sizeof(int));
-        handleMemoryError(result6.partition);
-        result6.centroidIndex = INT_MAX;
-        result6.mse = DBL_MAX;
-
-        Centroids centroids6;
-        centroids6.size = 1;
-        centroids6.points = malloc(NUM_CENTROIDS * sizeof(DataPoint));
-        handleMemoryError(centroids6.points);
-        for (int i = 0; i < NUM_CENTROIDS; ++i)
-        {
-            centroids6.points[i].attributes = malloc(numDimensions * sizeof(double));
-            handleMemoryError(centroids6.points[i].attributes);
-        }
-
-        printf("MSE Split k-means (Repartition)\n");
-
-        start = clock();
-
-        generateRandomCentroids(centroids.size, &dataPoints, centroids6.points);
-
-        if(LOGGING == 3) printDataPointsPartitions(&dataPoints, centroids6.size);
-        
-        result6 = runMseSplit(&dataPoints, &centroids6, NUM_CENTROIDS, &groundTruth, 2);
-
-        end = clock();
-        duration = ((double)(end - start)) / CLOCKS_PER_SEC;
-        printf("(Split4)Time taken: %.2f seconds\n\n", duration);
-
-        result6.centroidIndex = calculateCentroidIndex(&centroids6, &groundTruth);
-
-
-        /////////////
-        // Prints //
-        ///////////
-        printf("(K-means)Best Centroid Index (CI): %zu and Best Mean Sum-of-Squared Errors (MSE): %.5f\n\n", result0.centroidIndex, result0.mse / 10000);
-        printf("(Repeated K-means)Best Centroid Index (CI): %zu and Mean Best Sum-of-Squared Errors (MSE): %.5f\n", bestResult1.centroidIndex, bestResult1.mse / 10000);
-        printf("(Random Swap)Best Centroid Index (CI): %zu and Best Mean Sum-of-Squared Errors (MSE): %.5f\n\n", result2.centroidIndex, result2.mse / 10000);
-        printf("(RandomSplit)Best Centroid Index (CI): %zu and best Sum-of-Squared Errors (MSE): %.5f\n", result3.centroidIndex, result3.mse / 10000);
-        printf("(MseSplit_intra)Best Centroid Index (CI): %zu and best Sum-of-Squared Errors (MSE): %.5f\n", result4.centroidIndex, result4.mse / 10000);
-        printf("(MseSplit_global)Best Centroid Index (CI): %zu and best Sum-of-Squared Errors (MSE): %.5f\n", result5.centroidIndex, result5.mse / 10000);
-        printf("(MseSplit_repartition)Best Centroid Index (CI): %zu and best Sum-of-Squared Errors (MSE): %.5f\n", result6.centroidIndex, result6.mse / 10000);
-
-		writeCentroidsToFile("outputs/centroids.txt", &centroids6);
-        writeDataPointPartitionsToFile("outputs/partitions.txt", &dataPoints);
-
-        ///////////////
-        // Clean up //
-        /////////////
-        
-        //DEBUGGING if (LOGGING == 2) printf("Freeing memory\n");
-        //K-means
-		freeClusteringResult(&result0);
-        freeCentroids(&centroids);
-
-		//Repeated k-means
-        freeClusteringResult(&bestResult1);
-		freeCentroids(&centroids1);
-		freeCentroids(&bestCentroids1);
-
-        //Random Swap
-		freeClusteringResult(&result2);
-		freeCentroids(&centroids2);
-
-        //random Split
-        //freeClusteringResult(&result3); TODO: centroideja ei tallenneta viel‰ t‰h‰n
-		freeCentroids(&centroids3);
-
-		//MSE Split, Intra
-        //freeClusteringResult(&result3); TODO: centroideja ei tallenneta viel‰ t‰h‰n
-        freeCentroids(&centroids4);
-
-		//MSE Split, Global
-        //freeClusteringResult(&result3); TODO: centroideja ei tallenneta viel‰ t‰h‰n
-        freeCentroids(&centroids5);
-
-		//MS Split, Local repartition
-        //freeClusteringResult(&result3); TODO: centroideja ei tallenneta viel‰ t‰h‰n
-        freeCentroids(&centroids6);
-
-		//Datapoints
-        freeDataPoints(&dataPoints);
-
-		//Ground truth
-		freeCentroids(&groundTruth);
-        
-        return 0;
     }
+
+    return 0;
 }
