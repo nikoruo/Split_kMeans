@@ -803,7 +803,7 @@ void randomSwap(DataPoints* dataPoints, Centroids* centroids, Centroids* groundT
             if (LOGGING == 2)
             {
 				result.centroidIndex = calculateCentroidIndex(centroids, groundTruth);
-                printf("(RS) Round %d: Best Centroid Index (CI): %zu and Best Sum-of-Squared Errors (MSE): %.5f\n", i + 1, result.centroidIndex, result.mse / 10000);
+                printf("(RS) Round %zu: Best Centroid Index (CI): %zu and Best Sum-of-Squared Errors (MSE): %.5f\n", i + 1, result.centroidIndex, result.mse / 10000);
             }
             
             bestResult->mse = result.mse;
@@ -1021,6 +1021,7 @@ void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clust
     if(LOGGING == 3) printf("Local repartition is over\n\n");
 }
 
+// Function to check Mse drop
 double tentativeMseDrop(DataPoints* dataPoints, Centroids* centroids, size_t clusterLabel, size_t localMaxIterations, double originalClusterMSE)
 {
     size_t clusterSize = 0;
@@ -1092,7 +1093,6 @@ double tentativeMseDrop(DataPoints* dataPoints, Centroids* centroids, size_t clu
 }
 
 // Function to run the split k-means algorithm with random splitting
-//TODO: kesken
 ClusteringResult runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, Centroids* groundTruth)
 {
     size_t localMaxIterations = 2;
@@ -1309,7 +1309,7 @@ int main()
     char outputDirectory[256];
     createUniqueDirectory(outputDirectory, sizeof(outputDirectory));
 
-    for (size_t i = 10; i < 11; ++i)
+    for (size_t i = 0; i < size; ++i)
     {
         int maxIterations = MAX_ITERATIONS;//TODO tarkasta kaikki, että käytetään oikeita muuttujia
         int numCentroids = kNumList[i];
@@ -1320,8 +1320,8 @@ int main()
         char* gtFile[256];
         snprintf(gtFile, sizeof(gtFile), "gt/%s", gtName);
 
-        size_t loopCount = 10;
-        size_t scaling = 10000;        
+        size_t loopCount = 100;
+        size_t scaling = 10000;
 
         // Seeding the random number generator
         srand((unsigned int)time(NULL));
@@ -1423,6 +1423,9 @@ int main()
             // Repeated k-means //
             /////////////////////
             /*
+            * 
+            * Tässä menee liaan kauan ajaa, joten jätetään pois
+            * 
             mseSum = 0;
             ciSum = 0;
             timeSum = 0;
@@ -1520,7 +1523,7 @@ int main()
             //////////////////
             // Random Swap //
             ////////////////
-            /*mseSum = 0;
+            mseSum = 0;
             ciSum = 0;
             timeSum = 0;
             successRate = 0;
@@ -1586,7 +1589,7 @@ int main()
             printf("(Random Swap)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
 
             writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "Random swap", loopCount, scaling, outputDirectory);
-            */
+            
             ///////////////////
             // Random Split //
             /////////////////
