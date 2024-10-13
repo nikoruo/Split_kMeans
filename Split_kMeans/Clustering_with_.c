@@ -29,7 +29,7 @@ const int NUM_CENTROIDS = 20;
 const int MAX_ITERATIONS = 1000; // k-means rajoitus
 const int MAX_REPEATS = 10; // repeated k-means toistojen lkm, TODO: lopulliseen 100kpl
 const int MAX_SWAPS = 1000; // random swap toistojen lkm, TODO: lopulliseen 1000kpl
-const size_t MAX_LOOPS = 1000;
+const size_t MAX_LOOPS = 100;
 
 // for logging
 const int LOGGING = 1; // 1 = basic, 2 = detailed, 3 = debug, TODO: k‰y kaikki l‰pi ja tarkista, ett‰ k‰ytet‰‰n oikeita muuttujia
@@ -209,7 +209,7 @@ int getNumDimensions(const char* filename)
     //safe to use as we actually check for NULL earlier
     //_Analysis_assume_(file != NULL);
 
-    char firstLine[256];
+    char firstLine[512];
     if (fgets(firstLine, sizeof(firstLine), file) == NULL)
     {
         fprintf(stderr, "Error: File '%s' is empty\n", filename);
@@ -244,10 +244,10 @@ DataPoints readDataPoints(const char* filename)
     dataPoints.size = 0;
     size_t allocatedSize = 0;
 
-    char line[256];
+    char line[512];
     while (fgets(line, sizeof(line), file))
     {
-        size_t attributeAllocatedSize = 4;
+        size_t attributeAllocatedSize = 6;
 
         DataPoint point;
         point.attributes = malloc(sizeof(double) * attributeAllocatedSize);
@@ -256,7 +256,7 @@ DataPoints readDataPoints(const char* filename)
         point.partition = -1;
 
         char* context = NULL;
-        char* token = strtok_s(line, " \t", &context);
+        char* token = strtok_s(line, " \t\r\n", &context);
         while (token != NULL)
         {
             if (point.dimensions == attributeAllocatedSize)
@@ -266,10 +266,12 @@ DataPoints readDataPoints(const char* filename)
                 handleMemoryError(temp);
                 point.attributes = temp;
             }
-
+            //printf("Token: %s\n", token);
             point.attributes[point.dimensions++] = strtod(token, NULL); //atoi(token); //strtod(token, NULL); //TODO: strtod = double, atoi = int
-			token = strtok_s(NULL, " \t", &context); //TODO: spaced " ", tabs "\t", newlines "\n"
+			token = strtok_s(NULL, " \t\r\n", &context); //TODO: spaced " ", tabs "\t", newlines "\n"
         }
+
+        //printf("\n", token);
 
         if (dataPoints.size == allocatedSize)
         {
@@ -286,12 +288,12 @@ DataPoints readDataPoints(const char* filename)
 
     if (LOGGING == 3)
     {
-        for (size_t i = 0; i < dataPoints.size; ++i)
+        for (size_t i = 0; i < 2; ++i)
         {
             printf("Data point %zu attributes: ", i);
             for (size_t j = 0; j < dataPoints.points[i].dimensions; ++j)
             {
-                printf("%f ", dataPoints.points[i].attributes[j]);
+                printf("%.0f ", dataPoints.points[i].attributes[j]);
             }
             printf("\n");
         }
@@ -316,7 +318,7 @@ Centroids readCentroids(const char* filename)
             printf("Centroid %zu (dimensions: %zu) attributes: ", i, points.points[i].dimensions);
             for (size_t j = 0; j < points.points[i].dimensions; ++j)
             {
-                printf("%f ", points.points[i].attributes[j]);
+                printf("%.0f ", points.points[i].attributes[j]);
             }
             printf("\n");
         }
@@ -491,6 +493,7 @@ void createUniqueDirectory(char* outputDirectory, size_t size)
 ///////////////
 
 // Function to choose random data points to be centroids
+//TODO: refaktoroi k‰ytt‰m‰‰n Centroideja?
 void generateRandomCentroids(size_t numCentroids, DataPoints* dataPoints, DataPoint* centroids)
 {    
     /*DEBUGGING
@@ -1124,10 +1127,10 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
 {
     size_t iterations = splitType == 0 ? MAX_ITERATIONS : splitType == 1 ? 4 : 1000; //TODO: pohdi tarkemmat arvot, globaaliin 5 n‰ytt‰‰ toimivan hyvin
 
-    double* clusterMSEs = malloc(centroids->size * sizeof(double));
+    double* clusterMSEs = malloc(maxCentroids * sizeof(double));
     handleMemoryError(clusterMSEs);
 
-    size_t* MseDrops = calloc(centroids->size, sizeof(size_t));
+    size_t* MseDrops = calloc(maxCentroids, sizeof(size_t));
     handleMemoryError(MseDrops);
 
     bool* clustersAffected = calloc(maxCentroids*2, sizeof(bool));
@@ -1163,11 +1166,11 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
             break;
         }
 
-        if (splitType == 3)
+        if (LOGGING == 2 && splitType == 3)
         {
-            printf("--2--\n");
             printDataPointsPartitions(dataPoints, centroids->size);
         }
+
         if(splitType == 0) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, iterations, groundTruth);
 		else if (splitType == 1) splitClusterGlobal(dataPoints, centroids, clusterToSplit, iterations, groundTruth);
 		else if (splitType == 2) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, iterations, groundTruth);
@@ -1176,23 +1179,14 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
         {
             // Recalculate MSE for the affected clusters
             clusterMSEs[clusterToSplit] = calculateClusterMSE(dataPoints, centroids, clusterToSplit);
-            clusterMSEs = realloc(clusterMSEs, centroids->size * sizeof(double));
-            handleMemoryError(clusterMSEs);
             clusterMSEs[centroids->size - 1] = calculateClusterMSE(dataPoints, centroids, centroids->size - 1);
 
             // Update MseDrops for the affected clusters
             MseDrops[clusterToSplit] = tentativeMseDrop(dataPoints, centroids, clusterToSplit, iterations, clusterMSEs[clusterToSplit]);
-            MseDrops = realloc(MseDrops, centroids->size * sizeof(double));
-            handleMemoryError(MseDrops);
             MseDrops[centroids->size - 1] = tentativeMseDrop(dataPoints, centroids, centroids->size - 1, iterations, clusterMSEs[centroids->size - 1]);
         }
         else if (splitType == 1)
-        {
-            clusterMSEs = realloc(clusterMSEs, centroids->size * sizeof(double));
-            handleMemoryError(clusterMSEs);
-            MseDrops = realloc(MseDrops, centroids->size * sizeof(double));
-            handleMemoryError(MseDrops);
-
+        {            
             for (size_t i = 0; i < centroids->size; ++i)
             {
                 clusterMSEs[i] = calculateClusterMSE(dataPoints, centroids, i);
@@ -1205,12 +1199,6 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
             
 			clustersAffected[clusterToSplit] = true;
 			clustersAffected[centroids->size - 1] = true;
-
-            // +1 for sizes
-            clusterMSEs = realloc(clusterMSEs, centroids->size * sizeof(double));
-            handleMemoryError(clusterMSEs);
-            MseDrops = realloc(MseDrops, centroids->size * sizeof(double));
-            handleMemoryError(MseDrops);
 
 			// Recalculate MseDrop for affected clusters (old and new)
             for (size_t i = 0; i < centroids->size; ++i)
@@ -1261,7 +1249,7 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
 
 int main()
 {
-    size_t size = 7;
+    size_t size = 15;
 
     char** datasetList = createStringList(size);
     strcpy_s(datasetList[0], 20, "a1.txt");
@@ -1271,6 +1259,15 @@ int main()
     strcpy_s(datasetList[4], 20, "s2.txt");
     strcpy_s(datasetList[5], 20, "s3.txt");
     strcpy_s(datasetList[6], 20, "s4.txt");
+    strcpy_s(datasetList[7], 20, "unbalance.txt");
+    strcpy_s(datasetList[8], 20, "birch1.txt");
+    strcpy_s(datasetList[9], 20, "birch2.txt");
+    strcpy_s(datasetList[10], 20, "birch3.txt");
+    strcpy_s(datasetList[11], 20, "dim032.txt");
+    strcpy_s(datasetList[12], 20, "dim064.txt");
+    strcpy_s(datasetList[13], 20, "g2-1-10.txt");
+    strcpy_s(datasetList[14], 20, "g2-1-20.txt");
+
 
     char** gtList = createStringList(size);
     strcpy_s(gtList[0], 20, "a1-ga-cb.txt");
@@ -1280,6 +1277,15 @@ int main()
     strcpy_s(gtList[4], 20, "s2-cb.txt");
     strcpy_s(gtList[5], 20, "s3-cb.txt");
     strcpy_s(gtList[6], 20, "s4-cb.txt");
+    strcpy_s(gtList[7], 20, "unbalance-gt.txt");
+    strcpy_s(gtList[8], 20, "b1-gt.txt");
+    strcpy_s(gtList[9], 20, "b2-gt.txt");
+    strcpy_s(gtList[10], 20, "b3-gt.txt");
+    strcpy_s(gtList[11], 20, "dim032.txt");
+    strcpy_s(gtList[12], 20, "dim064.txt");
+    strcpy_s(gtList[13], 20, "g2-1-10-gt.txt");
+    strcpy_s(gtList[14], 20, "g2-1-20-gt.txt");
+
 
     int kNumList[] = {
     20,   // A1
@@ -1292,15 +1298,18 @@ int main()
     8,    // Unbalance    
     100,  // Birch1
     100,  // Birch2
-    2,    // G2
+    100,  // Birch3
     16,   // Dim (high)
+    16,   // Dim (high)
+    2,    // G2
+    2,    // G2
     9     // Dim (low)
     };
 
     char outputDirectory[256];
     createUniqueDirectory(outputDirectory, sizeof(outputDirectory));
 
-    for (size_t i = 0; i < 1; ++i)
+    for (size_t i = 10; i < 11; ++i)
     {
         int maxIterations = MAX_ITERATIONS;//TODO tarkasta kaikki, ett‰ k‰ytet‰‰n oikeita muuttujia
         int numCentroids = kNumList[i];
@@ -1311,7 +1320,7 @@ int main()
         char* gtFile[256];
         snprintf(gtFile, sizeof(gtFile), "gt/%s", gtName);
 
-        size_t loopCount = MAX_LOOPS;
+        size_t loopCount = 10;
         size_t scaling = 10000;        
 
         // Seeding the random number generator
@@ -1656,7 +1665,6 @@ int main()
 
             for (int i = 0; i < loopCount; i++)
             {
-
                 resetPartitions(&dataPoints);
 
                 ClusteringResult result4;
@@ -1670,7 +1678,7 @@ int main()
                 }
                 result4.partition = malloc(dataPoints.size * sizeof(int));
                 handleMemoryError(result4.partition);
-                result4.centroidIndex = INT_MAX;
+                result4.centroidIndex = INT_MAX; //TODO: voiko muuttaa = (size_t) -1?
                 result4.mse = DBL_MAX;
 
                 Centroids centroids4;
