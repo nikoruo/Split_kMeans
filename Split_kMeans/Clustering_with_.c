@@ -1251,6 +1251,67 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
     return finalResult;
 }
 
+// Function to run the Bisecting k-means algorithm
+ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, Centroids* groundTruth)
+{
+	size_t bisectingIterations = 5;
+    
+    double* clusterMSEs = malloc(maxCentroids * sizeof(double));
+    handleMemoryError(clusterMSEs);
+
+    size_t* MseDrops = calloc(maxCentroids, sizeof(size_t));
+    handleMemoryError(MseDrops);
+
+    bool* clustersAffected = calloc(maxCentroids * 2, sizeof(bool));
+    handleMemoryError(clustersAffected);
+
+    //Only 1 cluster, so no need for decision making
+    size_t initialClusterToSplit = 0;
+
+    for (size_t i = 0; i < bisectingIterations; i++)
+    {
+        splitClusterIntraCluster(dataPoints, centroids, initialClusterToSplit, MAX_ITERATIONS, groundTruth);
+		tentativeMseDrop(dataPoints, centroids, initialClusterToSplit, MAX_ITERATIONS, clusterMSEs[initialClusterToSplit]);
+    }
+
+
+
+
+
+	size_t maxCentroids = 2;
+	size_t localMaxIterations = 2;
+	partitionStep(dataPoints, centroids);
+	centroidStep(centroids, dataPoints);
+	while (centroids->size < maxCentroids)
+	{
+		size_t clusterToSplit = 0;
+		double maxMseDrop = DBL_MIN;
+		for (size_t i = 0; i < centroids->size; ++i)
+		{
+			double clusterMSE = calculateClusterMSE(dataPoints, centroids, i);
+			double mseDrop = tentativeMseDrop(dataPoints, centroids, i, localMaxIterations, clusterMSE);
+			if (mseDrop > maxMseDrop)
+			{
+				maxMseDrop = mseDrop;
+				clusterToSplit = i;
+			}
+		}
+		if (maxMseDrop <= 0.0)
+		{
+			break;
+		}
+		splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, localMaxIterations, groundTruth);
+		if (LOGGING == 2)
+		{
+			size_t ci = calculateCentroidIndex(centroids, groundTruth);
+			double mse = calculateMSE(dataPoints, centroids);
+			printf("(Bisecting) Number of centroids: %zu, CI: %zu, and MSE: %.5f \n", centroids->size, ci, mse / 10000);
+		}
+	}
+	ClusteringResult finalResult = runKMeans(dataPoints, MAX_ITERATIONS, centroids, groundTruth);
+	return finalResult;
+}
+
 ///////////
 // Main //
 /////////
@@ -1878,6 +1939,79 @@ int main()
             printf("(Split4)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
 
             writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "MSE Split, Local repartition", loopCount, scaling, outputDirectory);
+
+            ////////////////////////
+            // Bisecting k-means //
+            //////////////////////
+            mseSum = 0;
+            ciSum = 0;
+            timeSum = 0;
+            successRate = 0;
+
+            printf("Bisecting k-means\n");
+
+            for (int i = 0; i < loopCount; i++)
+            {
+                resetPartitions(&dataPoints);
+
+                ClusteringResult result7;
+
+                result7.centroids = malloc(numCentroids * sizeof(DataPoint));
+                handleMemoryError(result7.centroids);
+                for (int i = 0; i < numCentroids; ++i)
+                {
+                    result7.centroids[i].attributes = malloc(numDimensions * sizeof(double));
+                    handleMemoryError(result7.centroids[i].attributes);
+                }
+                result7.partition = malloc(dataPoints.size * sizeof(int));
+                handleMemoryError(result7.partition);
+                result7.centroidIndex = INT_MAX;
+                result7.mse = DBL_MAX;
+
+                Centroids centroids7;
+                centroids7.size = 1;
+                centroids7.points = malloc(numCentroids * sizeof(DataPoint));
+                handleMemoryError(centroids7.points);
+                for (int i = 0; i < numCentroids; ++i)
+                {
+                    centroids7.points[i].attributes = malloc(numDimensions * sizeof(double));
+                    handleMemoryError(centroids7.points[i].attributes);
+                }
+
+                start = clock();
+
+                generateRandomCentroids(centroids7.size, &dataPoints, centroids7.points);
+
+                if (LOGGING == 3) printDataPointsPartitions(&dataPoints, centroids7.size);
+
+                result7 = runBisectingKMeans(&dataPoints, &centroids7, numCentroids, &groundTruth);
+
+                end = clock();
+                duration = ((double)(end - start)) / CLOCKS_PER_SEC;
+                if (LOGGING == 3) printf("(Bisecting)Time taken: %.2f seconds\n\n", duration);
+
+                result7.centroidIndex = calculateCentroidIndex(&centroids7, &groundTruth);
+
+                mseSum += result7.mse;
+                ciSum += result7.centroidIndex;
+                timeSum += duration;
+                if (result7.centroidIndex == 0) successRate++;
+
+                //TODO: free() muistit?
+
+                if (LOGGING == 3) printf("Round %zu\n", i + 1);
+            }
+
+            printf("(Split4)Average CI: %.2f and MSE: %.2f\n", ciSum / loopCount, mseSum / loopCount / scaling);
+            printf("(Split4)Relative CI: %.2f\n", ciSum / loopCount / numCentroids);
+            printf("(Split4)Average time taken: %.2f seconds\n", timeSum / loopCount);
+            printf("(Split4)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
+
+            writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "Bisecting k-means", loopCount, scaling, outputDirectory);
+
+
+
+
 
             /////////////
             // Prints //
