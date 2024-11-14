@@ -8,6 +8,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+// Credits: Niko Ruohonen, 2024
+
 //Constants for file locations
 const char* DATA_FILENAME = "a1.txt";
 const char* GT_FILENAME = "a1-ga-cb.txt";
@@ -1259,6 +1261,10 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
 //TODO: kommentoi kaikki muistintarkastukset pois lopullisesta versiosta <-tehokkuus?
 //TODO: "static inline..." sellaisten funktioiden eteen jotka eivät muuta mitään ja joita kutsutaan? Saattaa tehostaa suoritusta
 //TODO: partition on int, mutta se voisi olla size_t. Jotta onnistuu niin -1 alustukset pitää käydä läpi
+//TODO: credits koodin alkuun
+//TODO: koodin palastelu eri tiedostoihin?
+//TODO: konsolikysymykset, kuten "do you want to run split k-means?" ja "do you want to run random swap?" jne?
+//TODO: komentoriviargumentit, kuten "split k-means" ja "random swap" jne? (eli että voi ajaa suoraan powershellistä)
 
 int main()
 {
