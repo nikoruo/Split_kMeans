@@ -543,12 +543,22 @@ double calculateSSE(DataPoints* dataPoints, Centroids* centroids)
     return sse;
 }
 
-//calculate MSE
+//calculate MSE (divider is the size of the dataPoints
 double calculateMSE(DataPoints* dataPoints, Centroids* centroids)
 {
     double sse = calculateSSE(dataPoints, centroids);
 
     double mse = sse / (dataPoints->size * dataPoints->points[0].dimensions);
+
+    return mse;
+}
+
+//calculate MSE (divider is the size of the whole data set)
+double calculateMSEWithSize(DataPoints* dataPoints, Centroids* centroids, size_t size)
+{
+    double sse = calculateSSE(dataPoints, centroids);
+
+    double mse = sse / (size * dataPoints->points[0].dimensions);
 
     return mse;
 }
@@ -574,7 +584,8 @@ double calculateClusterMSE(DataPoints* dataPoints, Centroids* centroids, size_t 
         return 0.0;
     }
 
-    double mse = sse / (count * dimensions);
+	//TODO: count vai dataPoints->size? Eli datapisteiden määrä clusterissa vai koko datasetissä?
+    double mse = sse / (dataPoints->size * dimensions);
     return mse;
 }
 
@@ -740,7 +751,8 @@ ClusteringResult runKMeans(DataPoints* dataPoints, int iterations, Centroids* ce
         centroidStep(centroids, dataPoints);
         
         // MSE Calculation
-        mse = calculateMSE(dataPoints, centroids);
+        //TODO: mse vai SSE? Tällä hetkellä SSE vaikka muuttujat ovat mse
+        mse = calculateSSE(dataPoints, centroids);
 
         if (LOGGING == 2)
         {
@@ -1072,7 +1084,8 @@ double tentativeMseDrop(DataPoints* dataPoints, Centroids* centroids, size_t clu
     ClusteringResult localResult = runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, NULL);
 
     // Calculate combined MSE of the two clusters
-    double newClusterMSE = calculateMSE(&pointsInCluster, &localCentroids);
+	//WithSize vai ilman? Eli koko datasetin mukaan vai pelkästään clusterin mukaan?
+    double newClusterMSE = calculateMSEWithSize(&pointsInCluster, &localCentroids, dataPoints->size);
 
     // Calculate the MSE drop
     double mseDrop = originalClusterMSE - newClusterMSE;
@@ -1523,12 +1536,13 @@ int main()
             //////////////////
             // Random Swap //
             ////////////////
+            /*
+            printf("Random swap\n");
+
             mseSum = 0;
             ciSum = 0;
             timeSum = 0;
             successRate = 0;
-
-            printf("Random swap\n");
 
             for (int i = 0; i < loopCount; i++)
             {
@@ -1589,7 +1603,7 @@ int main()
             printf("(Random Swap)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
 
             writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "Random swap", loopCount, scaling, outputDirectory);
-            
+            */
             ///////////////////
             // Random Split //
             /////////////////
