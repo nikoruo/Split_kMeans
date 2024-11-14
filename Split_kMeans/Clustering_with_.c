@@ -1268,13 +1268,29 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
     //Only 1 cluster, so no need for decision making
     size_t initialClusterToSplit = 0;
 
-    for (size_t i = 0; i < bisectingIterations; i++)
+
+    for (int repeat = 0; repeat < MAX_REPEATS; ++repeat)
     {
-        splitClusterIntraCluster(dataPoints, centroids, initialClusterToSplit, MAX_ITERATIONS, groundTruth);
-		tentativeMseDrop(dataPoints, centroids, initialClusterToSplit, MAX_ITERATIONS, clusterMSEs[initialClusterToSplit]);
+        //DEBUGGING if(LOGGING == 3) printf("round: %d\n", repeat);
+
+        generateRandomCentroids(centroids->size, &dataPoints, centroids->points);
+
+        // K-means
+        result1 = runKMeans(&dataPoints, maxIterations, &centroids1, &groundTruth);
+
+        if (LOGGING == 2) printf("(RKM) Round %d: Latest Centroid Index (CI): %zu and Latest Mean Sum-of-Squared Errors (MSE): %.4f\n", repeat, result1.centroidIndex, result1.mse / 10000);
+
+        if (result1.mse < bestResult1.mse)
+        {
+            //deepCopyDataPoints(bestResult1.centroids, centroids1.points, numCentroids);
+            deepCopyCentroids(&centroids1, &bestCentroids1, numCentroids);
+            bestResult1.mse = result1.mse;
+            for (size_t i = 0; i < dataPoints.size; ++i) //TODO: halutaanko tätä loopata timerin sisällä?
+            {
+                bestResult1.partition[i] = dataPoints.points[i].partition;
+            }
+        }
     }
-
-
 
 
 
