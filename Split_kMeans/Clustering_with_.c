@@ -1344,17 +1344,11 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
     //Variables
 	size_t bisectingIterations = 5;
     
-    double* clusterMSEs = malloc(maxCentroids * sizeof(double));
-    handleMemoryError(clusterMSEs);
-
-    double* SseList = calloc(maxCentroids, sizeof(size_t));
+    double* SseList = malloc(maxCentroids * sizeof(size_t));
     handleMemoryError(SseList);
 
-    bool* clustersAffected = calloc(maxCentroids * 2, sizeof(bool));
-    handleMemoryError(clustersAffected);
-
     ClusteringResult bestResult;
-    bestResult.centroids = malloc(2 * sizeof(DataPoint));
+    /*bestResult.centroids = malloc(2 * sizeof(DataPoint));
     handleMemoryError(bestResult.centroids);
     for (int i = 0; i < 2; ++i)
     {
@@ -1363,11 +1357,12 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
     }
     bestResult.partition = malloc(dataPoints->size * sizeof(int));
     handleMemoryError(bestResult.partition);
-    bestResult.mse = DBL_MAX;
     bestResult.centroidIndex = INT_MAX;
+    */
+    bestResult.mse = DBL_MAX;
 
     //TODO: riittäisi 2x DataPointtia
-    Centroids bestCentroids;
+    /*Centroids bestCentroids;
     bestCentroids.size = 2;
     bestCentroids.points = malloc(2 * sizeof(DataPoint));
     handleMemoryError(bestCentroids.points);
@@ -1375,7 +1370,18 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
     {
         bestCentroids.points[i].attributes = malloc(dataPoints->points[0].dimensions * sizeof(double));
         handleMemoryError(bestCentroids.points[i].attributes);
-    }
+    }*/
+    DataPoint newCentroid1;
+    newCentroid1.attributes = malloc(sizeof(double) * dataPoints->points[0].dimensions);
+    handleMemoryError(newCentroid1.attributes);
+    newCentroid1.dimensions = dataPoints->points[0].dimensions;
+    newCentroid1.partition = -1;
+
+    DataPoint newCentroid2;
+    newCentroid2.attributes = malloc(sizeof(double) * dataPoints->points[0].dimensions);
+    handleMemoryError(newCentroid2.attributes);
+    newCentroid2.dimensions = dataPoints->points[0].dimensions;
+    newCentroid2.partition = -1;
 
     DataPoint ogCentroid;
     ogCentroid.attributes = malloc(sizeof(double) * dataPoints->points[0].dimensions);
@@ -1442,8 +1448,10 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
 
                 // Save the two new centroids
                 //TODO: nyt kopioi kaikki, jos aikaa niin vain uudet
-				deepCopyDataPoints(&bestCentroids.points, curr.centroids, 2);
-                
+				deepCopyDataPoint(&newCentroid1, &curr.centroids[0]);
+                deepCopyDataPoint(&newCentroid2, &curr.centroids[1]);
+
+
                 // Save the partition (of just the new clusters?)
                 //ei ehkä tarvi, jos vaan partition step loppuun?
                 /*for (size_t i = 0; i < dataPoints->size; ++i) //TODO: halutaanko tätä loopata timerin sisällä?
@@ -1469,14 +1477,14 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
         }
 
 		//Choose the best cluster split
-        deepCopyDataPoint(&centroids->points[initialClusterToSplit], &bestCentroids.points[0]);
-        deepCopyDataPoint(&centroids->points[centroids->size - 1], &bestCentroids.points[1]);
+        deepCopyDataPoint(&centroids->points[initialClusterToSplit], &newCentroid1);
+        deepCopyDataPoint(&centroids->points[centroids->size - 1], &newCentroid2);
 		partitionStep(dataPoints, centroids);
 
 		//Step 3: Update the SSE list
         // Recalculate MSE for the affected clusters
-        clusterMSEs[clusterToSplit] = calculateClusterMSE(dataPoints, centroids, clusterToSplit);
-        clusterMSEs[centroids->size - 1] = calculateClusterMSE(dataPoints, centroids, centroids->size - 1);
+        SseList[clusterToSplit] = calculateClusterMSE(dataPoints, centroids, clusterToSplit);
+        SseList[centroids->size - 1] = calculateClusterMSE(dataPoints, centroids, centroids->size - 1);
 
         //DEBUGGING if(LOGGING == 3) printf("round: %d\n", repeat);
     }
@@ -1610,7 +1618,7 @@ int main()
             clock_t start = clock();
             clock_t end = clock();
             double duration = 0;
-
+            
             printf("K-means\n");
 
             for (int i = 0; i < loopCount; i++)
@@ -1848,7 +1856,8 @@ int main()
             ///////////////////
             // Random Split //
             /////////////////
-            /*mseSum = 0;
+            /*
+            mseSum = 0;
             ciSum = 0;
             timeSum = 0;
             successRate = 0;
@@ -2117,6 +2126,7 @@ int main()
             ////////////////////////
             // Bisecting k-means //
             //////////////////////
+            
             mseSum = 0;
             ciSum = 0;
             timeSum = 0;
@@ -2130,7 +2140,7 @@ int main()
 
                 ClusteringResult result7;
 
-                result7.centroids = malloc(numCentroids * sizeof(DataPoint));
+                /*result7.centroids = malloc(numCentroids * sizeof(DataPoint));
                 handleMemoryError(result7.centroids);
                 for (int i = 0; i < numCentroids; ++i)
                 {
@@ -2140,6 +2150,7 @@ int main()
                 result7.partition = malloc(dataPoints.size * sizeof(int));
                 handleMemoryError(result7.partition);
                 result7.centroidIndex = INT_MAX;
+                */
                 result7.mse = DBL_MAX;
 
                 Centroids centroids7;
@@ -2182,9 +2193,7 @@ int main()
             printf("(Bisecting)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
 
             writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "Bisecting k-means", loopCount, scaling, outputDirectory);
-
-
-
+            
 
 
             /////////////
