@@ -1361,16 +1361,6 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
     */
     bestResult.mse = DBL_MAX;
 
-    //TODO: riittäisi 2x DataPointtia
-    /*Centroids bestCentroids;
-    bestCentroids.size = 2;
-    bestCentroids.points = malloc(2 * sizeof(DataPoint));
-    handleMemoryError(bestCentroids.points);
-    for (int i = 0; i < 2; ++i)
-    {
-        bestCentroids.points[i].attributes = malloc(dataPoints->points[0].dimensions * sizeof(double));
-        handleMemoryError(bestCentroids.points[i].attributes);
-    }*/
     DataPoint newCentroid1;
     newCentroid1.attributes = malloc(sizeof(double) * dataPoints->points[0].dimensions);
     handleMemoryError(newCentroid1.attributes);
@@ -1389,7 +1379,7 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
     ogCentroid.dimensions = dataPoints->points[0].dimensions;
     ogCentroid.partition = -1;
 
-    size_t* ogPartitions = malloc(dataPoints->size * sizeof(int));
+    size_t* ogPartitions = malloc(dataPoints->size * sizeof(size_t));
 	handleMemoryError(ogPartitions);
 
 	//Step 0: Only 1 cluster, so no need for decision making
@@ -1400,23 +1390,22 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
     SseList[1] = calculateClusterMSE(dataPoints, centroids, 1);
 
     //Repeat until we have K clusters
-    for (int i = 0; i < maxCentroids; ++i)
+    for (int i = 2; i < maxCentroids; ++i)
     {
         size_t clusterToSplit = 0;
         double maxSSE = SseList[0];
 
 		//Step 1: Choose the cluster to split (the highest SSE)
-        for (size_t i = 1; i < centroids->size; ++i)
+        for (size_t j = 1; j < centroids->size; ++j)
         {
-            if (SseList[i] > maxSSE)
+            if (SseList[j] > maxSSE)
             {
-                maxSSE = SseList[i];
-                clusterToSplit = i;
+                maxSSE = SseList[j];
+                clusterToSplit = j;
             }
         }
         
-        //TODO: ota talteen alkuperäinen centroid
-        
+        //TODO: ota talteen alkuperäinen centroid        
         deepCopyDataPoint(&ogCentroid, &centroids->points[clusterToSplit]);
 
         //TODO: myös alkuperäinen partition?
@@ -1428,11 +1417,6 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
 		//Repeat for a set number of iterations
         for (int j = 0; j < bisectingIterations; ++j)
         {
-			// Split the cluster
-            //option 1: eli oikeasti suoritetaan jako
-            //tämä tuntuu nyt huonolta vaihtoehdolta, koska se on pirun raskasta
-            //double curr = splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, 1000, groundTruth);
-
 			//options 2: eli vain lasketaan, mutta ei suoriteta
             //tämä kuulostaa paremmalta
 			ClusteringResult curr = tentativeSplitterForBisecting(dataPoints, centroids, clusterToSplit, 1000);
@@ -1442,15 +1426,12 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
 			// If the result is better than the best result so far, update the best result
             if (curr.mse < bestResult.mse)
             {
-                printf("(Bisecting) Round %d: Homma pelaa \n", j);
                 // Save the SSE
                 bestResult.mse = curr.mse;
 
                 // Save the two new centroids
-                //TODO: nyt kopioi kaikki, jos aikaa niin vain uudet
 				deepCopyDataPoint(&newCentroid1, &curr.centroids[0]);
                 deepCopyDataPoint(&newCentroid2, &curr.centroids[1]);
-
 
                 // Save the partition (of just the new clusters?)
                 //ei ehkä tarvi, jos vaan partition step loppuun?
@@ -1473,13 +1454,15 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
             //TODO: Tarvitaanko muuta kuin size pienennys?
             //free(centroids->points[centroids->size - 1].attributes);
             //centroids->points[centroids->size - 1].attributes = NULL;
-			centroids->size--;
+			//centroids->size--;
         }
 
 		//Choose the best cluster split
-        deepCopyDataPoint(&centroids->points[initialClusterToSplit], &newCentroid1);
-        deepCopyDataPoint(&centroids->points[centroids->size - 1], &newCentroid2);
-		partitionStep(dataPoints, centroids);
+        deepCopyDataPoint(&centroids->points[clusterToSplit], &newCentroid1);
+        deepCopyDataPoint(&centroids->points[centroids->size], &newCentroid2);
+        centroids->size++;
+
+        partitionStep(dataPoints, centroids);
 
 		//Step 3: Update the SSE list
         // Recalculate MSE for the affected clusters
@@ -1571,7 +1554,7 @@ int main()
     char outputDirectory[256];
     createUniqueDirectory(outputDirectory, sizeof(outputDirectory));
 
-    for (size_t i = 5; i < 6; ++i)
+    for (size_t i = 0; i < 9; ++i)
     {
         int maxIterations = MAX_ITERATIONS;//TODO tarkasta kaikki, että käytetään oikeita muuttujia
         int numCentroids = kNumList[i];
@@ -2138,7 +2121,6 @@ int main()
             {
                 resetPartitions(&dataPoints);
 
-                ClusteringResult result7;
 
                 /*result7.centroids = malloc(numCentroids * sizeof(DataPoint));
                 handleMemoryError(result7.centroids);
@@ -2150,8 +2132,8 @@ int main()
                 result7.partition = malloc(dataPoints.size * sizeof(int));
                 handleMemoryError(result7.partition);
                 result7.centroidIndex = INT_MAX;
-                */
                 result7.mse = DBL_MAX;
+                */
 
                 Centroids centroids7;
                 centroids7.size = 1;
@@ -2169,7 +2151,7 @@ int main()
 
                 if (LOGGING == 3) printDataPointsPartitions(&dataPoints, centroids7.size);
 
-                result7 = runBisectingKMeans(&dataPoints, &centroids7, numCentroids, &groundTruth);
+                ClusteringResult result7 = runBisectingKMeans(&dataPoints, &centroids7, numCentroids, &groundTruth);
 
                 end = clock();
                 duration = ((double)(end - start)) / CLOCKS_PER_SEC;
