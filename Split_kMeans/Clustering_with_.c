@@ -587,7 +587,7 @@ double calculateClusterMSE(DataPoints* dataPoints, Centroids* centroids, size_t 
     }
 
 	//TODO: count vai dataPoints->size? Eli datapisteiden määrä clusterissa vai koko datasetissä?
-    double mse = sse / (dataPoints->size * dimensions);
+    double mse = sse;// (dataPoints->size * dimensions);
     return mse;
 }
 
@@ -1036,6 +1036,7 @@ void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clust
 }
 
 // Function to check Mse drop
+//todo: centroids turha tänne?
 double tentativeMseDrop(DataPoints* dataPoints, Centroids* centroids, size_t clusterLabel, size_t localMaxIterations, double originalClusterMSE)
 {
     size_t clusterSize = 0;
@@ -1107,6 +1108,91 @@ double tentativeMseDrop(DataPoints* dataPoints, Centroids* centroids, size_t clu
     return mseDrop;
 }
 
+// Function to check and return mse drops
+//todo: centroids turha tänne?
+ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, Centroids* centroids, size_t clusterLabel, size_t localMaxIterations)
+{
+    size_t clusterSize = 0;
+    for (size_t i = 0; i < dataPoints->size; ++i)
+    {
+        if (dataPoints->points[i].partition == clusterLabel)
+        {
+            clusterSize++;
+        }
+    }
+
+    DataPoints pointsInCluster;
+    pointsInCluster.size = clusterSize;
+    pointsInCluster.points = malloc(clusterSize * sizeof(DataPoint));
+    handleMemoryError(pointsInCluster.points);
+
+    size_t index = 0;
+    for (size_t i = 0; i < dataPoints->size; ++i)
+    {
+        if (dataPoints->points[i].partition == clusterLabel)
+        {
+            deepCopyDataPoint(&pointsInCluster.points[index], &dataPoints->points[i]);
+            index++;
+        }
+    }
+
+    // Random centroids
+    size_t idx1 = rand() % clusterSize;
+    size_t idx2 = idx1;
+    while (idx2 == idx1)
+    {
+        idx2 = rand() % clusterSize;
+    }
+
+    Centroids localCentroids;
+    localCentroids.size = 2;
+    localCentroids.points = malloc(2 * sizeof(DataPoint));
+    handleMemoryError(localCentroids.points);
+    deepCopyDataPoint(&localCentroids.points[0], &pointsInCluster.points[idx1]);
+    deepCopyDataPoint(&localCentroids.points[1], &pointsInCluster.points[idx2]);
+
+    
+    ClusteringResult localResult;
+    localResult.centroids = malloc(2 * sizeof(DataPoint));
+    handleMemoryError(localResult.centroids);
+    for (int i = 0; i < 2; ++i)
+    {
+        localResult.centroids[i].attributes = malloc(dataPoints->points[1].dimensions * sizeof(double));
+        handleMemoryError(localResult.centroids[i].attributes);
+    }
+    localResult.partition = malloc(dataPoints->size * sizeof(int));
+    handleMemoryError(localResult.partition);
+    localResult.centroidIndex = INT_MAX;
+    localResult.mse = DBL_MAX;
+
+    // k-means
+    localResult = runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, NULL);
+
+    // Calculate combined MSE of the two clusters
+    //WithSize vai ilman? Eli koko datasetin mukaan vai pelkästään clusterin mukaan?
+    double newClusterMSE = calculateMSEWithSize(&pointsInCluster, &localCentroids, dataPoints->size);
+
+    // Calculate the MSE drop
+    localResult.mse = newClusterMSE;
+	localResult.centroids = localCentroids.points;
+
+    // Cleanup TODO: tämä laajempi vai riittääkö se mikä on splitClusterissa?
+    /*for (size_t i = 0; i < pointsInCluster.size; ++i)
+    {
+        free(pointsInCluster.points[i].attributes);
+    }
+    free(pointsInCluster.points);
+    for (size_t i = 0; i < localCentroids.size; ++i)
+    {
+        free(localCentroids.points[i].attributes);
+    }
+    free(localCentroids.points);
+    */
+
+    return localResult;
+}
+
+
 // Function to run the split k-means algorithm with random splitting
 ClusteringResult runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, Centroids* groundTruth)
 {
@@ -1140,6 +1226,7 @@ ClusteringResult runRandomSplit(DataPoints* dataPoints, Centroids* centroids, si
 // splitType 0 = intra-cluster, 1 = global, 2 = local
 ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, Centroids* groundTruth, int splitType)
 {
+    //TODO: entä jos globaalia ei rajoittaisi, olisiko tullut paremmat tulokset???????
     size_t iterations = splitType == 0 ? MAX_ITERATIONS : splitType == 1 ? 4 : 1000; //TODO: pohdi tarkemmat arvot, globaaliin 5 näyttää toimivan hyvin
 
     double* clusterMSEs = malloc(maxCentroids * sizeof(double));
@@ -1254,78 +1341,149 @@ ClusteringResult runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_
 // Function to run the Bisecting k-means algorithm
 ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, Centroids* groundTruth)
 {
+    //Variables
 	size_t bisectingIterations = 5;
     
     double* clusterMSEs = malloc(maxCentroids * sizeof(double));
     handleMemoryError(clusterMSEs);
 
-    size_t* MseDrops = calloc(maxCentroids, sizeof(size_t));
-    handleMemoryError(MseDrops);
+    double* SseList = calloc(maxCentroids, sizeof(size_t));
+    handleMemoryError(SseList);
 
     bool* clustersAffected = calloc(maxCentroids * 2, sizeof(bool));
     handleMemoryError(clustersAffected);
 
-    //Only 1 cluster, so no need for decision making
-    size_t initialClusterToSplit = 0;
-
-
-    for (int repeat = 0; repeat < MAX_REPEATS; ++repeat)
+    ClusteringResult bestResult;
+    bestResult.centroids = malloc(2 * sizeof(DataPoint));
+    handleMemoryError(bestResult.centroids);
+    for (int i = 0; i < 2; ++i)
     {
-        //DEBUGGING if(LOGGING == 3) printf("round: %d\n", repeat);
+        bestResult.centroids[i].attributes = malloc(dataPoints->points[0].dimensions * sizeof(double));
+        handleMemoryError(bestResult.centroids[i].attributes);
+    }
+    bestResult.partition = malloc(dataPoints->size * sizeof(int));
+    handleMemoryError(bestResult.partition);
+    bestResult.mse = DBL_MAX;
+    bestResult.centroidIndex = INT_MAX;
 
-        generateRandomCentroids(centroids->size, &dataPoints, centroids->points);
-
-        // K-means
-        result1 = runKMeans(&dataPoints, maxIterations, &centroids1, &groundTruth);
-
-        if (LOGGING == 2) printf("(RKM) Round %d: Latest Centroid Index (CI): %zu and Latest Mean Sum-of-Squared Errors (MSE): %.4f\n", repeat, result1.centroidIndex, result1.mse / 10000);
-
-        if (result1.mse < bestResult1.mse)
-        {
-            //deepCopyDataPoints(bestResult1.centroids, centroids1.points, numCentroids);
-            deepCopyCentroids(&centroids1, &bestCentroids1, numCentroids);
-            bestResult1.mse = result1.mse;
-            for (size_t i = 0; i < dataPoints.size; ++i) //TODO: halutaanko tätä loopata timerin sisällä?
-            {
-                bestResult1.partition[i] = dataPoints.points[i].partition;
-            }
-        }
+    //TODO: riittäisi 2x DataPointtia
+    Centroids bestCentroids;
+    bestCentroids.size = 2;
+    bestCentroids.points = malloc(2 * sizeof(DataPoint));
+    handleMemoryError(bestCentroids.points);
+    for (int i = 0; i < 2; ++i)
+    {
+        bestCentroids.points[i].attributes = malloc(dataPoints->points[0].dimensions * sizeof(double));
+        handleMemoryError(bestCentroids.points[i].attributes);
     }
 
+    DataPoint ogCentroid;
+    ogCentroid.attributes = malloc(sizeof(double) * dataPoints->points[0].dimensions);
+    handleMemoryError(ogCentroid.attributes);
+    ogCentroid.dimensions = dataPoints->points[0].dimensions;
+    ogCentroid.partition = -1;
 
+    size_t* ogPartitions = malloc(dataPoints->size * sizeof(int));
+	handleMemoryError(ogPartitions);
 
-	size_t maxCentroids = 2;
-	size_t localMaxIterations = 2;
-	partitionStep(dataPoints, centroids);
-	centroidStep(centroids, dataPoints);
-	while (centroids->size < maxCentroids)
-	{
-		size_t clusterToSplit = 0;
-		double maxMseDrop = DBL_MIN;
-		for (size_t i = 0; i < centroids->size; ++i)
-		{
-			double clusterMSE = calculateClusterMSE(dataPoints, centroids, i);
-			double mseDrop = tentativeMseDrop(dataPoints, centroids, i, localMaxIterations, clusterMSE);
-			if (mseDrop > maxMseDrop)
+	//Step 0: Only 1 cluster, so no need for decision making
+    size_t initialClusterToSplit = 0;
+    splitClusterIntraCluster(dataPoints, centroids, initialClusterToSplit, MAX_ITERATIONS, groundTruth);
+
+	SseList[0] = calculateClusterMSE(dataPoints, centroids, 0);
+    SseList[1] = calculateClusterMSE(dataPoints, centroids, 1);
+
+    //Repeat until we have K clusters
+    for (int i = 0; i < maxCentroids; ++i)
+    {
+        size_t clusterToSplit = 0;
+        double maxSSE = SseList[0];
+
+		//Step 1: Choose the cluster to split (the highest SSE)
+        for (size_t i = 1; i < centroids->size; ++i)
+        {
+            if (SseList[i] > maxSSE)
+            {
+                maxSSE = SseList[i];
+                clusterToSplit = i;
+            }
+        }
+        
+        //TODO: ota talteen alkuperäinen centroid
+        
+        deepCopyDataPoint(&ogCentroid, &centroids->points[clusterToSplit]);
+
+        //TODO: myös alkuperäinen partition?
+        for (size_t i = 0; i < dataPoints->size; ++i)
+        {
+            ogPartitions[i] = dataPoints->points[i].partition;
+        }
+
+		//Repeat for a set number of iterations
+        for (int j = 0; j < bisectingIterations; ++j)
+        {
+			// Split the cluster
+            //option 1: eli oikeasti suoritetaan jako
+            //tämä tuntuu nyt huonolta vaihtoehdolta, koska se on pirun raskasta
+            //double curr = splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, 1000, groundTruth);
+
+			//options 2: eli vain lasketaan, mutta ei suoriteta
+            //tämä kuulostaa paremmalta
+			ClusteringResult curr = tentativeSplitterForBisecting(dataPoints, centroids, clusterToSplit, 1000);
+
+            //if (LOGGING == 2) printf("(RKM) Round %d: Latest Centroid Index (CI): %zu and Latest Mean Sum-of-Squared Errors (MSE): %.4f\n", repeat, result1.centroidIndex, result1.mse / 10000);
+
+			// If the result is better than the best result so far, update the best result
+            if (curr.mse < bestResult.mse)
+            {
+                printf("(Bisecting) Round %d: Homma pelaa \n", j);
+                // Save the SSE
+                bestResult.mse = curr.mse;
+
+                // Save the two new centroids
+                //TODO: nyt kopioi kaikki, jos aikaa niin vain uudet
+				deepCopyDataPoints(&bestCentroids.points, curr.centroids, 2);
+                
+                // Save the partition (of just the new clusters?)
+                //ei ehkä tarvi, jos vaan partition step loppuun?
+                /*for (size_t i = 0; i < dataPoints->size; ++i) //TODO: halutaanko tätä loopata timerin sisällä?
+                {
+                    bestResult.partition[i] = dataPoints->points[i].partition;
+                }*/
+            }
+
+            //TODO: palauta alkuperäinen centroid
+            deepCopyDataPoint(&centroids->points[clusterToSplit], &ogCentroid);
+
+            //TODO: palauta partition? <- voisiko tämän skipata jotenkin?
+			for (size_t i = 0; i < dataPoints->size; ++i)
 			{
-				maxMseDrop = mseDrop;
-				clusterToSplit = i;
+				dataPoints->points[i].partition = ogPartitions[i];
 			}
-		}
-		if (maxMseDrop <= 0.0)
-		{
-			break;
-		}
-		splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, localMaxIterations, groundTruth);
-		if (LOGGING == 2)
-		{
-			size_t ci = calculateCentroidIndex(centroids, groundTruth);
-			double mse = calculateMSE(dataPoints, centroids);
-			printf("(Bisecting) Number of centroids: %zu, CI: %zu, and MSE: %.5f \n", centroids->size, ci, mse / 10000);
-		}
-	}
-	ClusteringResult finalResult = runKMeans(dataPoints, MAX_ITERATIONS, centroids, groundTruth);
-	return finalResult;
+                        
+            //TODO: poista uusi centroid
+            //TODO: Tarvitaanko muuta kuin size pienennys?
+            //free(centroids->points[centroids->size - 1].attributes);
+            //centroids->points[centroids->size - 1].attributes = NULL;
+			centroids->size--;
+        }
+
+		//Choose the best cluster split
+        deepCopyDataPoint(&centroids->points[initialClusterToSplit], &bestCentroids.points[0]);
+        deepCopyDataPoint(&centroids->points[centroids->size - 1], &bestCentroids.points[1]);
+		partitionStep(dataPoints, centroids);
+
+		//Step 3: Update the SSE list
+        // Recalculate MSE for the affected clusters
+        clusterMSEs[clusterToSplit] = calculateClusterMSE(dataPoints, centroids, clusterToSplit);
+        clusterMSEs[centroids->size - 1] = calculateClusterMSE(dataPoints, centroids, centroids->size - 1);
+
+        //DEBUGGING if(LOGGING == 3) printf("round: %d\n", repeat);
+    }
+
+	//Step 4: Run the final k-means
+    ClusteringResult finalResult = runKMeans(dataPoints, MAX_ITERATIONS, centroids, groundTruth);
+    return finalResult;
 }
 
 ///////////
@@ -1405,7 +1563,7 @@ int main()
     char outputDirectory[256];
     createUniqueDirectory(outputDirectory, sizeof(outputDirectory));
 
-    for (size_t i = 0; i < size; ++i)
+    for (size_t i = 5; i < 6; ++i)
     {
         int maxIterations = MAX_ITERATIONS;//TODO tarkasta kaikki, että käytetään oikeita muuttujia
         int numCentroids = kNumList[i];
@@ -1690,7 +1848,7 @@ int main()
             ///////////////////
             // Random Split //
             /////////////////
-            mseSum = 0;
+            /*mseSum = 0;
             ciSum = 0;
             timeSum = 0;
             successRate = 0;
@@ -1955,7 +2113,7 @@ int main()
             printf("(Split4)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
 
             writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "MSE Split, Local repartition", loopCount, scaling, outputDirectory);
-
+            */
             ////////////////////////
             // Bisecting k-means //
             //////////////////////
@@ -2018,10 +2176,10 @@ int main()
                 if (LOGGING == 3) printf("Round %zu\n", i + 1);
             }
 
-            printf("(Split4)Average CI: %.2f and MSE: %.2f\n", ciSum / loopCount, mseSum / loopCount / scaling);
-            printf("(Split4)Relative CI: %.2f\n", ciSum / loopCount / numCentroids);
-            printf("(Split4)Average time taken: %.2f seconds\n", timeSum / loopCount);
-            printf("(Split4)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
+            printf("(Bisecting)Average CI: %.2f and MSE: %.2f\n", ciSum / loopCount, mseSum / loopCount / scaling);
+            printf("(Bisecting)Relative CI: %.2f\n", ciSum / loopCount / numCentroids);
+            printf("(Bisecting)Average time taken: %.2f seconds\n", timeSum / loopCount);
+            printf("(Bisecting)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
 
             writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "Bisecting k-means", loopCount, scaling, outputDirectory);
 
