@@ -349,7 +349,6 @@ void writeCentroidsToFile(const char* filename, Centroids* centroids)
     }
 
     fclose(centroidFile);
-    printf("\nCentroid file created successfully: %s\n", filename);
 }
 
 // Function to write data point partitions to a file
@@ -369,7 +368,6 @@ void writeDataPointPartitionsToFile(const char* filename, DataPoints* dataPoints
     }
 
     fclose(file);
-    printf("Data point partitions written to file: %s\n", filename);
 }
 
 //Funtion to create a deep copy of a data point
@@ -1121,6 +1119,13 @@ ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, Centroids
         }
     }
 
+    if (clusterSize < 2)
+    {
+        printf("Not enough points to split the cluster\n");
+        exit(EXIT_FAILURE);
+    }
+
+
     DataPoints pointsInCluster;
     pointsInCluster.size = clusterSize;
     pointsInCluster.points = malloc(clusterSize * sizeof(DataPoint));
@@ -1152,17 +1157,7 @@ ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, Centroids
     deepCopyDataPoint(&localCentroids.points[1], &pointsInCluster.points[idx2]);
 
     
-    ClusteringResult localResult;
-    localResult.centroids = malloc(2 * sizeof(DataPoint));
-    handleMemoryError(localResult.centroids);
-    for (int i = 0; i < 2; ++i)
-    {
-        localResult.centroids[i].attributes = malloc(dataPoints->points[1].dimensions * sizeof(double));
-        handleMemoryError(localResult.centroids[i].attributes);
-    }
-    localResult.partition = malloc(dataPoints->size * sizeof(int));
-    handleMemoryError(localResult.partition);
-    localResult.centroidIndex = INT_MAX;
+    ClusteringResult localResult;    
     localResult.mse = DBL_MAX;
 
     // k-means
@@ -1174,10 +1169,25 @@ ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, Centroids
 
     // Calculate the MSE drop
     localResult.mse = newClusterMSE;
-	localResult.centroids = localCentroids.points;
+
+    localResult.centroids = malloc(2 * sizeof(DataPoint));
+    handleMemoryError(localResult.centroids);
+    for (int i = 0; i < 2; ++i)
+    {
+        localResult.centroids[i].attributes = malloc(dataPoints->points[1].dimensions * sizeof(double));
+        handleMemoryError(localResult.centroids[i].attributes);
+    }
+    localResult.partition = malloc(dataPoints->size * sizeof(int));
+    handleMemoryError(localResult.partition);
+    localResult.centroidIndex = INT_MAX;
+	localCentroids.size = 2;
+	deepCopyDataPoint(&localResult.centroids[0], &localCentroids.points[0]);
+    deepCopyDataPoint(&localResult.centroids[1], &localCentroids.points[1]);
+
+    //localResult.centroids = localCentroids.points;
 
     // Cleanup TODO: tämä laajempi vai riittääkö se mikä on splitClusterissa?
-    /*for (size_t i = 0; i < pointsInCluster.size; ++i)
+    for (size_t i = 0; i < pointsInCluster.size; ++i)
     {
         free(pointsInCluster.points[i].attributes);
     }
@@ -1187,7 +1197,7 @@ ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, Centroids
         free(localCentroids.points[i].attributes);
     }
     free(localCentroids.points);
-    */
+    
 
     return localResult;
 }
@@ -1390,8 +1400,10 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
     SseList[1] = calculateClusterMSE(dataPoints, centroids, 1);
 
     //Repeat until we have K clusters
-    for (int i = 2; i < maxCentroids; ++i)
+    for (int i = 2; centroids->size < maxCentroids; ++i)
     {
+        if (LOGGING == 1) printf("(BKM) Round %d: Centroids: %zu\n", i-1, centroids->size);
+
         size_t clusterToSplit = 0;
         double maxSSE = SseList[0];
 
@@ -1426,13 +1438,20 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
 			// If the result is better than the best result so far, update the best result
             if (curr.mse < bestResult.mse)
             {
+                if (LOGGING == 1) printf("(success) Round %d\n", j);
+
                 // Save the SSE
                 bestResult.mse = curr.mse;
-
+                Centroids tempCentroids;
+                tempCentroids.size = 2; // Number of centroids in curr
+                tempCentroids.points = curr.centroids;
+                // Print centroids using the existing function
+                printCentroidsInfo(&tempCentroids); 
+                
                 // Save the two new centroids
 				deepCopyDataPoint(&newCentroid1, &curr.centroids[0]);
                 deepCopyDataPoint(&newCentroid2, &curr.centroids[1]);
-
+				free(curr.centroids);
                 // Save the partition (of just the new clusters?)
                 //ei ehkä tarvi, jos vaan partition step loppuun?
                 /*for (size_t i = 0; i < dataPoints->size; ++i) //TODO: halutaanko tätä loopata timerin sisällä?
@@ -1442,13 +1461,13 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
             }
 
             //TODO: palauta alkuperäinen centroid
-            deepCopyDataPoint(&centroids->points[clusterToSplit], &ogCentroid);
+            /*deepCopyDataPoint(&centroids->points[clusterToSplit], &ogCentroid);
 
             //TODO: palauta partition? <- voisiko tämän skipata jotenkin?
 			for (size_t i = 0; i < dataPoints->size; ++i)
 			{
 				dataPoints->points[i].partition = ogPartitions[i];
-			}
+			}*/
                         
             //TODO: poista uusi centroid
             //TODO: Tarvitaanko muuta kuin size pienennys?
@@ -1460,7 +1479,6 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
 		//Choose the best cluster split
         deepCopyDataPoint(&centroids->points[clusterToSplit], &newCentroid1);
         deepCopyDataPoint(&centroids->points[centroids->size], &newCentroid2);
-        centroids->size++;
 
         partitionStep(dataPoints, centroids);
 
@@ -1469,7 +1487,11 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
         SseList[clusterToSplit] = calculateClusterMSE(dataPoints, centroids, clusterToSplit);
         SseList[centroids->size - 1] = calculateClusterMSE(dataPoints, centroids, centroids->size - 1);
 
+		writeCentroidsToFile("outputs/centroids.txt", centroids);
+		writeDataPointPartitionsToFile("outputs/partitions.txt", dataPoints);
         //DEBUGGING if(LOGGING == 3) printf("round: %d\n", repeat);
+        centroids->size++;
+
     }
 
 	//Step 4: Run the final k-means
