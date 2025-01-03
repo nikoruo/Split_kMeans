@@ -1132,7 +1132,7 @@ ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, Centroids
     handleMemoryError(pointsInCluster.points);
 
     size_t index = 0;
-    for (size_t i = 0; i < dataPoints->size; ++i)
+    for (size_t i = 0; i < dataPoints->size; ++i) //todo: tämän loopin voi ehkä yhdistää ylemmän kanssa? ps. tai ehkä ei koska clusterSize?
     {
         if (dataPoints->points[i].partition == clusterLabel)
         {
@@ -1180,7 +1180,8 @@ ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, Centroids
     localResult.partition = malloc(dataPoints->size * sizeof(int));
     handleMemoryError(localResult.partition);
     localResult.centroidIndex = INT_MAX;
-	localCentroids.size = 2;
+	
+    localCentroids.size = 2;
 	deepCopyDataPoint(&localResult.centroids[0], &localCentroids.points[0]);
     deepCopyDataPoint(&localResult.centroids[1], &localCentroids.points[1]);
 
@@ -1196,8 +1197,7 @@ ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, Centroids
     {
         free(localCentroids.points[i].attributes);
     }
-    free(localCentroids.points);
-    
+    free(localCentroids.points);    
 
     return localResult;
 }
@@ -1421,9 +1421,9 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
         deepCopyDataPoint(&ogCentroid, &centroids->points[clusterToSplit]);
 
         //TODO: myös alkuperäinen partition?
-        for (size_t i = 0; i < dataPoints->size; ++i)
+        for (size_t j = 0; j < dataPoints->size; ++j)
         {
-            ogPartitions[i] = dataPoints->points[i].partition;
+            ogPartitions[j] = dataPoints->points[j].partition;
         }
 
 		//Repeat for a set number of iterations
@@ -1438,20 +1438,21 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
 			// If the result is better than the best result so far, update the best result
             if (curr.mse < bestResult.mse)
             {
-                if (LOGGING == 1) printf("(success) Round %d\n", j);
+                if (LOGGING == 1) printf("(from inner) Round %d\n", j);
 
                 // Save the SSE
                 bestResult.mse = curr.mse;
-                Centroids tempCentroids;
-                tempCentroids.size = 2; // Number of centroids in curr
+                Centroids tempCentroids; //Debug helper
+                tempCentroids.size = 2; // Number of centroids in curr <- this is why we needed debug helper
                 tempCentroids.points = curr.centroids;
                 // Print centroids using the existing function
-                //printCentroidsInfo(&tempCentroids); 
+                printCentroidsInfo(&tempCentroids); 
                 
                 // Save the two new centroids
 				deepCopyDataPoint(&newCentroid1, &curr.centroids[0]);
                 deepCopyDataPoint(&newCentroid2, &curr.centroids[1]);
-				free(curr.centroids);
+				//free(curr.centroids);
+				freeClusteringResult(&curr, 2);
                 // Save the partition (of just the new clusters?)
                 //ei ehkä tarvi, jos vaan partition step loppuun?
                 /*for (size_t i = 0; i < dataPoints->size; ++i) //TODO: halutaanko tätä loopata timerin sisällä?
@@ -1479,7 +1480,9 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
 		//Choose the best cluster split
         deepCopyDataPoint(&centroids->points[clusterToSplit], &newCentroid1);
         deepCopyDataPoint(&centroids->points[centroids->size], &newCentroid2);
+		centroids->size++;
         
+        if (LOGGING == 1) printf("(from outer) Round %d\n", i);
         printCentroidsInfo(centroids);
 
         partitionStep(dataPoints, centroids);
@@ -1492,8 +1495,9 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
 		writeCentroidsToFile("outputs/centroids.txt", centroids);
 		writeDataPointPartitionsToFile("outputs/partitions.txt", dataPoints);
         //DEBUGGING if(LOGGING == 3) printf("round: %d\n", repeat);
-        centroids->size++;
+        //centroids->size++;
 
+        bestResult.mse = DBL_MAX;
     }
 
 	//Step 4: Run the final k-means
