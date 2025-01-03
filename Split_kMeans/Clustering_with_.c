@@ -31,7 +31,7 @@ const int NUM_CENTROIDS = 20;
 const int MAX_ITERATIONS = 1000; // k-means rajoitus
 const int MAX_REPEATS = 10; // repeated k-means toistojen lkm, TODO: lopulliseen 100kpl
 const int MAX_SWAPS = 1000; // random swap toistojen lkm, TODO: lopulliseen 1000kpl
-const size_t MAX_LOOPS = 100;
+const size_t MAX_LOOPS = 1; //TODO ei käytössä
 
 // for logging
 const int LOGGING = 1; // 1 = basic, 2 = detailed, 3 = debug, TODO: käy kaikki läpi ja tarkista, että käytetään oikeita muuttujia
@@ -722,7 +722,7 @@ size_t calculateCentroidIndex(Centroids* centroids1, Centroids* centroids2)
     if (LOGGING == 3)
     {
         printf("centroids1: %zu AND 2: %zu\n\n", centroids1->size, centroids2->size);
-        printf("centroids1: %zu AND 2: %zu\n\n", centroids1->points->attributes[0], centroids2->points->attributes[0]);
+        printf("centroids1: %f AND 2: %f\n\n", centroids1->points->attributes[0], centroids2->points->attributes[0]);
     }
     
     size_t countFrom1to2 = countOrphans(centroids1, centroids2);
@@ -1446,7 +1446,7 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
                 tempCentroids.size = 2; // Number of centroids in curr
                 tempCentroids.points = curr.centroids;
                 // Print centroids using the existing function
-                printCentroidsInfo(&tempCentroids); 
+                //printCentroidsInfo(&tempCentroids); 
                 
                 // Save the two new centroids
 				deepCopyDataPoint(&newCentroid1, &curr.centroids[0]);
@@ -1480,7 +1480,7 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
         deepCopyDataPoint(&centroids->points[clusterToSplit], &newCentroid1);
         deepCopyDataPoint(&centroids->points[centroids->size], &newCentroid2);
         
-        if (LOGGING == 1) printCentroidsInfo(centroids);
+        printCentroidsInfo(centroids);
 
         partitionStep(dataPoints, centroids);
 
@@ -1578,7 +1578,7 @@ int main()
     char outputDirectory[256];
     createUniqueDirectory(outputDirectory, sizeof(outputDirectory));
 
-    for (size_t i = 0; i < 9; ++i)
+    for (size_t i = 5; i < 6; ++i)
     {
         int maxIterations = MAX_ITERATIONS;//TODO tarkasta kaikki, että käytetään oikeita muuttujia
         int numCentroids = kNumList[i];
@@ -1596,7 +1596,7 @@ int main()
         srand((unsigned int)time(NULL));
 
         printf("Starting the process\n");
-        printf("File name: %s\n", *dataFile);
+        printf("File name: %s\n", dataFile);
 
         int numDimensions = getNumDimensions(dataFile);
 
@@ -1679,6 +1679,12 @@ int main()
                 //TODO: free() muistit?
 
                 if (LOGGING == 3) printf("Round %d\n", i + 1);
+
+                if (i == 0)
+                {
+                    writeCentroidsToFile("outputs/kMeans_centroids.txt", &centroids);
+                    writeDataPointPartitionsToFile("outputs/kMeans_partitions.txt", &dataPoints);
+                }
             }
 
             printf("(K-means)Average CI: %.2f and MSE: %.2f\n", ciSum / loopCount, mseSum / loopCount / scaling);
@@ -1839,7 +1845,11 @@ int main()
                 result2.centroidIndex = calculateCentroidIndex(&centroids2, &groundTruth);
 
                 //Update partition array
-                memcpy(result2.partition, dataPoints.points, dataPoints.size * sizeof(int));
+                //memcpy(result2.partition, dataPoints.points, dataPoints.size * sizeof(int));
+                for (size_t i = 0; i < dataPoints.size; ++i)
+                {
+                    result2.partition[i] = dataPoints.points[i].partition;
+                }
 
                 if (LOGGING == 3) printf("(Random Swap)Time taken: %.2f seconds\n\n", duration);
 
@@ -1850,7 +1860,13 @@ int main()
 
                 //TODO: free() muistit?
 
-                if (LOGGING == 3) printf("Round %zu\n", i + 1);
+                if (LOGGING == 3) printf("Round %d\n", i + 1);
+
+                if (i==0)
+                {
+                    writeCentroidsToFile("outputs/randomSwap_centroids.txt", &centroids2);
+                    writeDataPointPartitionsToFile("outputs/randomSwap_partitions.txt", &dataPoints);
+                }
             }
 
             printf("(Random Swap)Average CI: %.2f and MSE: %.2f\n", ciSum / loopCount, mseSum / loopCount / scaling);
@@ -1860,6 +1876,7 @@ int main()
 
             writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "Random swap", loopCount, scaling, outputDirectory);
             */
+
             ///////////////////
             // Random Split //
             /////////////////
@@ -1917,6 +1934,12 @@ int main()
                 //TODO: free() muistit?
 
                 if (LOGGING == 3) printf("Round %zu\n", i + 1);
+                                
+                if (i == 0)
+                {
+                    writeCentroidsToFile("outputs/randomSplit_centroids.txt", &centroids3);
+                    writeDataPointPartitionsToFile("outputs/randomSplit_partitions.txt", &dataPoints);
+                }
             }
 
             printf("(Random Split)Average CI: %.2f and MSE: %.2f\n", ciSum / loopCount, mseSum / loopCount / scaling);
@@ -1925,11 +1948,11 @@ int main()
             printf("(Random Split)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
 
             writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "Random Split", loopCount, scaling, outputDirectory);
-
+            */
             ///////////////////////////////
             // MSE Split, Intra-cluster //
             /////////////////////////////
-
+            /*
             mseSum = 0;
             ciSum = 0;
             timeSum = 0;
@@ -1984,7 +2007,13 @@ int main()
 
                 //TODO: free() muistit?
 
-                if (LOGGING == 3) printf("Round %zu\n", i + 1);
+                if (LOGGING == 3) printf("Round %d\n", i + 1);
+
+                if (i == 0)
+                {
+                    writeCentroidsToFile("outputs/intraCluster_centroids.txt", &centroids4);
+                    writeDataPointPartitionsToFile("outputs/intraCluster_partitions.txt", &dataPoints);
+                }
             }
 
             printf("(Split2)Average CI: %.2f and MSE: %.2f\n", ciSum / loopCount, mseSum / loopCount / scaling);
@@ -1993,10 +2022,11 @@ int main()
             printf("(Split2)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
 
             writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "MSE Split, Intra-cluster", loopCount, scaling, outputDirectory);
-
+            */
             ////////////////////////
             // MSE Split, Global //
             //////////////////////
+            /*
             mseSum = 0;
             ciSum = 0;
             timeSum = 0;
@@ -2051,7 +2081,13 @@ int main()
 
                 //TODO: free() muistit?
 
-                if (LOGGING == 3) printf("Round %zu\n", i + 1);
+                if (LOGGING == 3) printf("Round %d\n", i + 1);
+
+                if (i == 0)
+                {
+                    writeCentroidsToFile("outputs/globalSplit_centroids.txt", &centroids5);
+                    writeDataPointPartitionsToFile("outputs/globalSplit_partitions.txt", &dataPoints);
+                }
             }
 
             printf("(Split3)Average CI: %.2f and MSE: %.2f\n", ciSum / loopCount, mseSum / loopCount / scaling);
@@ -2060,10 +2096,11 @@ int main()
             printf("(Split3)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
 
             writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "MSE Split, Global", loopCount, scaling, outputDirectory);
-
+            */
             ///////////////////////////////////
             // MSE Split, Local repartition //
             /////////////////////////////////
+            /*
             mseSum = 0;
             ciSum = 0;
             timeSum = 0;
@@ -2120,7 +2157,13 @@ int main()
 
                 //TODO: free() muistit?
 
-                if (LOGGING == 3) printf("Round %zu\n", i + 1);
+                if (LOGGING == 3) printf("Round %d\n", i + 1);
+
+                if (i == 0)
+                {
+                    writeCentroidsToFile("outputs/localRepartition_centroids.txt", &centroids6);
+                    writeDataPointPartitionsToFile("outputs/localRepartition_partitions.txt", &dataPoints);
+                }
             }
 
             printf("(Split4)Average CI: %.2f and MSE: %.2f\n", ciSum / loopCount, mseSum / loopCount / scaling);
@@ -2199,7 +2242,6 @@ int main()
             printf("(Bisecting)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
 
             writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "Bisecting k-means", loopCount, scaling, outputDirectory);
-            
 
 
             /////////////
