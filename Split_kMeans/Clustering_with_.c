@@ -1479,6 +1479,8 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
 		//Choose the best cluster split
         deepCopyDataPoint(&centroids->points[clusterToSplit], &newCentroid1);
         deepCopyDataPoint(&centroids->points[centroids->size], &newCentroid2);
+        
+        if (LOGGING == 1) printCentroidsInfo(centroids);
 
         partitionStep(dataPoints, centroids);
 
