@@ -1479,6 +1479,16 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
 
 		//Choose the best cluster split
         deepCopyDataPoint(&centroids->points[clusterToSplit], &newCentroid1);
+
+        // Ensure the centroids array is resized before adding the new centroid
+        centroids->points = realloc(centroids->points, (centroids->size + 1) * sizeof(DataPoint));
+        handleMemoryError(centroids->points);
+
+        centroids->points[centroids->size].attributes = malloc(newCentroid2.dimensions * sizeof(double));
+        handleMemoryError(centroids->points[centroids->size].attributes);
+        centroids->points[centroids->size].dimensions = newCentroid2.dimensions;
+        centroids->points[centroids->size].partition = newCentroid2.partition;
+
         deepCopyDataPoint(&centroids->points[centroids->size], &newCentroid2);
 		centroids->size++;
         
@@ -1502,6 +1512,14 @@ ClusteringResult runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids
 
 	//Step 4: Run the final k-means
     ClusteringResult finalResult = runKMeans(dataPoints, MAX_ITERATIONS, centroids, groundTruth);
+
+    // Cleanup
+    free(SseList);
+    free(newCentroid1.attributes);
+    free(newCentroid2.attributes);
+    free(ogCentroid.attributes);
+    free(ogPartitions);
+
     return finalResult;
 }
 
@@ -1582,7 +1600,7 @@ int main()
     char outputDirectory[256];
     createUniqueDirectory(outputDirectory, sizeof(outputDirectory));
 
-    for (size_t i = 5; i < 6; ++i)
+    for (size_t i = 6; i < 7; ++i)
     {
         int maxIterations = MAX_ITERATIONS;//TODO tarkasta kaikki, että käytetään oikeita muuttujia
         int numCentroids = kNumList[i];
