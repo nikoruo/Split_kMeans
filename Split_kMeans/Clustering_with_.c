@@ -1596,7 +1596,7 @@ int main()
         srand((unsigned int)time(NULL));
 
         printf("Starting the process\n");
-        printf("File name: %s\n", dataFile);
+        printf("File name: %s\n", *dataFile);
 
         int numDimensions = getNumDimensions(dataFile);
 
@@ -1678,7 +1678,7 @@ int main()
 
                 //TODO: free() muistit?
 
-                if (LOGGING == 3) printf("Round %zu\n", i + 1);
+                if (LOGGING == 3) printf("Round %d\n", i + 1);
             }
 
             printf("(K-means)Average CI: %.2f and MSE: %.2f\n", ciSum / loopCount, mseSum / loopCount / scaling);
@@ -2190,7 +2190,7 @@ int main()
 
                 //TODO: free() muistit?
 
-                if (LOGGING == 3) printf("Round %zu\n", i + 1);
+                if (LOGGING == 3) printf("Round %d\n", i + 1);
             }
 
             printf("(Bisecting)Average CI: %.2f and MSE: %.2f\n", ciSum / loopCount, mseSum / loopCount / scaling);
