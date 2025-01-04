@@ -1150,7 +1150,6 @@ void splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t clu
 
     // Cleanup
     free(clusterIndices);
-    free(globalResult.partition); // assuming runKMeans dynamically allocates the partition array
 }
 
 // Function to run local repartitioning
