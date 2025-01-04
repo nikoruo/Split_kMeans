@@ -903,8 +903,7 @@ void createUniqueDirectory(char* outputDirectory, size_t size)
 ///////////////
 
 // Function to choose random data points to be centroids
-//TODO: refaktoroi käyttämään Centroideja?
-void generateRandomCentroids(size_t numCentroids, DataPoints* dataPoints, DataPoint* centroids)
+void generateRandomCentroids(size_t numCentroids, DataPoints* dataPoints, Centroids* centroids)
 {    
     /*DEBUGGING
     if (dataPoints->size < numCentroids)
@@ -932,7 +931,7 @@ void generateRandomCentroids(size_t numCentroids, DataPoints* dataPoints, DataPo
     for (size_t i = 0; i < numCentroids; ++i)
     {
         size_t selectedIndex = indices[i];
-        deepCopyDataPoint(&centroids[i], &dataPoints->points[selectedIndex]);
+        deepCopyDataPoint(&centroids->points[i], &dataPoints->points[selectedIndex]);
     }
 
     free(indices);
@@ -2074,7 +2073,7 @@ int main()
 
                 start = clock();
 
-                generateRandomCentroids(numCentroids, &dataPoints, centroids.points);
+                generateRandomCentroids(numCentroids, &dataPoints, &centroids);
 
                 if (LOGGING == 2)
                 {
@@ -2181,7 +2180,7 @@ int main()
                 {
                     //DEBUGGING if(LOGGING == 3) printf("round: %d\n", repeat);
 
-                    generateRandomCentroids(numCentroids, &dataPoints, centroids1.points);
+                    generateRandomCentroids(numCentroids, &dataPoints, centroids1);
                     int centroidIndex = calculateCentroidIndex(&centroids1, &groundTruth);
                     if (LOGGING == 2) printf("(K-means)Initial Centroid Index (CI): %d\n", centroidIndex);
 
@@ -2265,7 +2264,7 @@ int main()
 
                 start = clock();
 
-                generateRandomCentroids(numCentroids, &dataPoints, centroids2.points);
+                generateRandomCentroids(numCentroids, &dataPoints, &centroids2);
 
                 // Random Swap
                 randomSwap(&dataPoints, &centroids2, &groundTruth, &result2);
@@ -2347,7 +2346,7 @@ int main()
 
                 start = clock();
 
-                generateRandomCentroids(centroids3.size, &dataPoints, centroids3.points);
+                generateRandomCentroids(centroids3.size, &dataPoints, &centroids3);
 
                 result3 = runRandomSplit(&dataPoints, &centroids3, numCentroids, &groundTruth);
 
@@ -2421,7 +2420,7 @@ int main()
 
                 start = clock();
 
-                generateRandomCentroids(centroids4.size, &dataPoints, centroids4.points);
+                generateRandomCentroids(centroids4.size, &dataPoints, &centroids4);
 
                 result4 = runMseSplit(&dataPoints, &centroids4, numCentroids, &groundTruth, 0);
 
@@ -2495,7 +2494,7 @@ int main()
 
                 start = clock();
 
-                generateRandomCentroids(centroids5.size, &dataPoints, centroids5.points);
+                generateRandomCentroids(centroids5.size, &dataPoints, &centroids5);
 
                 result5 = runMseSplit(&dataPoints, &centroids5, numCentroids, &groundTruth, 1);
 
@@ -2569,7 +2568,7 @@ int main()
 
                 start = clock();
 
-                generateRandomCentroids(centroids6.size, &dataPoints, centroids6.points);
+                generateRandomCentroids(centroids6.size, &dataPoints, &centroids6);
 
                 if (LOGGING == 3) printDataPointsPartitions(&dataPoints, centroids6.size);
 
@@ -2645,7 +2644,7 @@ int main()
 
                 start = clock();
 
-                generateRandomCentroids(centroids7.size, &dataPoints, centroids7.points);
+                generateRandomCentroids(centroids7.size, &dataPoints, &centroids7);
 
                 if (LOGGING == 3) printDataPointsPartitions(&dataPoints, centroids7.size);
 
