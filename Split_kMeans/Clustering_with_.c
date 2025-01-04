@@ -10,14 +10,14 @@
 
 // Credits: Niko Ruohonen, 2024
 
-//Constants for file locations
+//Constants for file locations //TODO: mitkään näistä ei enää käytössä
 const char* DATA_FILENAME = "a1.txt";
 const char* GT_FILENAME = "a1-ga-cb.txt";
 const char* CENTROID_FILENAME = "outputs/centroid.txt"; //TODO: ei käytössä
 const char* PARTITION_FILENAME = "outputs/partition.txt"; //TODO: ei käytössä
 const char SEPARATOR = ' ';
 
-//for centroids
+//for centroids //TODO: ei käytössä
 const int NUM_CENTROIDS = 20;
 // S            = 15
 // Unbalance    = 8
@@ -27,52 +27,84 @@ const int NUM_CENTROIDS = 20;
 // Dim (high)   = 16
 // Dim (low)	= 9
 
-// for clustering
+// for clustering //TODO: voisiko lisätä käyttöliittymää?
 const int MAX_ITERATIONS = 1000; // k-means rajoitus
 const int MAX_REPEATS = 10; // repeated k-means toistojen lkm, TODO: lopulliseen 100kpl
-const int MAX_SWAPS = 1000; // random swap toistojen lkm, TODO: lopulliseen 1000kpl
+const int MAX_SWAPS = 100; // random swap toistojen lkm, TODO: lopulliseen 1000kpl
 const size_t MAX_LOOPS = 1; //TODO ei käytössä
 
-// for logging
+// for logging //TODO: käyttöliittymään?
 const int LOGGING = 1; // 1 = basic, 2 = detailed, 3 = debug, TODO: käy kaikki läpi ja tarkista, että käytetään oikeita muuttujia
 
 //////////////
 // Structs //
 ////////////
 
+/**
+ * @brief Represents a single data point in a multi-dimensional space.
+ *
+ * This struct contains an array of attributes representing the coordinates of the data point
+ * in a multi-dimensional space, the number of dimensions, and the partition index indicating
+ * which cluster the data point belongs to.
+ */
 typedef struct
 {
-    double* attributes;
-    size_t dimensions;
-    int partition;
+    double* attributes;  /**< Array of attributes representing the coordinates of the data point. */
+    size_t dimensions;   /**< Number of dimensions (length of the attributes array). */
+	int partition;    /**< Partition index indicating the cluster to which the data point belongs. */ //TODO: size_t?
 } DataPoint;
 
+/**
+ * @brief Represents a collection of data points.
+ *
+ * This struct contains an array of DataPoint structures and the number of data points in the array.
+ */
 typedef struct
 {
-    DataPoint* points;
-    size_t size;
+    DataPoint* points;   /**< Array of DataPoint structures. */
+    size_t size;         /**< Number of data points in the array. */
 } DataPoints;
 
+/**
+ * @brief Represents a collection of centroids used in clustering algorithms.
+ *
+ * This struct contains an array of DataPoint structures representing the centroids
+ * and the number of centroids in the array.
+ */
 typedef struct
 {
-    DataPoint* points;
-    size_t size;
+    DataPoint* points;   /**< Array of DataPoint structures representing the centroids. */ //TODO: tarvitaanko Centroid -struct?
+    size_t size;         /**< Number of centroids in the array. */
 	//size_t mse; TODO <- tarvitaanko?
 } Centroids;
 
+/**
+ * @brief Represents the result of a clustering algorithm.
+ *
+ * This struct contains the mean squared error (MSE) of the clustering result, //TODO: SSE
+ * an array of partition indices indicating the cluster assignment for each data point,
+ * an array of centroids representing the cluster centers, and the Centroid Index (CI) value.
+ */
 typedef struct
 {
-    double mse;
-    int* partition;
-    DataPoint* centroids;
-    size_t centroidIndex;
+    double mse;           /**< Mean squared error (MSE) of the clustering result. */
+	int* partition;    /**< Array of partition indices indicating the cluster assignment for each data point. */ //TODO: size_t?
+    DataPoint* centroids; /**< Array of DataPoint structures representing the centroids. */
+    size_t centroidIndex; /**< Centroid Index value. */
 } ClusteringResult;
 
 ///////////////
 // Memories //
 /////////////
 
-// Function to handle memory error
+/**
+ * @brief Handles memory allocation errors.
+ *
+ * Function checks if the given pointer is NULL, indicating a memory allocation failure.
+ * If the pointer is NULL, it prints an error message to stderr and exits the program with a failure status.
+ *
+ * @param ptr: A pointer to the allocated memory. If this pointer is NULL, the function will handle the error.
+ */
 void handleMemoryError(void* ptr)
 {
     if (ptr == NULL)
@@ -82,7 +114,16 @@ void handleMemoryError(void* ptr)
     }
 }
 
-//function to free data point array
+/**
+ * @brief Frees the memory allocated for an array of DataPoint structures.
+ *
+ * This function iterates through an array of DataPoint structures, freeing the memory
+ * allocated for the attributes of each DataPoint. It then frees the memory allocated for
+ * the array of DataPoint structures itself.
+ *
+ * @param points A pointer to the array of DataPoint structures to be freed.
+ * @param size The number of DataPoint structures in the array.
+ */
 void freeDataPointArray(DataPoint* points, size_t size)
 {
     if (points == NULL) return;
@@ -96,18 +137,30 @@ void freeDataPointArray(DataPoint* points, size_t size)
         }
     }
     free(points);
-    points = NULL;
 }
 
-// Function to free data points
-void freeDataPoints(DataPoints* dataPoints)
+/**
+ * @brief Frees the memory allocated for a DataPoints structure.
+ *
+ * This function frees the memory allocated for the array of DataPoint structures
+ * within the DataPoints structure and then sets the pointer to the array to NULL.
+ *
+ * @param dataPoints A pointer to the DataPoints structure to be freed.
+ */void freeDataPoints(DataPoints* dataPoints)
 {
     if (dataPoints == NULL) return;
     freeDataPointArray(dataPoints->points, dataPoints->size);
     dataPoints->points = NULL;
 }
 
-// Function to free centroids
+ /**
+  * @brief Frees the memory allocated for a Centroids structure.
+  *
+  * This function frees the memory allocated for the array of DataPoint structures
+  * within the Centroids structure and then sets the pointer to the array to NULL.
+  *
+  * @param centroids A pointer to the Centroids structure to be freed.
+  */
 void freeCentroids(Centroids* centroids)
 {
     if (centroids == NULL) return;
@@ -115,8 +168,16 @@ void freeCentroids(Centroids* centroids)
     centroids->points = NULL;
 }
 
-// Function to free ClusteringResult
 // TODO: ei käytössä
+/**
+ * @brief Frees the memory allocated for a ClusteringResult structure.
+ *
+ * This function frees the memory allocated for the partition array and the array of DataPoint structures
+ * representing the centroids within the ClusteringResult structure. It then sets the pointers to NULL.
+ *
+ * @param result A pointer to the ClusteringResult structure to be freed.
+ * @param numCentroids The number of centroids in the ClusteringResult structure.
+ */
 void freeClusteringResult(ClusteringResult* result, int numCentroids)
 {
     if (result == NULL) return;
@@ -134,8 +195,14 @@ void freeClusteringResult(ClusteringResult* result, int numCentroids)
     }
 }
 
-// Function to create a string list
-char** createStringList(size_t size)
+/**
+ * @brief Creates a list of strings.
+ *
+ * This function allocates memory for a list of strings, each with a fixed size of 256 characters.
+ *
+ * @param size The number of strings in the list.
+ * @return A pointer to the list of strings.
+ */char** createStringList(size_t size)
 {
     char** list = malloc(size * sizeof(char*));
     if (list == NULL)
@@ -157,8 +224,15 @@ char** createStringList(size_t size)
     return list;
 }
 
-// Function to free a string list
-void freeStringList(char** list, size_t size)
+ /**
+  * @brief Frees the memory allocated for a list of strings.
+  *
+  * This function frees the memory allocated for each string in the list and then frees the list itself.
+  *
+  * @param list A pointer to the list of strings to be freed.
+  * @param size The number of strings in the list.
+  */
+ void freeStringList(char** list, size_t size)
 {
     for (size_t i = 0; i < size; ++i)
     {
@@ -166,6 +240,99 @@ void freeStringList(char** list, size_t size)
     }
     free(list);
 }
+
+ //TODO: ota käyttöön
+ /**
+ * @brief Allocates and initializes a DataPoint structure.
+ *
+ * This function allocates memory for the attributes of a DataPoint structure and initializes its dimensions and partition.
+ *
+ * @param dimensions The number of dimensions for the DataPoint.
+ * @return A DataPoint structure with allocated memory for its attributes.
+ */
+ DataPoint allocateDataPoint(size_t dimensions)
+ {
+     DataPoint point;
+     point.attributes = malloc(dimensions * sizeof(double));
+     handleMemoryError(point.attributes);
+     point.dimensions = dimensions;
+     point.partition = -1; // Initialize partition to -1 or any other default value
+     return point;
+ }
+
+ //TODO: ota käyttöön, tarkista default arvot
+ /**
+ * @brief Allocates and initializes a DataPoints structure.
+ *
+ * This function allocates memory for an array of DataPoint structures and initializes each DataPoint.
+ *
+ * @param size The number of DataPoint structures in the array.
+ * @param dimensions The number of dimensions for each DataPoint.
+ * @return A DataPoints structure with allocated memory for its points.
+ */
+ DataPoints allocateDataPoints(size_t size, size_t dimensions)
+ {
+     DataPoints dataPoints;
+     dataPoints.points = malloc(size * sizeof(DataPoint));
+     handleMemoryError(dataPoints.points);
+     dataPoints.size = size;
+     for (size_t i = 0; i < size; ++i)
+     {
+         dataPoints.points[i] = allocateDataPoint(dimensions);
+     }
+     return dataPoints;
+ }
+
+ //TODO: ota käyttöön, tarkista default arvot
+ /**
+ * @brief Allocates and initializes a Centroids structure.
+ *
+ * This function allocates memory for an array of DataPoint structures representing the centroids and initializes each DataPoint.
+ *
+ * @param size The number of centroids.
+ * @param dimensions The number of dimensions for each centroid.
+ * @return A Centroids structure with allocated memory for its points.
+ */
+ Centroids allocateCentroids(size_t size, size_t dimensions)
+ {
+     Centroids centroids;
+     centroids.points = malloc(size * sizeof(DataPoint));
+     handleMemoryError(centroids.points);
+     centroids.size = size;
+     for (size_t i = 0; i < size; ++i)
+     {
+         centroids.points[i] = allocateDataPoint(dimensions);
+     }
+     return centroids;
+ }
+
+ //TODO: ota käyttöön, tarkista default arvot
+ /**
+ * @brief Allocates and initializes a ClusteringResult structure.
+ *
+ * This function allocates memory for the partition array and the array of DataPoint structures representing the centroids.
+ *
+ * @param numDataPoints The number of data points.
+ * @param numCentroids The number of centroids.
+ * @param dimensions The number of dimensions for each centroid.
+ * @return A ClusteringResult structure with allocated memory for its partition and centroids.
+ */
+ ClusteringResult allocateClusteringResult(size_t numDataPoints, size_t numCentroids, size_t dimensions)
+ {
+     ClusteringResult result;
+     result.partition = malloc(numDataPoints * sizeof(int));
+     handleMemoryError(result.partition);
+     result.centroids = malloc(numCentroids * sizeof(DataPoint));
+     handleMemoryError(result.centroids);
+     for (size_t i = 0; i < numCentroids; ++i)
+     {
+         result.centroids[i] = allocateDataPoint(dimensions);
+     }
+     result.mse = 0.0;
+     result.centroidIndex = 0;
+     return result;
+ }
+
 
 //////////////
 // Helpers //
@@ -1820,7 +1987,7 @@ int main()
             //////////////////
             // Random Swap //
             ////////////////
-            /*
+            
             printf("Random swap\n");
 
             mseSum = 0;
@@ -1897,12 +2064,12 @@ int main()
             printf("(Random Swap)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
 
             writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "Random swap", loopCount, scaling, outputDirectory);
-            */
+            
 
             ///////////////////
             // Random Split //
             /////////////////
-            /*
+            
             mseSum = 0;
             ciSum = 0;
             timeSum = 0;
@@ -1970,11 +2137,11 @@ int main()
             printf("(Random Split)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
 
             writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "Random Split", loopCount, scaling, outputDirectory);
-            */
+            
             ///////////////////////////////
             // MSE Split, Intra-cluster //
             /////////////////////////////
-            /*
+            
             mseSum = 0;
             ciSum = 0;
             timeSum = 0;
@@ -2044,11 +2211,11 @@ int main()
             printf("(Split2)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
 
             writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "MSE Split, Intra-cluster", loopCount, scaling, outputDirectory);
-            */
+            
             ////////////////////////
             // MSE Split, Global //
             //////////////////////
-            /*
+            
             mseSum = 0;
             ciSum = 0;
             timeSum = 0;
@@ -2118,11 +2285,11 @@ int main()
             printf("(Split3)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
 
             writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "MSE Split, Global", loopCount, scaling, outputDirectory);
-            */
+            
             ///////////////////////////////////
             // MSE Split, Local repartition //
             /////////////////////////////////
-            /*
+            
             mseSum = 0;
             ciSum = 0;
             timeSum = 0;
@@ -2194,7 +2361,7 @@ int main()
             printf("(Split4)Success rate: %.2f\%\n\n", successRate / loopCount * 100);
 
             writeResultsToFile(fileName, ciSum, mseSum, timeSum, successRate, numCentroids, "MSE Split, Local repartition", loopCount, scaling, outputDirectory);
-            */
+            
             ////////////////////////
             // Bisecting k-means //
             //////////////////////
