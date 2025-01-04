@@ -338,9 +338,30 @@ void freeClusteringResult(ClusteringResult* result, int numCentroids)
 // Helpers //
 ////////////
 
-// Function to calculate the squared Euclidean distance between two data points
-double calculateSquaredEuclideanDistance(const DataPoint* point1, const DataPoint* point2)
-{
+/**
+ * @brief Calculates the squared Euclidean distance between two data points.
+ *
+ * This function computes the squared Euclidean distance between two data points
+ * by summing the squared differences of their corresponding attributes.
+ *
+ * @param point1 A pointer to the first DataPoint structure.
+ * @param point2 A pointer to the second DataPoint structure.
+ * @return The squared Euclidean distance between the two data points.
+ */
+ double calculateSquaredEuclideanDistance(const DataPoint* point1, const DataPoint* point2)
+ {
+     if (point1 == NULL || point2 == NULL)
+     {
+         fprintf(stderr, "Error: Null pointer passed to calculateSquaredEuclideanDistance\n");
+         exit(EXIT_FAILURE);
+     }
+
+     if (point1->dimensions != point2->dimensions)
+     {
+         fprintf(stderr, "Error: Data points have different dimensions in calculateSquaredEuclideanDistance\n");
+         exit(EXIT_FAILURE);
+     }
+
     double sum = 0.0;
     for (size_t i = 0; i < point1->dimensions; ++i)
     {
@@ -348,23 +369,61 @@ double calculateSquaredEuclideanDistance(const DataPoint* point1, const DataPoin
         sum += diff * diff;
     }
     return sum;
-}
+ }
 
-//function to calculate the Euclidean distance between two data points
-double calculateEuclideanDistance(const DataPoint* point1, const DataPoint* point2)
-{
+ /**
+  * @brief Calculates the Euclidean distance between two data points.
+  *
+  * This function computes the Euclidean distance between two data points
+  * by first calculating the squared Euclidean distance and then taking the square root.
+  *
+  * @param point1 A pointer to the first DataPoint structure.
+  * @param point2 A pointer to the second DataPoint structure.
+  * @return The Euclidean distance between the two data points.
+  */
+ double calculateEuclideanDistance(const DataPoint* point1, const DataPoint* point2)
+ {
 	double sqrtDistance = sqrt(calculateSquaredEuclideanDistance(point1, point2));
     return sqrtDistance;
-}
+ }
 
-// Function to handle file error
-void handleFileError(const char* filename)
-{
+  /**
+   * @brief Handles file opening errors.
+   *
+   * This function prints an error message to stderr indicating that the specified file
+   * could not be opened and then exits the program with a failure status.
+   *
+   * @param filename The name of the file that could not be opened.
+   */
+ void handleFileError(const char* filename)
+ {
     fprintf(stderr, "Error: Unable to open file '%s'\n", filename);
     exit(EXIT_FAILURE);
-}
+ }
 
-// Function to get the number of dimensions in the data
+ /**
+ * @brief Handles file read errors.
+ *
+ * This function prints an error message to stderr indicating that an error occurred while reading
+ * from the specified file and then exits the program with a failure status.
+ *
+ * @param filename The name of the file that could not be read.
+ */
+ void handleFileReadError(const char* filename)
+ {
+     fprintf(stderr, "Error: Unable to read from file '%s'\n", filename);
+     exit(EXIT_FAILURE);
+ }
+
+/**
+* @brief Gets the number of dimensions in the data file.
+*
+* This function reads the first line of the specified file and counts the number of tokens
+* (assumed to be the number of dimensions) separated by spaces (" ", tabs "\t", newlines "\n", carriage return "\r").
+*
+* @param filename The name of the file to read.
+* @return The number of dimensions in the data file.
+*/
 int getNumDimensions(const char* filename)
 {
     FILE* file = fopen(filename, "r");
@@ -373,25 +432,24 @@ int getNumDimensions(const char* filename)
         handleFileError(filename);
     }
 
-    //TODO: pitäisikö heittää tiedoston alkuun ja disabloida kaikki, vaikeuttaa warningien tutkimista
-    //for disabling the CS6387 warning
-    //safe to use as we actually check for NULL earlier
-    //_Analysis_assume_(file != NULL);
+    // For disabling the CS6387 warning,
+    // inform the static analyzer that 'file' is not NULL.
+    // Safe to use as we actually check for NULL earlier
+    _Analysis_assume_(file != NULL);
 
-    char firstLine[512];
+	char firstLine[512]; // Buffer size = 512, increase if needed
     if (fgets(firstLine, sizeof(firstLine), file) == NULL)
     {
-        fprintf(stderr, "Error: File '%s' is empty\n", filename);
-        exit(EXIT_FAILURE);
+        handleFileReadError(filename);
     }
 
     int dimensions = 0;
     char* context = NULL;
-    char* token = strtok_s(firstLine, " ", &context);
+	char* token = strtok_s(firstLine, " \t\r\n", &context); //Delimiter = " ", tabs "\t", newlines "\n", carriage return "\r" //TODO: Haluanko muuta kuin " "? TODO: halutaanko CONST?
     while (token != NULL)
     {
         dimensions++;
-        token = strtok_s(NULL, " ", &context);
+        token = strtok_s(NULL, " \t\r\n", &context); //Delimiter = " ", tabs "\t", newlines "\n", carriage return "\r" 
     }
 
     fclose(file);
@@ -399,7 +457,16 @@ int getNumDimensions(const char* filename)
     return dimensions;
 }
 
-// Function to read data points from a file
+/**
+ * @brief Reads data points from a file.
+ *
+ * This function reads data points from the specified file, where each line represents a data point
+ * with attributes separated by spaces, tabs, newlines, or carriage returns. It allocates memory
+ * for the data points and their attributes, and returns a DataPoints structure containing the data points.
+ *
+ * @param filename The name of the file to read.
+ * @return A DataPoints structure containing the data points read from the file.
+ */
 DataPoints readDataPoints(const char* filename)
 {
     FILE* file = fopen(filename, "r");
@@ -413,7 +480,7 @@ DataPoints readDataPoints(const char* filename)
     dataPoints.size = 0;
     size_t allocatedSize = 0;
 
-    char line[512];
+    char line[512]; // Buffer size = 512, increase if needed
     while (fgets(line, sizeof(line), file))
     {
         size_t attributeAllocatedSize = 6;
@@ -425,7 +492,7 @@ DataPoints readDataPoints(const char* filename)
         point.partition = -1;
 
         char* context = NULL;
-        char* token = strtok_s(line, " \t\r\n", &context);
+        char* token = strtok_s(line, " \t\r\n", &context); // Delimiter = " ", tabs "\t", newlines "\n", carriage return "\r"
         while (token != NULL)
         {
             if (point.dimensions == attributeAllocatedSize)
@@ -435,12 +502,13 @@ DataPoints readDataPoints(const char* filename)
                 handleMemoryError(temp);
                 point.attributes = temp;
             }
-            //printf("Token: %s\n", token);
-            point.attributes[point.dimensions++] = strtod(token, NULL); //atoi(token); //strtod(token, NULL); //TODO: strtod = double, atoi = int
-			token = strtok_s(NULL, " \t\r\n", &context); //TODO: spaced " ", tabs "\t", newlines "\n"
+            
+            // if(LOGGING == 3) printf("Token: %s\n", token);
+            point.attributes[point.dimensions++] = strtod(token, NULL); // atoi(token) for int or strtod(token, NULL) for double
+            token = strtok_s(NULL, " \t\r\n", &context); // Delimiter = " ", tabs "\t", newlines "\n", carriage return "\r"
         }
 
-        //printf("\n", token);
+        // if(LOGGING == 3) printf("\n", token);
 
         if (dataPoints.size == allocatedSize)
         {
@@ -450,6 +518,12 @@ DataPoints readDataPoints(const char* filename)
             dataPoints.points = temp;
         }
 
+        // Remove the suppression, if there are unknown issues while running the code.
+        // The "if(dataPoints.size == allocatedSize)" -check above should be enough
+		// to handle this warning, but the static analyzer is not able to detect it.
+        // 
+        // Suppress warning C6386 for this line
+        #pragma warning(suppress : 6386)
         dataPoints.points[dataPoints.size++] = point;
     }
 
@@ -457,7 +531,7 @@ DataPoints readDataPoints(const char* filename)
 
     if (LOGGING == 3)
     {
-        for (size_t i = 0; i < 2; ++i)
+        for (size_t i = 0; i < 2 && i < dataPoints.size; ++i) // Debug helper: print the first two data points
         {
             printf("Data point %zu attributes: ", i);
             for (size_t j = 0; j < dataPoints.points[i].dimensions; ++j)
@@ -471,7 +545,17 @@ DataPoints readDataPoints(const char* filename)
     return dataPoints;
 }
 
-// Function to read centroids from a file
+
+/**
+ * @brief Reads centroids from a file.
+ *
+ * This function reads centroids from the specified file by first reading the data points
+ * and then converting them into centroids. It allocates memory for the centroids and their attributes,
+ * and returns a Centroids structure containing the centroids.
+ *
+ * @param filename The name of the file to read.
+ * @return A Centroids structure containing the centroids read from the file.
+ */
 Centroids readCentroids(const char* filename)
 {
     DataPoints points = readDataPoints(filename);
@@ -496,7 +580,15 @@ Centroids readCentroids(const char* filename)
     return centroids;
 }
 
-// Function to write the centroids to a file
+/**
+ * @brief Writes centroids to a file.
+ *
+ * This function writes the centroids to the specified file. Each centroid's attributes
+ * are written on a new line, with attributes separated by spaces.
+ *
+ * @param filename The name of the file to write the centroids to.
+ * @param centroids A pointer to the Centroids structure containing the centroids to be written.
+ */
 void writeCentroidsToFile(const char* filename, Centroids* centroids)
 {
     FILE* centroidFile = fopen(filename, "w");
@@ -516,10 +608,20 @@ void writeCentroidsToFile(const char* filename, Centroids* centroids)
     }
 
     fclose(centroidFile);
+
+    //if (LOGGING == 3) printf("Centroids written to file: %s\n", filename);
 }
 
-// Function to write data point partitions to a file
 // TODO: refaktoroi käyttämäänn resulttia DataPointsin sijaan
+/**
+ * @brief Writes data point partitions to a file.
+ *
+ * This function writes the partition indices of data points to the specified file.
+ * Each partition index is written on a new line.
+ *
+ * @param filename The name of the file to write the partitions to.
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ */
 void writeDataPointPartitionsToFile(const char* filename, DataPoints* dataPoints)
 {
     FILE* file = fopen(filename, "w");
@@ -535,59 +637,133 @@ void writeDataPointPartitionsToFile(const char* filename, DataPoints* dataPoints
     }
 
     fclose(file);
+
+    //if (LOGGING == 3) printf("Data point partitions written to file: %s\n", filename);
 }
 
-//Funtion to create a deep copy of a data point
+/**
+ * @brief Creates a deep copy of a data point.
+ *
+ * This function copies the attributes and dimensions of the source data point
+ * to the destination data point. It allocates memory for the attributes of the
+ * destination data point and copies the attribute values from the source.
+ *
+ * @param destination A pointer to the destination DataPoint structure.
+ * @param source A pointer to the source DataPoint structure.
+ */
 void deepCopyDataPoint(DataPoint* destination, DataPoint* source)
 {
+    if (destination == NULL || source == NULL)
+    {
+        fprintf(stderr, "Error: Null pointer passed to deepCopyDataPoint\n");
+        exit(EXIT_FAILURE);
+    }
+
     destination->dimensions = source->dimensions;
     //destination->partition = source->partition; TODO tarvitaanko?
+    
+    //TODO: poista jos ei saa korjattua
+	//nyt kaatuu koska destination->attributes ei ole edes allokoitu vielä muistia
+    /*if (destination->attributes != NULL)
+    {
+        free(destination->attributes);
+    }*/
+
     destination->attributes = malloc(source->dimensions * sizeof(double));
     handleMemoryError(destination->attributes);
+    
+    // Suppress warning C6387 for this line
+	// The static analyzer is not able to detect that 'destination->attributes' is not NULL
+    #pragma warning(suppress : 6387)
     memcpy(destination->attributes, source->attributes, source->dimensions * sizeof(double));
 }
 
-//Funtion to create deep copies of data points
+/**
+ * @brief Creates deep copies of an array of data points.
+ *
+ * This function copies the attributes and dimensions of each source data point
+ * to the corresponding destination data point. It allocates memory for the attributes
+ * of each destination data point and copies the attribute values from the source.
+ *
+ * @param destination A pointer to the array of destination DataPoint structures.
+ * @param source A pointer to the array of source DataPoint structures.
+ * @param size The number of data points in the source and destination arrays.
+ */
 void deepCopyDataPoints(DataPoint* destination, DataPoint* source, size_t size)
 {
-	for (size_t i = 0; i < size; ++i)
-	{
-		destination[i].dimensions = source[i].dimensions;
-		destination[i].attributes = malloc(source[i].dimensions * sizeof(double));
-		handleMemoryError(destination[i].attributes);
-		memcpy(destination[i].attributes, source[i].attributes, source[i].dimensions * sizeof(double));
-	}
+    if (destination == NULL || source == NULL)
+    {
+        fprintf(stderr, "Error: Null pointer passed to deepCopyDataPoints\n");
+        exit(EXIT_FAILURE);
+    }
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        deepCopyDataPoint(&destination[i], &source[i]);
+    }
 }
 
-//Funtion to copy centroids
 //TODO: vanhaa koodia, ei käytössä
+/**
+ * @brief Creates a deep copy of a Centroids structure.
+ *
+ * This function copies the centroids from the source Centroids structure
+ * to the destination Centroids structure. It allocates memory for the centroids
+ * in the destination structure and copies the attribute values from the source.
+ *
+ * @param source A pointer to the source Centroids structure.
+ * @param destination A pointer to the destination Centroids structure.
+ * @param numCentroids The number of centroids to copy.
+ */
 void deepCopyCentroids(Centroids* source, Centroids* destination, size_t numCentroids)
 {
+    if (source == NULL || destination == NULL)
+    {
+        fprintf(stderr, "Error: Null pointer passed to deepCopyCentroids\n");
+        exit(EXIT_FAILURE);
+    }
+
     destination->size = source->size;
+
+    // Free existing points if they are already allocated
+    if (destination->points != NULL)
+    {
+        freeDataPointArray(destination->points, destination->size);
+    }
+
     destination->points = malloc(numCentroids * sizeof(DataPoint));
     handleMemoryError(destination->points);
+
     for (size_t i = 0; i < numCentroids; ++i)
     {
-        destination->points[i].dimensions = source->points[i].dimensions;
         deepCopyDataPoint(&destination->points[i], &source->points[i]);
     }
 }
 
-// Function to print all information about the centroids
+/**
+ * @brief Prints all information about the centroids.
+ *
+ * This function prints the number of centroids and the attributes of each centroid.
+ * Each centroid's attributes are printed on a new line, with attributes separated by spaces.
+ *
+ * @param centroids A pointer to the Centroids structure containing the centroids to be printed.
+ */
 void printCentroidsInfo(const Centroids* centroids)
 {
-    // Print the size of the centroids set
+    if (centroids == NULL)
+    {
+        fprintf(stderr, "Error: Null pointer passed to printCentroidsInfo\n");
+        return;
+    }
+
     printf("Number of centroids: %zu\n", centroids->size);
 
-    // Loop through all centroids and print their details
     for (size_t i = 0; i < centroids->size; ++i)
     {
         DataPoint* centroid = &centroids->points[i];
 
-        // Print the centroid index and its dimensions
         printf("Centroid %zu (dimensions: %zu) attributes: ", i, centroid->dimensions);
 
-        // Print each attribute of the centroid
         for (size_t j = 0; j < centroid->dimensions; ++j)
         {
             printf("%f ", centroid->attributes[j]);
@@ -597,9 +773,24 @@ void printCentroidsInfo(const Centroids* centroids)
     printf("\n");
 }
 
-// Function to print partition assignments for data points with partition >= cMax
+/**
+ * @brief Prints partition assignments for data points with partition >= cMax.
+ *
+ * This function prints the partition assignments for data points whose partition index
+ * is greater than or equal to the specified cMax value. It prints the data point index
+ * and its partition index.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param cMax The partition index threshold.
+ */
 void printDataPointsPartitions(const DataPoints* dataPoints, size_t cMax)
 {
+    if (dataPoints == NULL)
+    {
+        fprintf(stderr, "Error: Null pointer passed to printDataPointsPartitions\n");
+        return;
+    }
+
     printf("Data Points Partition Assignments (Partition <= %zu):\n", cMax);
     printf("Data Points size: %zu\n", dataPoints->size);
     for (size_t i = 0; i < dataPoints->size; ++i)
@@ -612,17 +803,47 @@ void printDataPointsPartitions(const DataPoints* dataPoints, size_t cMax)
     printf("\n");
 }
 
-// Function to reset all partitions to 0
+/**
+ * @brief Resets all partitions to 0.
+ *
+ * This function iterates through all data points in the DataPoints structure
+ * and sets their partition index to 0.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ */
 void resetPartitions(DataPoints* dataPoints)
 {
+    if (dataPoints == NULL)
+    {
+        fprintf(stderr, "Error: Null pointer passed to resetPartitions\n");
+        return;
+    }
+
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
         dataPoints->points[i].partition = 0;
     }
 }
 
-// Function to write results to a file
-void writeResultsToFile(const char* filename, double ciSum, double mseSum, double timeSum, double successRate, int numCentroids, char* header, size_t loopCount, size_t scaling, char* outputDirectory)
+/**
+ * @brief Writes clustering results to a file.
+ *
+ * This function writes the clustering results, including average CI, MSE, relative CI,
+ * average time taken, and success rate, to the specified file. The results are appended
+ * to the file if it already exists.
+ *
+ * @param filename The name of the file to write the results to.
+ * @param ciSum The sum of Centroid Index (CI) values.
+ * @param mseSum The sum of Mean Squared Error (MSE) values.
+ * @param timeSum The sum of time taken for each loop.
+ * @param successRate The success rate of the clustering algorithm.
+ * @param numCentroids The number of centroids used in the clustering algorithm.
+ * @param header A header string to be written at the beginning of the results.
+ * @param loopCount The number of loops performed.
+ * @param scaling A scaling factor for the MSE values.
+ * @param outputDirectory The directory where the results file is located.
+ */
+void writeResultsToFile(const char* filename, double ciSum, double mseSum, double timeSum, double successRate, int numCentroids, const char* header, size_t loopCount, size_t scaling, const char* outputDirectory)
 {
     char outputFilePath[256];
     snprintf(outputFilePath, sizeof(outputFilePath), "%s/%s", outputDirectory, filename);
@@ -644,15 +865,37 @@ void writeResultsToFile(const char* filename, double ciSum, double mseSum, doubl
     if(LOGGING == 3) printf("Metrics written to file: %s\n", filename);
 }
 
-// Function to create a unique directory based on the current date and time
+/**
+ * @brief Creates a unique directory based on the current date and time.
+ *
+ * This function generates a unique directory name based on the current date and time
+ * and attempts to create the directory. The directory name is stored in the provided
+ * outputDirectory buffer.
+ *
+ * @param outputDirectory A buffer to store the generated directory name.
+ * @param size The size of the outputDirectory buffer.
+ */
 void createUniqueDirectory(char* outputDirectory, size_t size)
 {
+    if (outputDirectory == NULL)
+    {
+        fprintf(stderr, "Error: Null pointer passed to createUniqueDirectory\n");
+        return;
+    }
+
     time_t now = time(NULL);
     struct tm* t = localtime(&now);
 
-    strftime(outputDirectory, size, "outputs/%Y-%m-%d_%H-%M-%S", t);
+    if (strftime(outputDirectory, size, "outputs/%Y-%m-%d_%H-%M-%S", t) == 0)
+    {
+        fprintf(stderr, "Error: Buffer size is too small in createUniqueDirectory\n");
+        return;
+    }
 
-    mkdir(outputDirectory, 0777);
+    if (mkdir(outputDirectory, 0777) != 0)
+    {
+        perror("Error: Unable to create directory");
+    }
 }
 
 /////////////////
