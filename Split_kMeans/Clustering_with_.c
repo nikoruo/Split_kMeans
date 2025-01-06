@@ -719,7 +719,6 @@ void deepCopyDataPoints(DataPoint* destination, const DataPoint* source, size_t 
     }
 }
 
-//TODO: vanhaa koodia, ei käytössä
 /**
  * @brief Creates a deep copy of a Centroids structure.
  *
@@ -932,11 +931,19 @@ void printStatistics(const char* algorithmName, Statistics stats, size_t loopCou
 // Clustering //
 ///////////////
 
-// Function to choose random data points to be centroids
-void generateRandomCentroids(size_t numCentroids, DataPoints* dataPoints, Centroids* centroids)
+/**
+ * @brief Generates random centroids from the data points.
+ *
+ * This function selects random data points to be used as initial centroids for clustering.
+ *
+ * @param numCentroids The number of centroids to generate.
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param centroids A pointer to the Centroids structure to store the generated centroids.
+ */
+void generateRandomCentroids(size_t numCentroids, const DataPoints* dataPoints, Centroids* centroids)
 {    
-    /*DEBUGGING
-    if (dataPoints->size < numCentroids)
+    //DEBUGGING
+    /*if (dataPoints->size < numCentroids)
     {
         fprintf(stderr, "Error: There are less data points than the required number of clusters\n");
         exit(EXIT_FAILURE);
@@ -944,12 +951,6 @@ void generateRandomCentroids(size_t numCentroids, DataPoints* dataPoints, Centro
 
     size_t* indices = malloc(sizeof(size_t) * dataPoints->size);
     handleMemoryError(indices);
-
-	if (indices == NULL)
-    {
-        fprintf(stderr, "Error: Unable to allocate memory for indices\n");
-        exit(EXIT_FAILURE);
-    }
 
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
@@ -973,8 +974,17 @@ void generateRandomCentroids(size_t numCentroids, DataPoints* dataPoints, Centro
     free(indices);
 }
 
-//Function to calculate the sum of squared errors (SSE)
-double calculateSSE(DataPoints* dataPoints, Centroids* centroids)
+/**
+ * @brief Calculates the sum of squared errors (SSE) for the given data points and centroids.
+ *
+ * This function computes the SSE by summing the squared Euclidean distances between each data point
+ * and its assigned centroid.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param centroids A pointer to the Centroids structure containing the centroids.
+ * @return The sum of squared errors (SSE).
+ */
+double calculateSSE(const DataPoints* dataPoints, const Centroids* centroids)
 {
     double sse = 0.0;
 
@@ -982,14 +992,30 @@ double calculateSSE(DataPoints* dataPoints, Centroids* centroids)
     {
         size_t cIndex = dataPoints->points[i].partition;
 
+        //Debugging
+        /*if (cIndex >= centroids->size)
+        {
+            fprintf(stderr, "Error: Invalid partition index %zu for data point %zu\n", cIndex, i);
+            exit(EXIT_FAILURE);
+        }*/
+
         sse += calculateEuclideanDistance(&dataPoints->points[i], &centroids->points[cIndex]);
     }
 
     return sse;
 }
 
-//calculate MSE (divider is the size of the dataPoints
-double calculateMSE(DataPoints* dataPoints, Centroids* centroids)
+/**
+ * @brief Calculates the mean squared error (MSE) for the given data points and centroids.
+ *
+ * This function computes the MSE by dividing the sum of squared errors (SSE) by the total number
+ * of data points and dimensions.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param centroids A pointer to the Centroids structure containing the centroids.
+ * @return The mean squared error (MSE).
+ */
+double calculateMSE(const DataPoints* dataPoints, const Centroids* centroids)
 {
     double sse = calculateSSE(dataPoints, centroids);
 
@@ -998,8 +1024,18 @@ double calculateMSE(DataPoints* dataPoints, Centroids* centroids)
     return mse;
 }
 
-//calculate MSE (divider is the size of the whole data set)
-double calculateMSEWithSize(DataPoints* dataPoints, Centroids* centroids, size_t size)
+/**
+ * @brief Calculates the mean squared error (MSE) for the given data points and centroids.
+ *
+ * This function computes the MSE by dividing the sum of squared errors (SSE) by the total number
+ * of data points and dimensions.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param centroids A pointer to the Centroids structure containing the centroids.
+ * @param size The size of the whole data set.
+ * @return The mean squared error (MSE).
+ */
+double calculateMSEWithSize(const DataPoints* dataPoints, const Centroids* centroids, size_t size)
 {
     double sse = calculateSSE(dataPoints, centroids);
 
@@ -1008,8 +1044,20 @@ double calculateMSEWithSize(DataPoints* dataPoints, Centroids* centroids, size_t
     return mse;
 }
 
-// calculate MSE of a specific cluster //TODO: mieti voiko toteuttaa järkevämmin kuin omana funkkarina joka duplikoi calculateMSE
-double calculateClusterMSE(DataPoints* dataPoints, Centroids* centroids, size_t clusterLabel)
+//TODO: käy description läpi, että vastaa sitä mitä lasketaan (count vai size)
+/**
+ * @brief Calculates the mean squared error (MSE) for a specific cluster.
+ *
+ * This function computes the MSE for a specific cluster by summing the Euclidean distances
+ * between data points and their assigned centroid, and then dividing by the number of data points
+ * in the cluster and the number of dimensions.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param centroids A pointer to the Centroids structure containing the centroids.
+ * @param clusterLabel The label of the cluster for which to calculate the MSE.
+ * @return The mean squared error (MSE) for the specified cluster.
+ */
+double calculateClusterMSE(const DataPoints* dataPoints, const Centroids* centroids, size_t clusterLabel)
 {
     double sse = 0.0;
     size_t count = 0;
@@ -1024,21 +1072,31 @@ double calculateClusterMSE(DataPoints* dataPoints, Centroids* centroids, size_t 
         }
     }
 
-    if (count == 0) //TODO: Debugger helpper
+    //Debugger
+    /*if (count == 0)
     {
         return 0.0;
-    }
+    }*/
 
 	//TODO: count vai dataPoints->size? Eli datapisteiden määrä clusterissa vai koko datasetissä?
     double mse = sse;// (dataPoints->size * dimensions);
     return mse;
 }
 
-// Function to find the nearest centroid of a data point
-size_t findNearestCentroid(DataPoint* queryPoint, Centroids* targetCentroids)
+/**
+ * @brief Finds the nearest centroid to a given data point.
+ *
+ * This function calculates the squared Euclidean distance between the query point and each centroid,
+ * and returns the index of the nearest centroid.
+ *
+ * @param queryPoint A pointer to the DataPoint structure representing the query point.
+ * @param targetCentroids A pointer to the Centroids structure containing the centroids.
+ * @return The index of the nearest centroid.
+ */
+size_t findNearestCentroid(const DataPoint* queryPoint, const Centroids* targetCentroids)
 {
-    /* DEBUGGING    
-    if (targetPoints->size == 0)
+    // Debugging    
+    /*if (targetPoints->size == 0)
     {
         fprintf(stderr, "Error: Cannot find nearest centroid in an empty set of data\n");
         exit(EXIT_FAILURE);
@@ -1062,11 +1120,19 @@ size_t findNearestCentroid(DataPoint* queryPoint, Centroids* targetCentroids)
     return nearestCentroidId;
 }
 
-// Function for optimal partitioning
-void partitionStep(DataPoints* dataPoints, Centroids* centroids)
+/**
+ * @brief Assigns each data point to the nearest centroid.
+ *
+ * This function iterates through all data points and assigns each one to the nearest centroid
+ * based on the squared Euclidean distance.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param centroids A pointer to the Centroids structure containing the centroids.
+ */
+void partitionStep(DataPoints* dataPoints, const Centroids* centroids)
 {
-    /* DEBUGGING    
-    if (dataPoints->size == 0 || centroids->size == 0)
+    //DEBUGGING    
+    /*if (dataPoints->size == 0 || centroids->size == 0)
     {
         fprintf(stderr, "Error: Cannot perform optimal partition with empty data or centroids\n");
         exit(EXIT_FAILURE);
@@ -1081,7 +1147,14 @@ void partitionStep(DataPoints* dataPoints, Centroids* centroids)
     }
 }
 
-// Function to perform the centroid step in k-means
+/**
+ * @brief Performs the centroid step in the k-means algorithm.
+ *
+ * This function updates the centroids by calculating the mean of the data points assigned to each centroid.
+ *
+ * @param centroids A pointer to the Centroids structure containing the centroids to be updated.
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ */
 void centroidStep(Centroids* centroids, const DataPoints* dataPoints)
 {
     size_t numClusters = centroids->size;
@@ -1123,7 +1196,7 @@ void centroidStep(Centroids* centroids, const DataPoints* dataPoints)
                 centroids->points[clusterLabel].attributes[dim] = sums[clusterLabel][dim] / counts[clusterLabel];
             }
         }
-        /*else DEBUGGING
+        /*else //DEBUGGING
         {
             if(LOGGING == 2) fprintf(stderr, "Warning: Cluster %zu has no points assigned.\n", clusterLabel);
         }*/
@@ -1135,8 +1208,17 @@ void centroidStep(Centroids* centroids, const DataPoints* dataPoints)
     free(counts);
 }
 
-// Function to count orphans (helper for calculateCentroidIndex)
-size_t countOrphans(Centroids* centroids1, Centroids* centroids2)
+/**
+ * @brief Counts the number of centroids in centroids2 that do not have any centroids in centroids1 assigned to them.
+ *
+ * This function iterates through all centroids in centroids1 and finds the nearest centroid in centroids2.
+ * It then counts the number of centroids in centroids2 that do not have any centroids in centroids1 assigned to them.
+ *
+ * @param centroids1 A pointer to the first Centroids structure.
+ * @param centroids2 A pointer to the second Centroids structure.
+ * @return The number of centroids in centroids2 that do not have any centroids in centroids1 assigned to them.
+ */
+size_t countOrphans(const Centroids* centroids1, const Centroids* centroids2)
 {
     size_t countFrom1to2 = 0;
     size_t* closest = calloc(centroids2->size, sizeof(size_t));
@@ -1161,8 +1243,17 @@ size_t countOrphans(Centroids* centroids1, Centroids* centroids2)
     return countFrom1to2;
 }
 
-//function to calculate Centroid Index (CI)
-size_t calculateCentroidIndex(Centroids* centroids1, Centroids* centroids2)
+/**
+ * @brief Calculates the Centroid Index (CI) between two sets of centroids.
+ *
+ * This function calculates the Centroid Index (CI) by counting the number of orphan centroids
+ * between two sets of centroids. It returns the maximum count of orphans from either set.
+ *
+ * @param centroids1 A pointer to the first Centroids structure.
+ * @param centroids2 A pointer to the second Centroids structure.
+ * @return The Centroid Index (CI) between the two sets of centroids.
+ */
+size_t calculateCentroidIndex(const Centroids* centroids1, const Centroids* centroids2)
 {
     if (LOGGING == 3)
     {
@@ -1181,30 +1272,37 @@ size_t calculateCentroidIndex(Centroids* centroids1, Centroids* centroids2)
     return (countFrom1to2 > countFrom2to1) ? countFrom1to2 : countFrom2to1;
 }
 
-// Function to run the k-means algorithm
-double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids, Centroids* groundTruth)
+/**
+ * @brief Runs the k-means algorithm on the given data points and centroids.
+ *
+ * This function iterates through partition and centroid steps, calculates the MSE,
+ * and returns the best MSE obtained during the iterations.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param iterations The maximum number of iterations to run the k-means algorithm.
+ * @param centroids A pointer to the Centroids structure containing the centroids.
+ * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
+ * @return The best mean squared error (MSE) obtained during the iterations.
+ */
+double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids, const Centroids* groundTruth)
 {
     double bestMse = DBL_MAX;
     double mse = DBL_MAX;
 
     for (size_t iteration = 0; iteration < iterations; ++iteration)
     {
-        // Partition step
         partitionStep(dataPoints, centroids);
 
-        // Centroid step
         centroidStep(centroids, dataPoints);
         
-        // MSE Calculation
         //TODO: mse vai SSE? Tällä hetkellä SSE vaikka muuttujat ovat mse
         mse = calculateSSE(dataPoints, centroids);
 
-        if (LOGGING == 2)
+        /*if (LOGGING == 2)
         {
 			size_t centroidIndex = calculateCentroidIndex(centroids, groundTruth);
             printf("(runKMeans)After iteration %zu: CI = %zu and MSE = %.5f\n", iteration + 1, centroidIndex, mse / 10000);
-        }
-
+        }*/
 
         if (mse < bestMse)
         {
@@ -1220,8 +1318,18 @@ double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids
     return bestMse;
 }
 
-// Function to perform random swap
-void randomSwap(DataPoints* dataPoints, Centroids* centroids, Centroids* groundTruth, ClusteringResult* bestResult)
+/**
+ * @brief Performs random swaps of centroids and evaluates the resulting clustering using k-means.
+ *
+ * This function performs random swaps of centroids with data points, runs k-means on the modified centroids,
+ * and keeps the changes if the mean squared error (MSE) improves. If the MSE does not improve, it reverses the swap.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param centroids A pointer to the Centroids structure containing the centroids.
+ * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
+ * @param bestResult A pointer to the ClusteringResult structure to store the best result.
+ */
+void randomSwap(DataPoints* dataPoints, Centroids* centroids, const Centroids* groundTruth, ClusteringResult* bestResult)
 {
     double bestMse = DBL_MAX;
     size_t kMeansIterations = 2;
@@ -1432,7 +1540,7 @@ void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clust
 {
     size_t newClusterIndex = centroids->size - 1;
 
-    /* TODO: Q: Kysy/selvitä, että tarvitaanko tätä? Oma oletus on, että ei tarvita
+    /* TODO: Kysy/selvitä, että tarvitaanko tätä? Oma oletus on, että ei tarvita
     // new clusters -> old clusters
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
@@ -1484,11 +1592,12 @@ double tentativeMseDrop(DataPoints* dataPoints, Centroids* centroids, size_t clu
             clusterSize++;
         }
     }
-
-    if (clusterSize < 2) //TODO sama kuin splitClusteri, jos turha niin poista
+    
+    //DEBUGGING
+    /*if (clusterSize < 2)
     {
         return 0.0;
-    }
+    }*/
 
     DataPoints pointsInCluster = allocateDataPoints(clusterSize, dataPoints->points[0].dimensions);
 
@@ -1700,15 +1809,11 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
             }
         }
 
-        if (maxMseDrop <= 0.0) //TODO: tarvitaanko? nopeuttaa jos ei aina tarkisteta
-        {
-            break;
-        }
-
-        if (LOGGING == 2 && splitType == 3)
+        //DEBUGGING
+        /*if (LOGGING >= 2 && splitType == 3)
         {
             printDataPointsPartitions(dataPoints, centroids->size);
-        }
+        }*/
 
         if(splitType == 0) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, iterations, groundTruth);
 		else if (splitType == 1) splitClusterGlobal(dataPoints, centroids, clusterToSplit, iterations, groundTruth);
