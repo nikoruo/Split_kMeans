@@ -168,7 +168,6 @@ void freeCentroids(Centroids* centroids)
     centroids->points = NULL;
 }
 
-// TODO: ei käytössä
 /**
  * @brief Frees the memory allocated for a ClusteringResult structure.
  *
@@ -205,20 +204,17 @@ void freeClusteringResult(ClusteringResult* result, size_t numCentroids)
  */char** createStringList(size_t size)
 {
     char** list = malloc(size * sizeof(char*));
-    if (list == NULL)
-    {
-        fprintf(stderr, "Memory allocation failed\n");
-        exit(EXIT_FAILURE);
-    }
+	handleMemoryError(list);
+
+    const size_t stringSize = 256;
 
     for (size_t i = 0; i < size; ++i)
     {
-        list[i] = malloc(256 * sizeof(char));
-        if (list[i] == NULL)
-        {
-            fprintf(stderr, "Memory allocation failed\n");
-            exit(EXIT_FAILURE);
-        }
+        // Suppress warning about potential NULL dereference
+		// We already check for NULL pointers in handleMemoryError
+        #pragma warning(suppress : 6011)
+        list[i] = malloc(stringSize * sizeof(char));
+		handleMemoryError(list[i]);
     }
 
     return list;
@@ -241,7 +237,6 @@ void freeClusteringResult(ClusteringResult* result, size_t numCentroids)
     free(list);
 }
 
- //TODO: ota käyttöön
  /**
  * @brief Allocates and initializes a DataPoint structure.
  *
@@ -255,13 +250,12 @@ void freeClusteringResult(ClusteringResult* result, size_t numCentroids)
      DataPoint point;
      point.attributes = malloc(dimensions * sizeof(double));
      handleMemoryError(point.attributes);
-     point.dimensions = dimensions; //TODO tarkista tehdäänkö muualla turhaan
-     point.partition = SIZE_MAX; // Initialize partition to default value
+     point.dimensions = dimensions;
+     point.partition = SIZE_MAX; // Initialize partition to default value, here SIZE_MAX
 
      return point;
  }
 
- //TODO: ota käyttöön, tarkista default arvot
  /**
  * @brief Allocates and initializes a DataPoints structure.
  *
@@ -285,7 +279,6 @@ void freeClusteringResult(ClusteringResult* result, size_t numCentroids)
      return dataPoints;
  }
 
- //TODO: ota käyttöön, tarkista default arvot
  /**
  * @brief Allocates and initializes a Centroids structure.
  *
@@ -309,7 +302,6 @@ void freeClusteringResult(ClusteringResult* result, size_t numCentroids)
      return centroids;
  }
 
- //TODO: ota käyttöön, tarkista default arvot
  /**
  * @brief Allocates and initializes a ClusteringResult structure.
  *
@@ -1833,24 +1825,12 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
 // Function to run the Bisecting k-means algorithm
 double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, Centroids* groundTruth)
 {
-    //Variables
 	size_t bisectingIterations = 5;
     
     double* SseList = malloc(maxCentroids * sizeof(size_t));
     handleMemoryError(SseList);
 
     ClusteringResult bestResult;
-    /*bestResult.centroids = malloc(2 * sizeof(DataPoint));
-    handleMemoryError(bestResult.centroids);
-    for (size_t i = 0; i < 2; ++i)
-    {
-        bestResult.centroids[i].attributes = malloc(dataPoints->points[0].dimensions * sizeof(double));
-        handleMemoryError(bestResult.centroids[i].attributes);
-    }
-    bestResult.partition = malloc(dataPoints->size * sizeof(size_t));
-    handleMemoryError(bestResult.partition);
-    bestResult.centroidIndex = SIZE_MAX;
-    */
     bestResult.mse = DBL_MAX;
 
     DataPoint newCentroid1;
@@ -2140,6 +2120,7 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size
 
     for (size_t i = 0; i < loopCount; ++i)
     {
+        //TODO: Käy läpi, että tarvitaanko CR vai riittääkö double
         ClusteringResult result = allocateClusteringResult(dataPoints->size, numCentroids, dataPoints->points[0].dimensions);
 
         Centroids centroids = allocateCentroids(numCentroids, dataPoints->points[0].dimensions);
