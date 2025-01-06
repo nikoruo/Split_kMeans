@@ -7,6 +7,7 @@
 #include <float.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <direct.h>
 
 // Credits: Niko Ruohonen, 2024
 
@@ -892,7 +893,7 @@ void createUniqueDirectory(char* outputDirectory, size_t size)
         return;
     }
 
-    if (mkdir(outputDirectory, 0777) != 0)
+    if (_mkdir(outputDirectory) != 0)
     {
         perror("Error: Unable to create directory");
     }
