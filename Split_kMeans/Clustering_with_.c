@@ -78,12 +78,18 @@ typedef struct
     size_t centroidIndex; /**< Centroid Index value. */
 } ClusteringResult;
 
+/**
+ * @brief Represents statistical data collected during the execution of clustering algorithms.
+ *
+ * This struct contains the sum of mean squared errors (MSE), the sum of Centroid Index (CI) values,
+ * the total time taken for the clustering process, and the success rate of the clustering algorithm.
+ */
 typedef struct
 {
-    double mseSum;
-    size_t ciSum;
-    double timeSum;
-    double successRate;
+    double mseSum;       /**< Sum of mean squared errors (MSE) values. */
+    size_t ciSum;        /**< Sum of Centroid Index (CI) values. */
+    double timeSum;      /**< Total time taken for the clustering process. */
+    double successRate;  /**< Success rate of the clustering algorithm. */
 } Statistics;
 
 
