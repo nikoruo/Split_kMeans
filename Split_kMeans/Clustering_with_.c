@@ -740,8 +740,7 @@ void deepCopyCentroids(const Centroids* source, Centroids* destination, size_t n
         freeDataPointArray(destination->points, destination->size);
     }
 
-    destination->points = malloc(numCentroids * sizeof(DataPoint));
-    handleMemoryError(destination->points);
+	destination->points = allocateDataPoints(numCentroids, source->points[0].dimensions).points;
 
     for (size_t i = 0; i < numCentroids; ++i)
     {
@@ -2074,7 +2073,7 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size
 
     for (size_t i = 0; i < loopCount; ++i)
     {
-        //TODO: Käy läpi, että tarvitaanko CR vai riittääkö double
+        //TODO: Käy läpi, että tarvitaanko ClusteringResult vai riittääkö double
         ClusteringResult result = allocateClusteringResult(dataPoints->size, numCentroids, dataPoints->points[0].dimensions);
 
         Centroids centroids = allocateCentroids(numCentroids, dataPoints->points[0].dimensions);
@@ -2273,6 +2272,68 @@ void runBisectingKMeansAlgorithm(DataPoints* dataPoints, Centroids* groundTruth,
 // Main //
 /////////
 
+/**
+ * @brief Initializes the dataset, ground truth lists, and number of clusters.
+ *
+ * This function initializes the dataset and ground truth lists with the file names,
+ * and initializes the number of clusters for each dataset.
+ *
+ * @param datasetList A pointer to the list of dataset file names.
+ * @param gtList A pointer to the list of ground truth file names.
+ * @param kNumList A pointer to the array of number of clusters for each dataset.
+ * @param datasetCount The number of datasets.
+ */
+void initializeLists(char** datasetList, char** gtList, size_t* kNumList, size_t datasetCount)
+{
+    strcpy_s(datasetList[0], 20, "a1.txt");
+    strcpy_s(datasetList[1], 20, "a2.txt");
+    strcpy_s(datasetList[2], 20, "a3.txt");
+    strcpy_s(datasetList[3], 20, "s1.txt");
+    strcpy_s(datasetList[4], 20, "s2.txt");
+    strcpy_s(datasetList[5], 20, "s3.txt");
+    strcpy_s(datasetList[6], 20, "s4.txt");
+    strcpy_s(datasetList[7], 20, "unbalance.txt");
+    strcpy_s(datasetList[8], 20, "birch1.txt");
+    strcpy_s(datasetList[9], 20, "birch2.txt");
+    strcpy_s(datasetList[10], 20, "birch3.txt");
+    strcpy_s(datasetList[11], 20, "dim032.txt");
+    strcpy_s(datasetList[12], 20, "dim064.txt");
+    strcpy_s(datasetList[13], 20, "g2-1-10.txt");
+    strcpy_s(datasetList[14], 20, "g2-1-20.txt");
+
+    strcpy_s(gtList[0], 20, "a1-ga-cb.txt");
+    strcpy_s(gtList[1], 20, "a2-ga-cb.txt");
+    strcpy_s(gtList[2], 20, "a3-ga-cb.txt");
+    strcpy_s(gtList[3], 20, "s1-cb.txt");
+    strcpy_s(gtList[4], 20, "s2-cb.txt");
+    strcpy_s(gtList[5], 20, "s3-cb.txt");
+    strcpy_s(gtList[6], 20, "s4-cb.txt");
+    strcpy_s(gtList[7], 20, "unbalance-gt.txt");
+    strcpy_s(gtList[8], 20, "b1-gt.txt");
+    strcpy_s(gtList[9], 20, "b2-gt.txt");
+    strcpy_s(gtList[10], 20, "b3-gt.txt");
+    strcpy_s(gtList[11], 20, "dim032.txt");
+    strcpy_s(gtList[12], 20, "dim064.txt");
+    strcpy_s(gtList[13], 20, "g2-1-10-gt.txt");
+    strcpy_s(gtList[14], 20, "g2-1-20-gt.txt");
+
+    kNumList[0] = 20;   // A1
+    kNumList[1] = 35;   // A2
+    kNumList[2] = 50;   // A3
+    kNumList[3] = 15;   // S1
+    kNumList[4] = 15;   // S2
+    kNumList[5] = 15;   // S3
+    kNumList[6] = 15;   // S4
+    kNumList[7] = 8;    // Unbalance    
+    kNumList[8] = 100;  // Birch1
+    kNumList[9] = 100;  // Birch2
+    kNumList[10] = 100; // Birch3
+    kNumList[11] = 16;  // Dim (high)
+    kNumList[12] = 16;  // Dim (high)
+    kNumList[13] = 2;   // G2
+    kNumList[14] = 2;   // G2
+}
+
 //TODO käy läpi int muuttujat, size_t parempi jos tarvitaan vain positiivisia lukuja
 //TODO disabloi false positive varoitukset kommenttien kera
 //TODO: käy läpi constit, ja pohdi tarpeellisuus
@@ -2299,65 +2360,17 @@ int main()
 	// Number of datasets
     size_t datasetCount = 15;
 
-	// List of dataset file names
-    char** datasetList = createStringList(datasetCount);
-    strcpy_s(datasetList[0], 20, "a1.txt");
-    strcpy_s(datasetList[1], 20, "a2.txt");
-    strcpy_s(datasetList[2], 20, "a3.txt");
-    strcpy_s(datasetList[3], 20, "s1.txt");
-    strcpy_s(datasetList[4], 20, "s2.txt");
-    strcpy_s(datasetList[5], 20, "s3.txt");
-    strcpy_s(datasetList[6], 20, "s4.txt");
-    strcpy_s(datasetList[7], 20, "unbalance.txt");
-    strcpy_s(datasetList[8], 20, "birch1.txt");
-    strcpy_s(datasetList[9], 20, "birch2.txt");
-    strcpy_s(datasetList[10], 20, "birch3.txt");
-    strcpy_s(datasetList[11], 20, "dim032.txt");
-    strcpy_s(datasetList[12], 20, "dim064.txt");
-    strcpy_s(datasetList[13], 20, "g2-1-10.txt");
-    strcpy_s(datasetList[14], 20, "g2-1-20.txt");
-
-	// List of ground truth file names
-    char** gtList = createStringList(datasetCount);
-    strcpy_s(gtList[0], 20, "a1-ga-cb.txt");
-    strcpy_s(gtList[1], 20, "a2-ga-cb.txt");
-    strcpy_s(gtList[2], 20, "a3-ga-cb.txt");
-    strcpy_s(gtList[3], 20, "s1-cb.txt");
-    strcpy_s(gtList[4], 20, "s2-cb.txt");
-    strcpy_s(gtList[5], 20, "s3-cb.txt");
-    strcpy_s(gtList[6], 20, "s4-cb.txt");
-    strcpy_s(gtList[7], 20, "unbalance-gt.txt");
-    strcpy_s(gtList[8], 20, "b1-gt.txt");
-    strcpy_s(gtList[9], 20, "b2-gt.txt");
-    strcpy_s(gtList[10], 20, "b3-gt.txt");
-    strcpy_s(gtList[11], 20, "dim032.txt");
-    strcpy_s(gtList[12], 20, "dim064.txt");
-    strcpy_s(gtList[13], 20, "g2-1-10-gt.txt");
-    strcpy_s(gtList[14], 20, "g2-1-20-gt.txt");
-
-	// Number of clusters for each dataset
-    size_t kNumList[] = {
-    20,   // A1
-    35,   // A2
-    50,   // A3
-    15,   // S1
-    15,   // S2
-    15,   // S3
-    15,   // S4
-    8,    // Unbalance    
-    100,  // Birch1
-    100,  // Birch2
-    100,  // Birch3
-    16,   // Dim (high)
-    16,   // Dim (high)
-    2,    // G2
-    2,    // G2
-    9     // Dim (low)
-    };
+    // List of dataset file names, ground truth file names, and number of clusters
+    const char** datasetList = createStringList(datasetCount);
+    const char** gtList = createStringList(datasetCount);
+    size_t* kNumList = malloc(datasetCount * sizeof(size_t));
+    handleMemoryError(kNumList);	
+    initializeLists(datasetList, gtList, kNumList, datasetCount);
 
     char outputDirectory[256]; // Buffer size = 256, increase if needed 
     createUniqueDirectory(outputDirectory, sizeof(outputDirectory));
 
+    //TODO: muista laittaa loopin rajat oikein
     for (size_t i = 6; i < 7; ++i)
     {
         size_t maxIterations = MAX_ITERATIONS;//TODO tarkasta kaikki, että käytetään oikeita muuttujia
@@ -2399,10 +2412,10 @@ int main()
             runKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, outputDirectory);
 
             // Run Repeated K-means
-            //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, outputDirectory);
+            runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, outputDirectory);
 
             // Run Random Swap
-            //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, loopCount, scaling, fileName, outputDirectory);
+            runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, loopCount, scaling, fileName, outputDirectory);
             
             // Run Random Split
             runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, loopCount, scaling, fileName, outputDirectory);
