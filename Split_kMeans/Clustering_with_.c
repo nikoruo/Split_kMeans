@@ -454,6 +454,7 @@ size_t getNumDimensions(const char* filename)
     // Safe to use as we actually check for NULL earlier
     _Analysis_assume_(file != NULL);
 
+    //TODO: mieti, että tarvitseeko näitä buffereita yhdenmukaistaa, tässä 512 muualla 256
 	char firstLine[512]; // Buffer size = 512, increase if needed
     if (fgets(firstLine, sizeof(firstLine), file) == NULL)
     {
@@ -548,7 +549,8 @@ DataPoints readDataPoints(const char* filename)
 
     if (LOGGING == 3)
     {
-        for (size_t i = 0; i < 2 && i < dataPoints.size; ++i) // Debug helper: print the first two data points
+        // for (size_t i = 0; i < dataPoints.size; ++i) // Debug helper: print all data points
+        for (size_t i = 0; i < dataPoints.size; ++i) // Debug helper: print the first two data points
         {
             printf("Data point %zu attributes: ", i);
             for (size_t j = 0; j < dataPoints.points[i].dimensions; ++j)
@@ -581,7 +583,7 @@ Centroids readCentroids(const char* filename)
     centroids.size = points.size;
     centroids.points = points.points;
     
-    if (LOGGING == 2)
+    if (LOGGING >= 2)
     {
         for (size_t i = 0; i < centroids.size; ++i)
         {
@@ -606,7 +608,7 @@ Centroids readCentroids(const char* filename)
  * @param filename The name of the file to write the centroids to.
  * @param centroids A pointer to the Centroids structure containing the centroids to be written.
  */
-void writeCentroidsToFile(const char* filename, Centroids* centroids)
+void writeCentroidsToFile(const char* filename, const Centroids* centroids)
 {
     FILE* centroidFile = fopen(filename, "w");
     if (centroidFile == NULL)
@@ -626,10 +628,9 @@ void writeCentroidsToFile(const char* filename, Centroids* centroids)
 
     fclose(centroidFile);
 
-    //if (LOGGING == 3) printf("Centroids written to file: %s\n", filename);
+    //if (LOGGING >= 3) printf("Centroids written to file: %s\n", filename);
 }
 
-// TODO: refaktoroi käyttämäänn resulttia DataPointsin sijaan
 /**
  * @brief Writes data point partitions to a file.
  *
@@ -639,7 +640,7 @@ void writeCentroidsToFile(const char* filename, Centroids* centroids)
  * @param filename The name of the file to write the partitions to.
  * @param dataPoints A pointer to the DataPoints structure containing the data points.
  */
-void writeDataPointPartitionsToFile(const char* filename, DataPoints* dataPoints)
+void writeDataPointPartitionsToFile(const char* filename, const DataPoints* dataPoints)
 {
     FILE* file = fopen(filename, "w");
     if (file == NULL)
@@ -655,7 +656,7 @@ void writeDataPointPartitionsToFile(const char* filename, DataPoints* dataPoints
 
     fclose(file);
 
-    //if (LOGGING == 3) printf("Data point partitions written to file: %s\n", filename);
+    //if (LOGGING >= 3) printf("Data point partitions written to file: %s\n", filename);
 }
 
 /**
@@ -668,7 +669,7 @@ void writeDataPointPartitionsToFile(const char* filename, DataPoints* dataPoints
  * @param destination A pointer to the destination DataPoint structure.
  * @param source A pointer to the source DataPoint structure.
  */
-void deepCopyDataPoint(DataPoint* destination, DataPoint* source)
+void deepCopyDataPoint(DataPoint* destination, const DataPoint* source)
 {
     if (destination == NULL || source == NULL)
     {
@@ -677,14 +678,12 @@ void deepCopyDataPoint(DataPoint* destination, DataPoint* source)
     }
 
     destination->dimensions = source->dimensions;
-    //destination->partition = source->partition; TODO tarvitaanko?
+    destination->partition = source->partition;
     
-    //TODO: poista jos ei saa korjattua
-	//nyt kaatuu koska destination->attributes ei ole edes allokoitu vielä muistia
-    /*if (destination->attributes != NULL)
+    if (destination->attributes != NULL)
     {
         free(destination->attributes);
-    }*/
+    }
 
     destination->attributes = malloc(source->dimensions * sizeof(double));
     handleMemoryError(destination->attributes);
@@ -706,7 +705,7 @@ void deepCopyDataPoint(DataPoint* destination, DataPoint* source)
  * @param source A pointer to the array of source DataPoint structures.
  * @param size The number of data points in the source and destination arrays.
  */
-void deepCopyDataPoints(DataPoint* destination, DataPoint* source, size_t size)
+void deepCopyDataPoints(DataPoint* destination, const DataPoint* source, size_t size)
 {
     if (destination == NULL || source == NULL)
     {
@@ -732,17 +731,10 @@ void deepCopyDataPoints(DataPoint* destination, DataPoint* source, size_t size)
  * @param destination A pointer to the destination Centroids structure.
  * @param numCentroids The number of centroids to copy.
  */
-void deepCopyCentroids(Centroids* source, Centroids* destination, size_t numCentroids)
+void deepCopyCentroids(const Centroids* source, Centroids* destination, size_t numCentroids)
 {
-    if (source == NULL || destination == NULL)
-    {
-        fprintf(stderr, "Error: Null pointer passed to deepCopyCentroids\n");
-        exit(EXIT_FAILURE);
-    }
-
     destination->size = source->size;
 
-    // Free existing points if they are already allocated
     if (destination->points != NULL)
     {
         freeDataPointArray(destination->points, destination->size);
@@ -753,12 +745,6 @@ void deepCopyCentroids(Centroids* source, Centroids* destination, size_t numCent
 
     for (size_t i = 0; i < numCentroids; ++i)
     {
-        if (destination->points == NULL)
-        {
-            fprintf(stderr, "Error: Null pointer 'destination->points' in deepCopyDataPoints\n");
-            exit(EXIT_FAILURE);
-        }
-
         deepCopyDataPoint(&destination->points[i], &source->points[i]);
     }
 }
@@ -773,12 +759,6 @@ void deepCopyCentroids(Centroids* source, Centroids* destination, size_t numCent
  */
 void printCentroidsInfo(const Centroids* centroids)
 {
-    if (centroids == NULL)
-    {
-        fprintf(stderr, "Error: Null pointer passed to printCentroidsInfo\n");
-        return;
-    }
-
     printf("Number of centroids: %zu\n", centroids->size);
 
     for (size_t i = 0; i < centroids->size; ++i)
@@ -808,12 +788,6 @@ void printCentroidsInfo(const Centroids* centroids)
  */
 void printDataPointsPartitions(const DataPoints* dataPoints, size_t cMax)
 {
-    if (dataPoints == NULL)
-    {
-        fprintf(stderr, "Error: Null pointer passed to printDataPointsPartitions\n");
-        return;
-    }
-
     printf("Data Points Partition Assignments (Partition <= %zu):\n", cMax);
     printf("Data Points size: %zu\n", dataPoints->size);
     for (size_t i = 0; i < dataPoints->size; ++i)
@@ -835,13 +809,7 @@ void printDataPointsPartitions(const DataPoints* dataPoints, size_t cMax)
  * @param dataPoints A pointer to the DataPoints structure containing the data points.
  */
 void resetPartitions(DataPoints* dataPoints)
-{
-    if (dataPoints == NULL)
-    {
-        fprintf(stderr, "Error: Null pointer passed to resetPartitions\n");
-        return;
-    }
-
+{    
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
         dataPoints->points[i].partition = 0;
@@ -900,19 +868,13 @@ void writeResultsToFile(const char* filename, Statistics stats, size_t numCentro
  */
 void createUniqueDirectory(char* outputDirectory, size_t size)
 {
-    if (outputDirectory == NULL)
-    {
-        fprintf(stderr, "Error: Null pointer passed to createUniqueDirectory\n");
-        return;
-    }
-
     time_t now = time(NULL);
     struct tm* t = localtime(&now);
 
     if (strftime(outputDirectory, size, "outputs/%Y-%m-%d_%H-%M-%S", t) == 0)
     {
         fprintf(stderr, "Error: Buffer size is too small in createUniqueDirectory\n");
-        return;
+        return; //TODO: Exit_failure mieluummin näihin?
     }
 
     if (_mkdir(outputDirectory) != 0)
@@ -921,42 +883,49 @@ void createUniqueDirectory(char* outputDirectory, size_t size)
     }
 }
 
+/**
+ * @brief Gets the name of the split type based on the provided split type index.
+ *
+ * This function returns the name of the split type corresponding to the provided split type index.
+ * If the split type index is invalid, it prints an error message to stderr and returns NULL.
+ *
+ * @param splitType The index of the split type.
+ * @return The name of the split type, or NULL if the split type index is invalid.
+ */
 const char* getSplitTypeName(size_t splitType)
 {
-    const char* splitTypeName = NULL;
-
-    if (splitType == 0)
+    switch (splitType)
     {
-        splitTypeName = "Intra-cluster";
-    }
-    else if (splitType == 1)
-    {
-        splitTypeName = "Global";
-    }
-    else if (splitType == 2)
-    {
-        splitTypeName = "Local repartition";
-    }
-    else
-    {
-        splitTypeName = "Unknown Split Type";
-    }
-
-    if (strcmp(splitTypeName, "Unknown Split Type") == 0)
-    {
+    case 0:
+        return "Intra-cluster";
+    case 1:
+        return "Global";
+    case 2:
+        return "Local repartition";
+    default:
         fprintf(stderr, "Error: Invalid split type provided\n");
-        exit(EXIT_FAILURE);
+        return NULL;
     }
-
-    return splitTypeName;
 }
 
+/**
+ * @brief Prints the statistics of a clustering algorithm.
+ *
+ * This function prints the average Centroid Index (CI), Mean Squared Error (MSE),
+ * relative CI, average time taken, and success rate of a clustering algorithm.
+ *
+ * @param algorithmName The name of the clustering algorithm.
+ * @param stats A Statistics structure containing the results to be printed.
+ * @param loopCount The number of loops performed.
+ * @param numCentroids The number of centroids used in the clustering algorithm.
+ * @param scaling A scaling factor for the MSE values.
+ */
 void printStatistics(const char* algorithmName, Statistics stats, size_t loopCount, size_t numCentroids, size_t scaling)
 {
-    printf("(%s)Average CI: %.2f and MSE: %.2f\n", algorithmName, (double)stats.ciSum / loopCount, stats.mseSum / loopCount / scaling);
-    printf("(%s)Relative CI: %.2f\n", algorithmName, (double)stats.ciSum / loopCount / numCentroids);
-    printf("(%s)Average time taken: %.2f seconds\n", algorithmName, stats.timeSum / loopCount);
-    printf("(%s)Success rate: %.2f%%\n\n", algorithmName, stats.successRate / loopCount * 100);
+    printf("(%s) Average CI: %.2f and MSE: %.2f\n", algorithmName, (double)stats.ciSum / loopCount, stats.mseSum / loopCount / scaling);
+    printf("(%s) Relative CI: %.2f\n", algorithmName, (double)stats.ciSum / loopCount / numCentroids);
+    printf("(%s) Average time taken: %.2f seconds\n", algorithmName, stats.timeSum / loopCount);
+    printf("(%s) Success rate: %.2f%%\n\n", algorithmName, stats.successRate / loopCount * 100);
 }
 
 
@@ -1351,10 +1320,8 @@ void splitClusterIntraCluster(DataPoints* dataPoints, Centroids* centroids, size
     size_t datapoint2 = clusterIndices[c2];
 
     // Initialize local centroids
-    Centroids localCentroids;
-    localCentroids.size = 2;
-    localCentroids.points = malloc(2 * sizeof(DataPoint));
-    handleMemoryError(localCentroids.points);
+	Centroids localCentroids = allocateCentroids(2, dataPoints->points[0].dimensions);
+
     deepCopyDataPoint(&localCentroids.points[0], &dataPoints->points[datapoint1]);
     deepCopyDataPoint(&localCentroids.points[1], &dataPoints->points[datapoint2]);
 
@@ -1383,16 +1350,14 @@ void splitClusterIntraCluster(DataPoints* dataPoints, Centroids* centroids, size
     // TODO: deepcopyjen sijaan suoraan memcpy?
     //#1
     deepCopyDataPoint(&centroids->points[clusterToSplit], &localCentroids.points[0]);
-    //memcpy(&centroids->points[clusterToSplit].attributes, &localCentroids.points[0].attributes, localCentroids.points[0].dimensions * sizeof(double));
-
-
+    
     //#2
     centroids->size++;
     centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint));
     handleMemoryError(centroids->points);
+	centroids->points[centroids->size - 1] = allocateDataPoint(dataPoints->points[0].dimensions);
     deepCopyDataPoint(&centroids->points[centroids->size - 1], &localCentroids.points[1]);
-    //memcpy(&centroids->points[centroids->size - 1].attributes, &localCentroids.points[1].attributes, localCentroids.points[1].dimensions * sizeof(double));
-
+    
 
     // Cleanup
     free(clusterIndices);
@@ -1451,7 +1416,7 @@ void splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t clu
     // Add the second new centroid to the global centroids list
     centroids->size++;
     centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint));
-    handleMemoryError(centroids->points);
+	centroids->points[centroids->size - 1] = allocateDataPoint(dataPoints->points[0].dimensions);
     deepCopyDataPoint(&centroids->points[centroids->size - 1], &dataPoints->points[datapoint2]);
 
     // Run global k-means, this time including the new centroids
@@ -1526,10 +1491,7 @@ double tentativeMseDrop(DataPoints* dataPoints, Centroids* centroids, size_t clu
         return 0.0;
     }
 
-    DataPoints pointsInCluster;
-    pointsInCluster.size = clusterSize;
-    pointsInCluster.points = malloc(clusterSize * sizeof(DataPoint));
-    handleMemoryError(pointsInCluster.points);
+    DataPoints pointsInCluster = allocateDataPoints(clusterSize, dataPoints->points[0].dimensions);
 
     size_t index = 0;
     for (size_t i = 0; i < dataPoints->size; ++i)
@@ -1549,10 +1511,8 @@ double tentativeMseDrop(DataPoints* dataPoints, Centroids* centroids, size_t clu
         idx2 = rand() % clusterSize;
     }
 
-    Centroids localCentroids;
-    localCentroids.size = 2;
-    localCentroids.points = malloc(2 * sizeof(DataPoint));
-    handleMemoryError(localCentroids.points);
+    Centroids localCentroids = allocateCentroids(2,dataPoints->points[0].dimensions);
+
     deepCopyDataPoint(&localCentroids.points[0], &pointsInCluster.points[idx1]);
     deepCopyDataPoint(&localCentroids.points[1], &pointsInCluster.points[idx2]);
 
@@ -1601,10 +1561,7 @@ ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, Centroids
     }
 
 
-    DataPoints pointsInCluster;
-    pointsInCluster.size = clusterSize;
-    pointsInCluster.points = malloc(clusterSize * sizeof(DataPoint));
-    handleMemoryError(pointsInCluster.points);
+    DataPoints pointsInCluster = allocateDataPoints(clusterSize, dataPoints->points[0].dimensions);
 
     size_t index = 0;
     for (size_t i = 0; i < dataPoints->size; ++i) //todo: tämän loopin voi ehkä yhdistää ylemmän kanssa? ps. tai ehkä ei koska clusterSize?
@@ -1624,10 +1581,7 @@ ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, Centroids
         idx2 = rand() % clusterSize;
     }
 
-    Centroids localCentroids;
-    localCentroids.size = 2;
-    localCentroids.points = malloc(2 * sizeof(DataPoint));
-    handleMemoryError(localCentroids.points);
+    Centroids localCentroids = allocateCentroids(2, dataPoints->points[0].dimensions);
     deepCopyDataPoint(&localCentroids.points[0], &pointsInCluster.points[idx1]);
     deepCopyDataPoint(&localCentroids.points[1], &pointsInCluster.points[idx2]);
 
@@ -2329,6 +2283,7 @@ void runBisectingKMeansAlgorithm(DataPoints* dataPoints, Centroids* groundTruth,
 //TODO: konsolikysymykset, kuten "do you want to run split k-means?" ja "do you want to run random swap?" jne?
 //      ja/vai/tai komentoriviargumentit, kuten "split k-means" ja "random swap" jne? (eli että voi ajaa suoraan powershellistä)
 //TODO: onko kNumList tarpeellinen? Periaatteessa sama löytyy myös gtList.size?
+//TODO: käy LOGGING tasot läpi (myös ehdot, sillä nyt useat == kun pitäisi olla >=)
 
 /**
  * @brief Main function to run various clustering algorithms on multiple datasets.
@@ -2444,10 +2399,10 @@ int main()
             runKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, outputDirectory);
 
             // Run Repeated K-means
-            runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, outputDirectory);
+            //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, outputDirectory);
 
             // Run Random Swap
-            runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, loopCount, scaling, fileName, outputDirectory);
+            //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, loopCount, scaling, fileName, outputDirectory);
             
             // Run Random Split
             runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, loopCount, scaling, fileName, outputDirectory);
