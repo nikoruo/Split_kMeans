@@ -337,6 +337,27 @@ void freeClusteringResult(ClusteringResult* result, size_t numCentroids)
      return result;
  }
 
+ /**
+ * @brief Initializes a Statistics structure.
+ *
+ * This function sets all fields of the Statistics structure to their default values.
+ *
+ * @param stats A pointer to the Statistics structure to be initialized.
+ */
+ void initializeStatistics(Statistics* stats)
+ {
+     if (stats == NULL)
+     {
+         fprintf(stderr, "Error: Null pointer passed to initializeStatistics\n");
+         exit(EXIT_FAILURE);
+     }
+
+     stats->mseSum = 0.0;
+     stats->ciSum = 0;
+     stats->timeSum = 0.0;
+     stats->successRate = 0.0;
+ }
+
 
 //////////////
 // Helpers //
@@ -1986,7 +2007,8 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
 
 void runKMeansAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
 {
-    Statistics stats = { 0 };
+    Statistics stats;
+    initializeStatistics(&stats);
 
     clock_t start, end;
     double duration;
@@ -2040,7 +2062,8 @@ void runKMeansAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t n
 
 void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t maxRepeats, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
 {
-    Statistics stats = { 0 };
+    Statistics stats;
+    initializeStatistics(&stats);
 
     clock_t start, end;
     double duration;
@@ -2107,7 +2130,8 @@ void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, 
 
 void runRandomSwapAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t numCentroids, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
 {
-    Statistics stats = { 0 };
+    Statistics stats;
+    initializeStatistics(&stats);
 
     clock_t start, end;
     double duration;
@@ -2158,7 +2182,8 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size
 
 void runRandomSplitAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t numCentroids, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
 {
-    Statistics stats = { 0 };
+    Statistics stats;
+    initializeStatistics(&stats);
 
     clock_t start, end;
     double duration;
@@ -2204,7 +2229,8 @@ void runRandomSplitAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, siz
 
 void runMseSplitAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t numCentroids, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, int splitType)
 {
-    Statistics stats = { 0 };
+    Statistics stats;
+    initializeStatistics(&stats);
 
     clock_t start, end;
     double duration;
@@ -2258,7 +2284,8 @@ void runMseSplitAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t
 
 void runBisectingKMeansAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t numCentroids, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
 {
-    Statistics stats = { 0 };
+    Statistics stats;
+    initializeStatistics(&stats);
 
     clock_t start, end;
     double duration;
