@@ -1698,9 +1698,10 @@ double tentativeMseDrop(DataPoints* dataPoints, size_t clusterLabel, size_t loca
  * @param dataPoints A pointer to the DataPoints structure containing the data points.
  * @param clusterLabel The label of the cluster to split.
  * @param localMaxIterations The maximum number of iterations for the local k-means.
+ * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
  * @return A ClusteringResult structure containing the new centroids and the MSE drop.
  */
-ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, size_t clusterLabel, size_t localMaxIterations)
+ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, size_t clusterLabel, size_t localMaxIterations, const Centroids* groundTruth)
 {
     size_t clusterSize = 0;
     for (size_t i = 0; i < dataPoints->size; ++i)
@@ -1746,7 +1747,7 @@ ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, size_t cl
     ClusteringResult localResult = allocateClusteringResult(dataPoints->size, 2, dataPoints->points[0].dimensions);
 
     // k-means
-    localResult.mse = runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, NULL);
+    localResult.mse = runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, groundTruth);
 
     // Calculate combined MSE of the two clusters
     //TODO: WithSize vai ilman? Eli koko datasetin mukaan vai pelkästään clusterin mukaan?
@@ -1990,61 +1991,32 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
         // Save the original centroid       
         deepCopyDataPoint(&ogCentroid, &centroids->points[clusterToSplit]);
 
-        //TODO: myös alkuperäinen partition?
-        for (size_t j = 0; j < dataPoints->size; ++j)
-        {
-            ogPartitions[j] = dataPoints->points[j].partition;
-        }
-
 		//Repeat for a set number of iterations
         for (size_t j = 0; j < bisectingIterations; ++j)
         {
-			//options 2: eli vain lasketaan, mutta ei suoriteta
-            //tämä kuulostaa paremmalta
-			ClusteringResult curr = tentativeSplitterForBisecting(dataPoints, clusterToSplit, 1000);
+			ClusteringResult curr = tentativeSplitterForBisecting(dataPoints, clusterToSplit, maxIterations, groundTruth);
 
             //if (LOGGING == 2) printf("(RKM) Round %d: Latest Centroid Index (CI): %zu and Latest Mean Sum-of-Squared Errors (MSE): %.4f\n", repeat, result1.centroidIndex, result1.mse / 10000);
 
 			// If the result is better than the best result so far, update the best result
             if (curr.mse < bestMse)
             {
-                if (LOGGING == 1) printf("(from inner) Round %zu\n", j);
+                //if (LOGGING == 1) printf("(from inner) Round %zu\n", j);
 
-                // Save the SSE
                 bestMse = curr.mse;
-                Centroids tempCentroids; //Debug helper
-                tempCentroids.size = 2; // Number of centroids in curr <- this is why we needed debug helper
-                tempCentroids.points = curr.centroids;
-                // Print centroids using the existing function
-                printCentroidsInfo(&tempCentroids); 
+                
+				//DEBUGGING
+                //Centroids tempCentroids; //Debug helper
+                //tempCentroids.size = 2; // Number of centroids in curr <- this is why we needed debug helper
+                //tempCentroids.points = curr.centroids;
+                //printCentroidsInfo(&tempCentroids); 
                 
                 // Save the two new centroids
 				deepCopyDataPoint(&newCentroid1, &curr.centroids[0]);
                 deepCopyDataPoint(&newCentroid2, &curr.centroids[1]);
-				//free(curr.centroids);
+
 				freeClusteringResult(&curr, 2);
-                // Save the partition (of just the new clusters?)
-                //ei ehkä tarvi, jos vaan partition step loppuun?
-                /*for (size_t i = 0; i < dataPoints->size; ++i) //TODO: halutaanko tätä loopata timerin sisällä?
-                {
-                    bestResult.partition[i] = dataPoints->points[i].partition;
-                }*/
             }
-
-            //TODO: palauta alkuperäinen centroid
-            /*deepCopyDataPoint(&centroids->points[clusterToSplit], &ogCentroid);
-
-            //TODO: palauta partition? <- voisiko tämän skipata jotenkin?
-			for (size_t i = 0; i < dataPoints->size; ++i)
-			{
-				dataPoints->points[i].partition = ogPartitions[i];
-			}*/
-                        
-            //TODO: poista uusi centroid
-            //TODO: Tarvitaanko muuta kuin size pienennys?
-            //free(centroids->points[centroids->size - 1].attributes);
-            //centroids->points[centroids->size - 1].attributes = NULL;
-			//centroids->size--;
         }
 
 		//Choose the best cluster split
@@ -2054,17 +2026,15 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
         centroids->points = realloc(centroids->points, (centroids->size + 1) * sizeof(DataPoint));
         handleMemoryError(centroids->points);
 
-        centroids->points[centroids->size].attributes = malloc(newCentroid2.dimensions * sizeof(double));
-        handleMemoryError(centroids->points[centroids->size].attributes);
-        centroids->points[centroids->size].dimensions = newCentroid2.dimensions;
-        centroids->points[centroids->size].partition = newCentroid2.partition;
-
+        centroids->points[centroids->size] = allocateDataPoint(newCentroid2.dimensions);
         deepCopyDataPoint(&centroids->points[centroids->size], &newCentroid2);
-		centroids->size++;
+        centroids->size++;
         
-        if (LOGGING == 1) printf("(from outer) Round %zu\n", i);
-        printCentroidsInfo(centroids);
+		//DEBUGGING
+        //if (LOGGING == 1) printf("(from outer) Round %zu\n", i);
+        //printCentroidsInfo(centroids);
 
+        //TODO: tässä partitionStep, mutta voisiko "if (curr.mse < bestMse)" sisällä pitää tallentaa partitionia?
         partitionStep(dataPoints, centroids);
 
 		//Step 3: Update the SSE list
@@ -2074,8 +2044,6 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
 
 		writeCentroidsToFile("outputs/centroids.txt", centroids);
 		writeDataPointPartitionsToFile("outputs/partitions.txt", dataPoints);
-        //DEBUGGING if(LOGGING == 3) printf("round: %d\n", repeat);
-        //centroids->size++;
 
         bestMse = DBL_MAX;
     }
@@ -2093,7 +2061,22 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
     return finalResultMse;
 }
 
-void runKMeansAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
+/**
+ * @brief Runs the k-means algorithm on the given data points and centroids.
+ *
+ * This function iterates through partition and centroid steps, calculates the MSE,
+ * and returns the best MSE obtained during the iterations.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
+ * @param numCentroids The number of centroids to generate.
+ * @param maxIterations The maximum number of iterations for the k-means algorithm.
+ * @param loopCount The number of loops to run the k-means algorithm.
+ * @param scaling A scaling factor for the MSE values.
+ * @param fileName The name of the file to write the results to.
+ * @param outputDirectory The directory where the results file is located.
+ */
+void runKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
 {
     Statistics stats;
     initializeStatistics(&stats);
