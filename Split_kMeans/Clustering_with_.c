@@ -2131,7 +2131,23 @@ void runKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, si
     writeResultsToFile(fileName, stats, numCentroids, "K-means", loopCount, scaling, outputDirectory);
 }
 
-void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t maxRepeats, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
+/**
+ * @brief Runs the repeated k-means algorithm on the given data points and centroids.
+ *
+ * This function iterates through partition and centroid steps, calculates the MSE,
+ * and returns the best MSE obtained during the iterations.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
+ * @param numCentroids The number of centroids to generate.
+ * @param maxIterations The maximum number of iterations for the k-means algorithm.
+ * @param maxRepeats The maximum number of repeats for the k-means algorithm.
+ * @param loopCount The number of loops to run the k-means algorithm.
+ * @param scaling A scaling factor for the MSE values.
+ * @param fileName The name of the file to write the results to.
+ * @param outputDirectory The directory where the results file is located.
+ */
+void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t maxRepeats, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
 {
     Statistics stats;
     initializeStatistics(&stats);
@@ -2199,7 +2215,23 @@ void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, 
     writeResultsToFile(fileName, stats, numCentroids, "Repeated K-means", loopCount, scaling, outputDirectory);
 }
 
-void runRandomSwapAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t numCentroids, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
+/**
+ * @brief Runs the repeated k-means algorithm on the given data points and centroids.
+ *
+ * This function iterates through partition and centroid steps, calculates the MSE,
+ * and returns the best MSE obtained during the iterations.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
+ * @param numCentroids The number of centroids to generate.
+ * @param maxIterations The maximum number of iterations for the k-means algorithm.
+ * @param maxRepeats The maximum number of repeats for the k-means algorithm.
+ * @param loopCount The number of loops to run the k-means algorithm.
+ * @param scaling A scaling factor for the MSE values.
+ * @param fileName The name of the file to write the results to.
+ * @param outputDirectory The directory where the results file is located.
+ */
+void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
 {
     Statistics stats;
     initializeStatistics(&stats);
@@ -2248,7 +2280,23 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size
     writeResultsToFile(fileName, stats, numCentroids, "Random swap", loopCount, scaling, outputDirectory);
 }
 
-void runRandomSplitAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
+/**
+ * @brief Runs the split k-means algorithm with random splitting.
+ *
+ * This function iterates through partition and centroid steps, randomly selects a cluster to split,
+ * and updates the centroids and partitions based on the results of the local k-means.
+ * It returns the best mean squared error (MSE) obtained during the iterations.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
+ * @param numCentroids The number of centroids to generate.
+ * @param maxIterations The maximum number of iterations for the k-means algorithm.
+ * @param loopCount The number of loops to run the k-means algorithm.
+ * @param scaling A scaling factor for the MSE values.
+ * @param fileName The name of the file to write the results to.
+ * @param outputDirectory The directory where the results file is located.
+ */
+void runRandomSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
 {
     Statistics stats;
     initializeStatistics(&stats);
@@ -2295,7 +2343,24 @@ void runRandomSplitAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, siz
     writeResultsToFile(fileName, stats, numCentroids, "Random Split", loopCount, scaling, outputDirectory);
 }
 
-void runMseSplitAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, int splitType)
+/**
+ * @brief Runs the split k-means algorithm with tentative splitting (choosing to split the one that reduces the MSE the most).
+ *
+ * This function iterates through partition and centroid steps, selects a cluster to split based on the MSE drop,
+ * and updates the centroids and partitions based on the results of the local k-means.
+ * It returns the best mean squared error (MSE) obtained during the iterations.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
+ * @param numCentroids The number of centroids to generate.
+ * @param maxIterations The maximum number of iterations for the k-means algorithm.
+ * @param loopCount The number of loops to run the k-means algorithm.
+ * @param scaling A scaling factor for the MSE values.
+ * @param fileName The name of the file to write the results to.
+ * @param outputDirectory The directory where the results file is located.
+ * @param splitType The type of split to perform (0 = intra-cluster, 1 = global, 2 = local repartition).
+ */
+void runMseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, int splitType)
 {
     Statistics stats;
     initializeStatistics(&stats);
@@ -2350,7 +2415,23 @@ void runMseSplitAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t
     writeResultsToFile(fileName, stats, numCentroids, splitTypeName, loopCount, scaling, outputDirectory);
 }
 
-void runBisectingKMeansAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
+/**
+ * @brief Runs the Bisecting k-means algorithm on the given data points and centroids.
+ *
+ * This function iterates through partition and centroid steps, selects a cluster to split based on the SSE,
+ * and updates the centroids and partitions based on the results of the local k-means.
+ * It returns the best mean squared error (MSE) obtained during the iterations.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
+ * @param numCentroids The number of centroids to generate.
+ * @param maxIterations The maximum number of iterations for the k-means algorithm.
+ * @param loopCount The number of loops to run the k-means algorithm.
+ * @param scaling A scaling factor for the MSE values.
+ * @param fileName The name of the file to write the results to.
+ * @param outputDirectory The directory where the results file is located.
+ */
+void runBisectingKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
 {
     Statistics stats;
     initializeStatistics(&stats);
@@ -2468,7 +2549,6 @@ void initializeLists(char** datasetList, char** gtList, size_t* kNumList, size_t
     kNumList[14] = 2;   // G2
 }
 
-//TODO käy läpi int muuttujat, size_t parempi jos tarvitaan vain positiivisia lukuja
 //TODO disabloi false positive varoitukset kommenttien kera
 //TODO: käy läpi constit, ja pohdi tarpeellisuus
 //TODO: kommentoi kaikki muistintarkastukset ja iffit pois lopullisesta versiosta <-tehokkuus
