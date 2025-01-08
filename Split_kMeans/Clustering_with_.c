@@ -10,16 +10,49 @@
 #include <direct.h>
 #include <stddef.h>
 
-// Credits: Niko Ruohonen, 2024
+// Change logs
+// 20-01-2025: Initial release by Niko Ruohonen
 
-// for clustering //TODO: voisiko lisätä käyttöliittymää?
-const size_t MAX_ITERATIONS = 1000; // k-means rajoitus
-const size_t MAX_REPEATS = 10; // repeated k-means toistojen lkm, TODO: lopulliseen 100kpl
-const size_t MAX_SWAPS = 100; // random swap toistojen lkm, TODO: lopulliseen 1000kpl
-const size_t MAX_LOOPS = 1; //TODO ei käytössä
+// Introduction
+/**
+ * Project Name: Clustering_with_c
+ * 
+ * Description: 
+ * This project focuses on the development and implementation of various clustering algorithms.
+ * The primary goal was to create a novel clustering algorithm, the MSE Split Algorithm, 
+ * and also to implement existing algorithms. All algorithms were designed and optimized 
+ * to ensure maximum efficiency and effectiveness when applied to multi-dimensional data points.
+  * 
+ * Author: Niko Ruohonen
+ * Date: January 20, 2025
+ * Version: 1.0.0
+ *
+ * Details:
+ * - Implements multiple clustering algorithms: K-means, Repeated K-means, Random Swap, Random Split, MSE Split (Intra-cluster, Global, Local Repartition), and Bisecting K-means.
+ * - Provides detailed logging options for debugging and performance analysis.
+ * - Includes memory management functions to handle dynamic allocation and deallocation of data structures.
+ * - Supports reading and writing data points and centroids from/to files.
+ * - Calculates various metrics such as Mean Squared Error (MSE) and Centroid Index (CI) to evaluate clustering performance.
+ *
+ * Usage:
+ * The project can be run by executing the main function, which initializes datasets, ground truth files, and clustering parameters.
+ * It then runs different clustering algorithms on each dataset and writes the results to output files.
+ *
+ * Notes:
+ * - Ensure that the data files and ground truth files are placed in the appropriate directories before running the project.
+ * - Remember to update gtList, dataFiles and kNumList arrays with the correct information.
+ * - Remember to set the "Settings" to desired levels before running the project.
+ * - Future plans include adding more clustering algorithms and improving the performance of existing ones.
+ */
 
-// for logging //TODO: käyttöliittymään?
-const size_t LOGGING = 1; // 1 = basic, 2 = detailed, 3 = debug, TODO: käy kaikki läpi ja tarkista, että käytetään oikeita muuttujia
+ /////////////
+// GLOBALS //
+////////////
+
+// For logging level
+// 1 = none, 2 = debug, 3 = everything
+// Currently most of the LOGGING lines are commented out
+const size_t LOGGING = 1;
 
 //////////////
 // Structs //
@@ -521,12 +554,12 @@ DataPoints readDataPoints(const char* filename)
                 point.attributes = temp;
             }
             
-            // if(LOGGING == 3) printf("Token: %s\n", token);
+            // if(LOGGING >= 3) printf("Token: %s\n", token);
             point.attributes[point.dimensions++] = strtod(token, NULL); // atoi(token) for int or strtod(token, NULL) for double
             token = strtok_s(NULL, " \t\r\n", &context); // Delimiter = " ", tabs "\t", newlines "\n", carriage return "\r"
         }
 
-        // if(LOGGING == 3) printf("\n", token);
+        // if(LOGGING >= 3) printf("\n", token);
 
         if (dataPoints.size == allocatedSize)
         {
@@ -547,7 +580,7 @@ DataPoints readDataPoints(const char* filename)
 
     fclose(file);
 
-    if (LOGGING == 3)
+    /*if (LOGGING >= 3)
     {
         // for (size_t i = 0; i < dataPoints.size; ++i) // Debug helper: print all data points
         for (size_t i = 0; i < dataPoints.size; ++i) // Debug helper: print the first two data points
@@ -559,7 +592,7 @@ DataPoints readDataPoints(const char* filename)
             }
             printf("\n");
         }
-    }
+    }*/
     
     return dataPoints;
 }
@@ -583,7 +616,7 @@ Centroids readCentroids(const char* filename)
     centroids.size = points.size;
     centroids.points = points.points;
     
-    if (LOGGING >= 2)
+    /*if (LOGGING >= 3)
     {
         for (size_t i = 0; i < centroids.size; ++i)
         {
@@ -594,7 +627,7 @@ Centroids readCentroids(const char* filename)
             }
             printf("\n");
         }
-    }    
+    }*/
 
     return centroids;
 }
@@ -852,7 +885,8 @@ void writeResultsToFile(const char* filename, Statistics stats, size_t numCentro
     fprintf(file, "Success rate: %.2f%%\n\n", stats.successRate / loopCount * 100);
 
     fclose(file);
-    if(LOGGING == 3) printf("Metrics written to file: %s\n", filename);
+    
+    //if(LOGGING >= 3) printf("Metrics written to file: %s\n", filename);
 }
 
 /**
@@ -1197,9 +1231,9 @@ void centroidStep(Centroids* centroids, const DataPoints* dataPoints)
                 centroids->points[clusterLabel].attributes[dim] = sums[clusterLabel][dim] / counts[clusterLabel];
             }
         }
-        /*else //DEBUGGING
+        /*else
         {
-            if(LOGGING == 2) fprintf(stderr, "Warning: Cluster %zu has no points assigned.\n", clusterLabel);
+            if(LOGGING >= 3) fprintf(stderr, "Warning: Cluster %zu has no points assigned.\n", clusterLabel);
         }*/
 
         free(sums[clusterLabel]);
@@ -1256,19 +1290,19 @@ size_t countOrphans(const Centroids* centroids1, const Centroids* centroids2)
  */
 size_t calculateCentroidIndex(const Centroids* centroids1, const Centroids* centroids2)
 {
-    if (LOGGING == 3)
+    /*if (LOGGING >= 3)
     {
         printf("centroids1: %zu AND 2: %zu\n\n", centroids1->size, centroids2->size);
         printf("centroids1: %f AND 2: %f\n\n", centroids1->points->attributes[0], centroids2->points->attributes[0]);
-    }
+    }*/
     
     size_t countFrom1to2 = countOrphans(centroids1, centroids2);
     size_t countFrom2to1 = countOrphans(centroids2, centroids1);
 
-    if (LOGGING == 2)
+    /*if (LOGGING >= 3)
     {
         printf("Count from 1 to 2: %zu AND 2 to 1: %zu\n\n", countFrom1to2, countFrom2to1);
-    }
+    }*/
 
     return (countFrom1to2 > countFrom2to1) ? countFrom1to2 : countFrom2to1;
 }
@@ -1299,7 +1333,7 @@ double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids
         //TODO: mse vai SSE? Tällä hetkellä SSE vaikka muuttujat ovat mse
         mse = calculateSSE(dataPoints, centroids);
 
-        /*if (LOGGING == 2)
+        /*if (LOGGING >= 3)
         {
 			size_t centroidIndex = calculateCentroidIndex(centroids, groundTruth);
             printf("(runKMeans)After iteration %zu: CI = %zu and MSE = %.5f\n", iteration + 1, centroidIndex, mse / 10000);
@@ -1307,7 +1341,7 @@ double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids
 
         if (mse < bestMse)
         {
-			//if (LOGGING == 2) printf("Best MSE so far: %.5f\n", mse / 10000);
+			//if (LOGGING >= 3) printf("Best MSE so far: %.5f\n", mse / 10000);
             bestMse = mse;
         }
         else
@@ -1329,9 +1363,10 @@ double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids
  * @param dataPoints A pointer to the DataPoints structure containing the data points.
  * @param centroids A pointer to the Centroids structure containing the centroids.
  * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
+ * @param maxSwaps The maximum number of attempted swaps.
  * @return The best mean squared error (MSE) obtained during the swaps.
  */
-double randomSwap(DataPoints* dataPoints, Centroids* centroids, const Centroids* groundTruth)
+double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps, const Centroids* groundTruth)
 {
     double bestMse = DBL_MAX;
     size_t kMeansIterations = 2;
@@ -1343,7 +1378,7 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, const Centroids*
     double* backupAttributes = malloc(totalAttributes * sizeof(double));
     handleMemoryError(backupAttributes);
 
-    for (size_t i = 0; i < MAX_SWAPS; ++i)
+    for (size_t i = 0; i < maxSwaps; ++i)
     {
         //Backup
         size_t offset = 0;
@@ -1365,11 +1400,11 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, const Centroids*
         //if not, we reverse the swap
         if (resultMse < bestMse)
         {
-            if (LOGGING == 2)
+            /*if (LOGGING >= 3)
             {
 				size_t centroidIndex = calculateCentroidIndex(centroids, groundTruth);
                 printf("(RS) Round %zu: Best Centroid Index (CI): %zu and Best Sum-of-Squared Errors (MSE): %.5f\n", i + 1, centroidIndex, resultMse / 10000);
-            }
+            }*/
             
             bestMse = resultMse;
         }
@@ -1608,14 +1643,14 @@ void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clust
 
         if (nearestCentroid == newClusterIndex || nearestCentroid == clusterToSplit)
         {
-            //if (LOGGING == 3) printf("Local repartition: Success, point %zu is reassigned\n", i);
+            //if (LOGGING >= 3) printf("Local repartition: Success, point %zu is reassigned\n", i);
 
             clustersAffected[currentCluster] = true;    // Mark the old cluster as affected
             dataPoints->points[i].partition = nearestCentroid;
         }
     }
 
-    if(LOGGING == 3) printf("Local repartition is over\n\n");
+    //if(LOGGING >= 3) printf("Local repartition is over\n\n");
 }
 
 //todo: centroids turha tänne?
@@ -1794,7 +1829,7 @@ double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCe
 
         splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, localMaxIterations, groundTruth);
 
-        /*if (LOGGING == 2)
+        /*if (LOGGING >= 3)
         {
             size_t ci = calculateCentroidIndex(centroids, groundTruth);
             double mse = calculateMSE(dataPoints, centroids);
@@ -1863,8 +1898,7 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
             }
         }
 
-        //DEBUGGING
-        /*if (LOGGING >= 2 && splitType == 3)
+        /*if (LOGGING >= 3 && splitType == 3)
         {
             printDataPointsPartitions(dataPoints, centroids->size);
         }*/
@@ -1903,7 +1937,7 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
             {
                 if (clustersAffected[i])
                 {
-                    //if (LOGGING == 2) printf("Affected cluster: %zu\n", i);
+                    //if (LOGGING >= 3) printf("Affected cluster: %zu\n", i);
 
                     clusterMSEs[i] = calculateClusterMSE(dataPoints, centroids, i);
                     MseDrops[i] = tentativeMseDrop(dataPoints, i, iterations, clusterMSEs[i]);
@@ -1913,8 +1947,7 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
             memset(clustersAffected, 0, (maxCentroids * 2) * sizeof(bool));
         }
 
-		//DEBUGGING
-        /*if (LOGGING == 2 && splitType == 2)
+        /*if (LOGGING >= 3 && splitType == 2)
         {
             size_t ci = calculateCentroidIndex(centroids, groundTruth);
             double mse = calculateMSE(dataPoints, centroids);
@@ -1922,7 +1955,7 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
         }*/
 
 
-        //if (LOGGING == 2 && splitType == 2) printf("Round over\n\n");
+        //if (LOGGING >= 3 && splitType == 2) printf("Round over\n\n");
     }
 
     free(clusterMSEs);
@@ -1973,7 +2006,7 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
     //Repeat until we have K clusters
     for (size_t i = 2; centroids->size < maxCentroids; ++i)
     {
-        //if (LOGGING == 1) printf("(BKM) Round %zu: Centroids: %zu\n", i-1, centroids->size);
+        //if (LOGGING >= 3) printf("(BKM) Round %zu: Centroids: %zu\n", i-1, centroids->size);
 
         size_t clusterToSplit = 0;
         double maxSSE = SseList[0];
@@ -1996,20 +2029,22 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
         {
 			ClusteringResult curr = tentativeSplitterForBisecting(dataPoints, clusterToSplit, maxIterations, groundTruth);
 
-            //if (LOGGING == 2) printf("(RKM) Round %d: Latest Centroid Index (CI): %zu and Latest Mean Sum-of-Squared Errors (MSE): %.4f\n", repeat, result1.centroidIndex, result1.mse / 10000);
+            //if (LOGGING >= 3) printf("(RKM) Round %d: Latest Centroid Index (CI): %zu and Latest Mean Sum-of-Squared Errors (MSE): %.4f\n", repeat, result1.centroidIndex, result1.mse / 10000);
 
 			// If the result is better than the best result so far, update the best result
             if (curr.mse < bestMse)
             {
-                //if (LOGGING == 1) printf("(from inner) Round %zu\n", j);
+                //if (LOGGING >= 3) printf("(from inner) Round %zu\n", j);
 
                 bestMse = curr.mse;
                 
-				//DEBUGGING
-                //Centroids tempCentroids; //Debug helper
-                //tempCentroids.size = 2; // Number of centroids in curr <- this is why we needed debug helper
-                //tempCentroids.points = curr.centroids;
-                //printCentroidsInfo(&tempCentroids); 
+                /*if (LOGGING >= 3)
+                {
+                    Centroids tempCentroids;
+                    tempCentroids.size = 2;
+                    tempCentroids.points = curr.centroids;
+                    printCentroidsInfo(&tempCentroids);
+                }*/                
                 
                 // Save the two new centroids
 				deepCopyDataPoint(&newCentroid1, &curr.centroids[0]);
@@ -2030,8 +2065,7 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
         deepCopyDataPoint(&centroids->points[centroids->size], &newCentroid2);
         centroids->size++;
         
-		//DEBUGGING
-        //if (LOGGING == 1) printf("(from outer) Round %zu\n", i);
+        //if (LOGGING >= 3) printf("(from outer) Round %zu\n", i);
         //printCentroidsInfo(centroids);
 
         //TODO: tässä partitionStep, mutta voisiko "if (curr.mse < bestMse)" sisällä pitää tallentaa partitionia?
@@ -2049,7 +2083,7 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
     }
 
 	//Step 4: Run the final k-means
-    double finalResultMse = runKMeans(dataPoints, MAX_ITERATIONS, centroids, groundTruth);
+    double finalResultMse = runKMeans(dataPoints, maxIterations, centroids, groundTruth);
 
     // Cleanup
     free(SseList);
@@ -2094,19 +2128,19 @@ void runKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, si
 
         generateRandomCentroids(numCentroids, dataPoints, &centroids);
 
-        if (LOGGING == 2)
+        /*if (LOGGING >= 3)
         {
             size_t centroidIndex = calculateCentroidIndex(&centroids, groundTruth);
             printf("(K-means)Initial Centroid Index (CI): %zu\n", centroidIndex);
-        }
+        }*/
 
         double resultMse = runKMeans(dataPoints, maxIterations, &centroids, groundTruth);
-        //DEBUGGING if(LOGGING == 2) printf("(K-means)Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (MSE): %.4f\n", result.centroidIndex, result.mse / 10000000);
+        //if(LOGGING >= 3) printf("(K-means)Best Centroid Index (CI): %d and Best Sum-of-Squared Errors (MSE): %.4f\n", result.centroidIndex, result.mse / 10000000);
 
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
 
-        if (LOGGING == 3) printf("(K-means)Time taken: %.2f seconds\n\n", duration);
+        //if (LOGGING >= 3) printf("(K-means)Time taken: %.2f seconds\n\n", duration);
 
         size_t centroidIndex = calculateCentroidIndex(&centroids, groundTruth);
 
@@ -2115,7 +2149,7 @@ void runKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, si
         stats.timeSum += duration;
         if (centroidIndex == 0) stats.successRate++;
 
-        if (LOGGING == 3) printf("Round %zu\n", i + 1);
+        //if (LOGGING >= 3) printf("Round %zu\n", i + 1);
 
         if (i == 0)
         {
@@ -2170,11 +2204,11 @@ void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundT
             Centroids centroids = allocateCentroids(numCentroids, dataPoints->points[0].dimensions);
             generateRandomCentroids(numCentroids, dataPoints, &centroids);
 
-            if (LOGGING == 2)
+            /*if (LOGGING >= 3)
             {
                 size_t centroidIndex = calculateCentroidIndex(&centroids, groundTruth);
                 printf("(Repeated K-means)Initial Centroid Index (CI): %zu\n", centroidIndex);
-            }
+            }*/
 
             double resultMse = runKMeans(dataPoints, maxIterations, &centroids, groundTruth);
 
@@ -2190,7 +2224,7 @@ void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundT
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
 
-        if (LOGGING == 3) printf("(Repeated K-means)Time taken: %.2f seconds\n\n", duration);
+        //if (LOGGING >= 3) printf("(Repeated K-means)Time taken: %.2f seconds\n\n", duration);
 
         size_t centroidIndex = calculateCentroidIndex(&bestCentroids, groundTruth);
 
@@ -2199,7 +2233,7 @@ void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundT
         stats.timeSum += duration;
         if (centroidIndex == 0) stats.successRate++;
 
-        if (LOGGING == 3) printf("Round %zu\n", i + 1);
+        //if (LOGGING >= 3) printf("Round %zu\n", i + 1);
 
         if (i == 0)
         {
@@ -2231,7 +2265,7 @@ void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundT
  * @param fileName The name of the file to write the results to.
  * @param outputDirectory The directory where the results file is located.
  */
-void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
+void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxSwaps, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
 {
     Statistics stats;
     initializeStatistics(&stats);
@@ -2250,21 +2284,21 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth
         generateRandomCentroids(numCentroids, dataPoints, &centroids);
 
         // Random Swap
-        double resultMse = randomSwap(dataPoints, &centroids, groundTruth);
+        double resultMse = randomSwap(dataPoints, &centroids, maxSwaps, groundTruth);
 
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
 
         size_t centroidIndex = calculateCentroidIndex(&centroids, groundTruth);
 
-        if (LOGGING == 3) printf("(Random Swap)Time taken: %.2f seconds\n\n", duration);
+        //if (LOGGING >= 3) printf("(Random Swap)Time taken: %.2f seconds\n\n", duration);
 
         stats.mseSum += resultMse;
         stats.ciSum += centroidIndex;
         stats.timeSum += duration;
         if (centroidIndex == 0) stats.successRate++;
 
-        if (LOGGING == 3) printf("Round %zu\n", i + 1);
+        //if (LOGGING >= 3) printf("Round %zu\n", i + 1);
 
         if (i == 0)
         {
@@ -2318,7 +2352,7 @@ void runRandomSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTrut
 
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
-        if (LOGGING == 3) printf("(Split1)Time taken: %.2f seconds\n\n", duration);
+        //if (LOGGING >= 3) printf("(Split1)Time taken: %.2f seconds\n\n", duration);
 
         size_t centroidIndex = calculateCentroidIndex(&centroids, groundTruth);
 
@@ -2327,7 +2361,7 @@ void runRandomSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTrut
         stats.timeSum += duration;
         if (centroidIndex == 0) stats.successRate++;
 
-        if (LOGGING == 3) printf("Round %zu\n", i + 1);
+        //if (LOGGING >= 3) printf("Round %zu\n", i + 1);
 
         if (i == 0)
         {
@@ -2386,7 +2420,7 @@ void runMseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, 
 
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
-        if (LOGGING == 3) printf("(Split%d)Time taken: %.2f seconds\n\n", splitType + 1, duration);
+        //if (LOGGING >= 3) printf("(Split%d)Time taken: %.2f seconds\n\n", splitType + 1, duration);
 
         size_t centroidIndex = calculateCentroidIndex(&centroids, groundTruth);
 
@@ -2395,7 +2429,7 @@ void runMseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, 
         stats.timeSum += duration;
         if (centroidIndex == 0) stats.successRate++;
 
-        if (LOGGING == 3) printf("Round %zu\n", i + 1);
+        //if (LOGGING >= 3) printf("Round %zu\n", i + 1);
 
         if (i == 0)
         {
@@ -2451,13 +2485,13 @@ void runBisectingKMeansAlgorithm(DataPoints* dataPoints, const Centroids* ground
 
         generateRandomCentroids(centroids.size, dataPoints, &centroids);
 
-        if (LOGGING == 3) printDataPointsPartitions(dataPoints, centroids.size);
+        //if (LOGGING >= 3) printDataPointsPartitions(dataPoints, centroids.size);
 
         double resultMse = runBisectingKMeans(dataPoints, &centroids, numCentroids, maxIterations, groundTruth);
 
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
-        if (LOGGING == 3) printf("(Bisecting)Time taken: %.2f seconds\n\n", duration);
+        //if (LOGGING >= 3) printf("(Bisecting)Time taken: %.2f seconds\n\n", duration);
 
         size_t centroidIndex = calculateCentroidIndex(&centroids, groundTruth);
 
@@ -2466,7 +2500,7 @@ void runBisectingKMeansAlgorithm(DataPoints* dataPoints, const Centroids* ground
         stats.timeSum += duration;
         if (centroidIndex == 0) stats.successRate++;
 
-        if (LOGGING == 3) printf("Round %zu\n", i + 1);
+        //if (LOGGING >= 3) printf("Round %zu\n", i + 1);
 
         if (i == 0)
         {
@@ -2498,7 +2532,7 @@ void runBisectingKMeansAlgorithm(DataPoints* dataPoints, const Centroids* ground
  * @param kNumList A pointer to the array of number of clusters for each dataset.
  * @param datasetCount The number of datasets.
  */
-void initializeLists(char** datasetList, char** gtList, size_t* kNumList, size_t datasetCount)
+static void initializeLists(char** datasetList, char** gtList, size_t* kNumList, size_t datasetCount)
 {
     strcpy_s(datasetList[0], 20, "a1.txt");
     strcpy_s(datasetList[1], 20, "a2.txt");
@@ -2549,17 +2583,17 @@ void initializeLists(char** datasetList, char** gtList, size_t* kNumList, size_t
     kNumList[14] = 2;   // G2
 }
 
-//TODO disabloi false positive varoitukset kommenttien kera
-//TODO: käy läpi constit, ja pohdi tarpeellisuus
-//TODO: kommentoi kaikki muistintarkastukset ja iffit pois lopullisesta versiosta <-tehokkuus
-//TODO: "static inline..." sellaisten funktioiden eteen jotka eivät muuta mitään ja joita kutsutaan? Saattaa tehostaa suoritusta
-//TODO: credits ja alkupuhe koodin alkuun
+//END: disabloi false positive varoitukset kommenttien kera
+//     Vai poistetaanko suppressit ja antaa varoitusten olla?
+//END: kommentoi kaikki muistintarkastukset ja iffit pois lopullisesta versiosta <-tehokkuus
+//END: credits ja alkupuhe koodin alkuun
+//     edellisen alle voisi lisätä lokin, että kuka on päivittänyt ja milloin
+
+//TODO: "static " sellaisten funktioiden eteen jotka eivät muuta mitään ja joita kutsutaan samasta tiedostosta?
 //TODO: koodin palastelu eri tiedostoihin
-//TODO: konsolikysymykset, kuten "do you want to run split k-means?" ja "do you want to run random swap?" jne?
+
+//EXTRA: konsolikysymykset, kuten "do you want to run split k-means?" ja "do you want to run random swap?" jne?
 //      ja/vai/tai komentoriviargumentit, kuten "split k-means" ja "random swap" jne? (eli että voi ajaa suoraan powershellistä)
-//TODO: onko kNumList tarpeellinen? Periaatteessa sama löytyy myös gtList.size?
-//TODO: käy LOGGING tasot läpi (myös ehdot, sillä nyt useat == kun pitäisi olla >=)
-//TODO: Käy läpi ClusteringResultit, että tarvitaanko niitä ollenkaan vai riittääkö double
 
 /**
  * @brief Main function to run various clustering algorithms on multiple datasets.
@@ -2588,19 +2622,20 @@ int main()
     //TODO: muista laittaa loopin rajat oikein
     for (size_t i = 6; i < 7; ++i)
     {
-        size_t maxIterations = MAX_ITERATIONS;//TODO tarkasta kaikki, että käytetään oikeita muuttujia
-		size_t maxRepeats = MAX_REPEATS;
-        size_t maxLoops = MAX_LOOPS;
+        //Settings
+		size_t maxIterations = 1000; // Maximum number of iterations for the k-means algorithm
+		size_t maxRepeats = 10; // Maximum number of repeats for the repeated k-means algorithm
+		size_t maxSwaps = 100; // Maximum number of swaps for the random swap algorithm
+		size_t loopCount = 100; // Number of loops to run the algorithms
+		size_t scaling = 10000; // Scaling factor for the MSE values
+
         size_t numCentroids = kNumList[i];
         char* fileName = datasetList[i];
         char dataFile[256]; // Buffer size = 256, increase if needed
         snprintf(dataFile, sizeof(dataFile), "data/%s", fileName);
 		char* gtName = gtList[i];
         char gtFile[256];
-        snprintf(gtFile, sizeof(gtFile), "gt/%s", gtName);
-
-        size_t loopCount = 100;
-        size_t scaling = 10000;
+        snprintf(gtFile, sizeof(gtFile), "gt/%s", gtName);        
 
         // Seeding the random number generator
         srand((unsigned int)time(NULL));
@@ -2630,7 +2665,7 @@ int main()
             runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, outputDirectory);
 
             // Run Random Swap
-            runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, loopCount, scaling, fileName, outputDirectory);
+            runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, outputDirectory);
             
             // Run Random Split
             runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, outputDirectory);
