@@ -103,7 +103,7 @@ typedef struct
  * Function checks if the given pointer is NULL, indicating a memory allocation failure.
  * If the pointer is NULL, it prints an error message to stderr and exits the program with a failure status.
  *
- * @param ptr: A pointer to the allocated memory. If this pointer is NULL, the function will handle the error.
+ * @param ptr A pointer to the allocated memory. If this pointer is NULL, the function will handle the error.
  */
 void handleMemoryError(void* ptr)
 {
@@ -671,11 +671,12 @@ void writeDataPointPartitionsToFile(const char* filename, const DataPoints* data
  */
 void deepCopyDataPoint(DataPoint* destination, const DataPoint* source)
 {
-    if (destination == NULL || source == NULL)
+    //Debugging
+    /*if (destination == NULL || source == NULL)
     {
         fprintf(stderr, "Error: Null pointer passed to deepCopyDataPoint\n");
         exit(EXIT_FAILURE);
-    }
+    }*/
 
     destination->dimensions = source->dimensions;
     destination->partition = source->partition;
@@ -1311,7 +1312,7 @@ double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids
         }
         else
         {
-            break; //TODO: break toimii, mutta on aika ruma ratkaisu (iteration = iterations?)
+            break; // Exit the loop if the MSE does not improve
         }
     }
 
@@ -1323,13 +1324,14 @@ double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids
  *
  * This function performs random swaps of centroids with data points, runs k-means on the modified centroids,
  * and keeps the changes if the mean squared error (MSE) improves. If the MSE does not improve, it reverses the swap.
+ * The function returns the best mean squared error (MSE) obtained during the swaps.
  *
  * @param dataPoints A pointer to the DataPoints structure containing the data points.
  * @param centroids A pointer to the Centroids structure containing the centroids.
  * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
- * @param bestResult A pointer to the ClusteringResult structure to store the best result.
+ * @return The best mean squared error (MSE) obtained during the swaps.
  */
-void randomSwap(DataPoints* dataPoints, Centroids* centroids, const Centroids* groundTruth, ClusteringResult* bestResult)
+double randomSwap(DataPoints* dataPoints, Centroids* centroids, const Centroids* groundTruth)
 {
     double bestMse = DBL_MAX;
     size_t kMeansIterations = 2;
@@ -1361,7 +1363,7 @@ void randomSwap(DataPoints* dataPoints, Centroids* centroids, const Centroids* g
 
         //If 1) MSE improves, we keep the change
         //if not, we reverse the swap
-        if (resultMse < bestResult->mse)
+        if (resultMse < bestMse)
         {
             if (LOGGING == 2)
             {
@@ -1369,8 +1371,7 @@ void randomSwap(DataPoints* dataPoints, Centroids* centroids, const Centroids* g
                 printf("(RS) Round %zu: Best Centroid Index (CI): %zu and Best Sum-of-Squared Errors (MSE): %.5f\n", i + 1, centroidIndex, resultMse / 10000);
             }
             
-            bestResult->mse = resultMse;
-            deepCopyDataPoints(bestResult->centroids, centroids->points, centroids->size);
+            bestMse = resultMse;
         }
         else
         {
@@ -1384,10 +1385,24 @@ void randomSwap(DataPoints* dataPoints, Centroids* centroids, const Centroids* g
     }
 
     free(backupAttributes);
+
+    return bestMse;
 }
 
-// Function to run split k-means, k-means intra-cluster
-void splitClusterIntraCluster(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t localMaxIterations, Centroids* groundTruth)
+/**
+*@brief Splits a cluster into two sub - clusters using local k - means.
+*
+*This function splits a cluster into two sub - clusters by selecting two random centroids
+* from the data points in the cluster and running local k - means.It updates the partitions
+* and centroids based on the results of the local k - means.
+*
+*@param dataPoints A pointer to the DataPoints structure containing the data points.
+* @param centroids A pointer to the Centroids structure containing the centroids.
+* @param clusterToSplit The index of the cluster to split.
+* @param localMaxIterations The maximum number of iterations for the local k - means.
+* @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
+*/
+void splitClusterIntraCluster(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t localMaxIterations, const Centroids* groundTruth)
 {
     size_t clusterSize = 0;
     for (size_t i = 0; i < dataPoints->size; ++i)
@@ -1398,10 +1413,11 @@ void splitClusterIntraCluster(DataPoints* dataPoints, Centroids* centroids, size
         }
     }
 
-    if (clusterSize < 2) //TODO: tarvitaanko? <- "turhat" iffit hidastaa
+    //Debugging
+    /*if (clusterSize < 2)
     {
         return;
-    }
+    }*/
 
     // Collect indices of points in the cluster
     size_t* clusterIndices = malloc(clusterSize * sizeof(size_t));
@@ -1443,7 +1459,7 @@ void splitClusterIntraCluster(DataPoints* dataPoints, Centroids* centroids, size
     }
 
     // Run local k-means
-    //TODO: poista "localResult" jos ei tarvita, poistaa warningit
+    //TODO: poista "resultMse" jos ei tarvita
     double resultMse = runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, groundTruth);
 
     // Update partitions
@@ -1472,12 +1488,23 @@ void splitClusterIntraCluster(DataPoints* dataPoints, Centroids* centroids, size
     free(localCentroids.points);
 }
 
-// Function to run split k-means, k-means globally
+/**
+ * @brief Splits a cluster into two sub-clusters using global k-means.
+ *
+ * This function splits a cluster into two sub-clusters by selecting two random centroids
+ * from the data points in the cluster and running global k-means. It updates the partitions
+ * and centroids based on the results of the global k-means.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param centroids A pointer to the Centroids structure containing the centroids.
+ * @param clusterToSplit The index of the cluster to split.
+ * @param globalMaxIterations The maximum number of iterations for the global k-means.
+ * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
+ */
 void splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t globalMaxIterations, Centroids* groundTruth)
 {
     size_t clusterSize = 0;
 
-    // Count the number of points in the cluster to be split
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
         if (dataPoints->points[i].partition == clusterToSplit)
@@ -1486,11 +1513,11 @@ void splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t clu
         }
     }
 
-    // If there are fewer than 2 points, splitting is not possible
-    if (clusterSize < 2)
+    //Debugging
+    /*if (clusterSize < 2)
     {
         return;
-    }
+    }*/
 
     // Collect the indices of the points in the selected cluster
     size_t* clusterIndices = malloc(clusterSize * sizeof(size_t));
@@ -1533,9 +1560,20 @@ void splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t clu
     free(clusterIndices);
 }
 
-// Function to run local repartitioning
 // TODO: vain split k-means, haluanko myös random swappiin?
 // TODO: kesken
+/**
+ * @brief Performs local repartitioning of data points to the nearest centroid.
+ *
+ * This function reassigns data points to the nearest centroid if the nearest centroid
+ * is either the new cluster or the cluster to be split. It updates the clustersAffected
+ * array to mark the affected clusters.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param centroids A pointer to the Centroids structure containing the centroids.
+ * @param clusterToSplit The index of the cluster to split.
+ * @param clustersAffected A pointer to the array indicating which clusters are affected.
+ */
 void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, bool* clustersAffected)
 {
     size_t newClusterIndex = centroids->size - 1;
@@ -1570,9 +1608,9 @@ void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clust
 
         if (nearestCentroid == newClusterIndex || nearestCentroid == clusterToSplit)
         {
-            if (LOGGING == 3) printf("Local repartition: Success, point %zu is reassigned\n", i);
+            //if (LOGGING == 3) printf("Local repartition: Success, point %zu is reassigned\n", i);
 
-            clustersAffected[currentCluster] = true;    // Mark old as true
+            clustersAffected[currentCluster] = true;    // Mark the old cluster as affected
             dataPoints->points[i].partition = nearestCentroid;
         }
     }
@@ -1580,9 +1618,20 @@ void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clust
     if(LOGGING == 3) printf("Local repartition is over\n\n");
 }
 
-// Function to check Mse drop
 //todo: centroids turha tänne?
-double tentativeMseDrop(DataPoints* dataPoints, Centroids* centroids, size_t clusterLabel, size_t localMaxIterations, double originalClusterMSE)
+/**
+ * @brief Calculates the MSE drop for a tentative split of a cluster.
+ *
+ * This function calculates the MSE drop by running local k-means on a cluster and comparing
+ * the new MSE with the original MSE. It returns the difference between the original MSE and the new MSE.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param clusterLabel The label of the cluster to split.
+ * @param localMaxIterations The maximum number of iterations for the local k-means.
+ * @param originalClusterMSE The original MSE of the cluster before the split.
+ * @return The MSE drop for the tentative split of the cluster.
+ */
+double tentativeMseDrop(DataPoints* dataPoints, size_t clusterLabel, size_t localMaxIterations, double originalClusterMSE)
 {
     size_t clusterSize = 0;
     for (size_t i = 0; i < dataPoints->size; ++i)
@@ -1628,30 +1677,30 @@ double tentativeMseDrop(DataPoints* dataPoints, Centroids* centroids, size_t clu
     double resultMse = runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, NULL);
 
     // Calculate combined MSE of the two clusters
-	//WithSize vai ilman? Eli koko datasetin mukaan vai pelkästään clusterin mukaan?
+	//TODO: WithSize vai ilman? Eli koko datasetin mukaan vai pelkästään clusterin mukaan?
+    //      Jos withSize, niin tätähän ei edes tarvita, resultMse on sama?
     double newClusterMSE = calculateMSEWithSize(&pointsInCluster, &localCentroids, dataPoints->size);
 
-    // Calculate the MSE drop
     double mseDrop = originalClusterMSE - newClusterMSE;
 
-    // Cleanup TODO: tämä laajempi vai riittääkö se mikä on splitClusterissa?
-    for (size_t i = 0; i < pointsInCluster.size; ++i)
-    {
-        free(pointsInCluster.points[i].attributes);
-    }
-    free(pointsInCluster.points);
-    for (size_t i = 0; i < localCentroids.size; ++i)
-    {
-        free(localCentroids.points[i].attributes);
-    }
-    free(localCentroids.points);
+    freeDataPoints(&pointsInCluster);
+    freeCentroids(&localCentroids);
 
     return mseDrop;
 }
 
-// Function to check and return mse drops
-//todo: centroids turha tänne?
-ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, Centroids* centroids, size_t clusterLabel, size_t localMaxIterations)
+/**
+ * @brief Calculates the MSE drop for a tentative split of a cluster.
+ *
+ * This function calculates the MSE drop by running local k-means on a cluster and comparing
+ * the new MSE with the original MSE. It returns the difference between the original MSE and the new MSE.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param clusterLabel The label of the cluster to split.
+ * @param localMaxIterations The maximum number of iterations for the local k-means.
+ * @return A ClusteringResult structure containing the new centroids and the MSE drop.
+ */
+ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, size_t clusterLabel, size_t localMaxIterations)
 {
     size_t clusterSize = 0;
     for (size_t i = 0; i < dataPoints->size; ++i)
@@ -1662,11 +1711,12 @@ ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, Centroids
         }
     }
 
-    if (clusterSize < 2)
+	//DEBUGGING
+    /*if (clusterSize < 2)
     {
         printf("Not enough points to split the cluster\n");
         exit(EXIT_FAILURE);
-    }
+    }*/
 
 
     DataPoints pointsInCluster = allocateDataPoints(clusterSize, dataPoints->points[0].dimensions);
@@ -1693,54 +1743,44 @@ ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, Centroids
     deepCopyDataPoint(&localCentroids.points[0], &pointsInCluster.points[idx1]);
     deepCopyDataPoint(&localCentroids.points[1], &pointsInCluster.points[idx2]);
 
-    
-    ClusteringResult localResult; //TODO: tulee kaatumaan varmaan tänne, koska alustus ei tehty funktiolla
+    ClusteringResult localResult = allocateClusteringResult(dataPoints->size, 2, dataPoints->points[0].dimensions);
 
     // k-means
     localResult.mse = runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, NULL);
 
     // Calculate combined MSE of the two clusters
-    //WithSize vai ilman? Eli koko datasetin mukaan vai pelkästään clusterin mukaan?
+    //TODO: WithSize vai ilman? Eli koko datasetin mukaan vai pelkästään clusterin mukaan?
+    //      Jos withSize, niin tätähän ei edes tarvita, resultMse on sama?
     double newClusterMSE = calculateMSEWithSize(&pointsInCluster, &localCentroids, dataPoints->size);
 
     // Calculate the MSE drop
     localResult.mse = newClusterMSE;
 
-    localResult.centroids = malloc(2 * sizeof(DataPoint));
-    handleMemoryError(localResult.centroids);
-    for (size_t i = 0; i < 2; ++i)
-    {
-        localResult.centroids[i].attributes = malloc(dataPoints->points[1].dimensions * sizeof(double));
-        handleMemoryError(localResult.centroids[i].attributes);
-    }
-    localResult.partition = malloc(dataPoints->size * sizeof(size_t));
-    handleMemoryError(localResult.partition);
-    localResult.centroidIndex = SIZE_MAX;
-	
-    localCentroids.size = 2;
 	deepCopyDataPoint(&localResult.centroids[0], &localCentroids.points[0]);
     deepCopyDataPoint(&localResult.centroids[1], &localCentroids.points[1]);
 
-    //localResult.centroids = localCentroids.points;
-
-    // Cleanup TODO: tämä laajempi vai riittääkö se mikä on splitClusterissa?
-    for (size_t i = 0; i < pointsInCluster.size; ++i)
-    {
-        free(pointsInCluster.points[i].attributes);
-    }
-    free(pointsInCluster.points);
-    for (size_t i = 0; i < localCentroids.size; ++i)
-    {
-        free(localCentroids.points[i].attributes);
-    }
-    free(localCentroids.points);    
+    freeDataPoints(&pointsInCluster);
+    freeCentroids(&localCentroids);;
 
     return localResult;
 }
 
 
-// Function to run the split k-means algorithm with random splitting
-double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, Centroids* groundTruth)
+/**
+ * @brief Runs the split k-means algorithm with random splitting.
+ *
+ * This function iterates through partition and centroid steps, randomly selects a cluster to split,
+ * and updates the centroids and partitions based on the results of the local k-means.
+ * It returns the best mean squared error (MSE) obtained during the iterations.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param centroids A pointer to the Centroids structure containing the centroids.
+ * @param maxCentroids The maximum number of centroids to generate.
+ * @param maxIterations The maximum number of iterations for the k-means algorithm.
+ * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
+ * @return The best mean squared error (MSE) obtained during the iterations.
+ */
+double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, const Centroids* groundTruth)
 {
     size_t localMaxIterations = 2;
 
@@ -1749,31 +1789,44 @@ double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCe
 
     while(centroids->size < maxCentroids)
     {
-		//Versio 1, we choose randomly
         size_t clusterToSplit = rand() % centroids->size;
 
         splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, localMaxIterations, groundTruth);
 
-        if (LOGGING == 2)
+        /*if (LOGGING == 2)
         {
             size_t ci = calculateCentroidIndex(centroids, groundTruth);
             double mse = calculateMSE(dataPoints, centroids);
             printf("(RandomSplit) Number of centroids: %zu, CI: %zu, and MSE: %.5f \n", centroids->size, ci, mse / 10000);
-        }
+        }*/
     }	
 
     //TODO: globaali k-means  
-    double finalResultMse = runKMeans(dataPoints, MAX_ITERATIONS, centroids, groundTruth);
+    double finalResultMse = runKMeans(dataPoints, maxIterations, centroids, groundTruth);
 
     return finalResultMse;
 }
 
-// Function to run the split k-means algorithm with tentative splitting (choosing to split the one that reduces the MSE the most)
-// splitType 0 = intra-cluster, 1 = global, 2 = local
-double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, Centroids* groundTruth, size_t splitType)
+/**
+ * @brief Runs the split k-means algorithm with tentative splitting (choosing to split the one that reduces the MSE the most).
+ *
+ * This function iterates through partition and centroid steps, selects a cluster to split based on the MSE drop,
+ * and updates the centroids and partitions based on the results of the local k-means.
+ * It returns the best mean squared error (MSE) obtained during the iterations.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param centroids A pointer to the Centroids structure containing the centroids.
+ * @param maxCentroids The maximum number of centroids to generate.
+ * @param maxIterations The maximum number of iterations for the k-means algorithm.
+ * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
+ * @param splitType The type of split to perform (0 = intra-cluster, 1 = global, 2 = local repartition).
+ * @return The best mean squared error (MSE) obtained during the iterations.
+ */
+double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, const Centroids* groundTruth, size_t splitType)
 {
     //TODO: entä jos globaalia ei rajoittaisi, olisiko tullut paremmat tulokset???????
-    size_t iterations = splitType == 0 ? MAX_ITERATIONS : splitType == 1 ? 4 : 1000; //TODO: pohdi tarkemmat arvot, globaaliin 5 näyttää toimivan hyvin
+    //TODO: pohdi tarkemmat arvot, globaaliin 5 näyttää toimivan hyvin
+    size_t iterations = splitType == 0 ? maxIterations : splitType == 1 ? 4 : maxIterations;
 
     double* clusterMSEs = malloc(maxCentroids * sizeof(double));
     handleMemoryError(clusterMSEs);
@@ -1791,12 +1844,12 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
     for (size_t i = 0; i < centroids->size; ++i)
     {
         clusterMSEs[i] = calculateClusterMSE(dataPoints, centroids, i); //TODO: tarvitaanko omaa rakennetta?
-        MseDrops[i] = tentativeMseDrop(dataPoints, centroids, i, iterations, clusterMSEs[i]);
+        MseDrops[i] = tentativeMseDrop(dataPoints, i, iterations, clusterMSEs[i]);
     }
 
     while (centroids->size < maxCentroids)
     {
-		//Versio 2, we choose the one that reduces the MSE the most
+		// Choose the cluster that reduces the MSE the most
         size_t clusterToSplit = 0;
         double maxMseDrop = MseDrops[0];
 
@@ -1819,25 +1872,25 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
 		else if (splitType == 1) splitClusterGlobal(dataPoints, centroids, clusterToSplit, iterations, groundTruth);
 		else if (splitType == 2) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, iterations, groundTruth);
 
-        if (splitType == 0)
+		if (splitType == 0) // Intra-cluster
         {
             // Recalculate MSE for the affected clusters
             clusterMSEs[clusterToSplit] = calculateClusterMSE(dataPoints, centroids, clusterToSplit);
             clusterMSEs[centroids->size - 1] = calculateClusterMSE(dataPoints, centroids, centroids->size - 1);
 
             // Update MseDrops for the affected clusters
-            MseDrops[clusterToSplit] = tentativeMseDrop(dataPoints, centroids, clusterToSplit, iterations, clusterMSEs[clusterToSplit]);
-            MseDrops[centroids->size - 1] = tentativeMseDrop(dataPoints, centroids, centroids->size - 1, iterations, clusterMSEs[centroids->size - 1]);
+            MseDrops[clusterToSplit] = tentativeMseDrop(dataPoints, clusterToSplit, iterations, clusterMSEs[clusterToSplit]);
+            MseDrops[centroids->size - 1] = tentativeMseDrop(dataPoints, centroids->size - 1, iterations, clusterMSEs[centroids->size - 1]);
         }
-        else if (splitType == 1)
+		else if (splitType == 1) // Global
         {            
             for (size_t i = 0; i < centroids->size; ++i)
             {
                 clusterMSEs[i] = calculateClusterMSE(dataPoints, centroids, i);
-                MseDrops[i] = tentativeMseDrop(dataPoints, centroids, i, iterations, clusterMSEs[i]);
+                MseDrops[i] = tentativeMseDrop(dataPoints, i, iterations, clusterMSEs[i]);
             }
         }
-        else if(splitType == 2)
+		else if (splitType == 2) // Local repartition
         {            
             localRepartition(dataPoints, centroids, clusterToSplit, clustersAffected);
             
@@ -1849,25 +1902,26 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
             {
                 if (clustersAffected[i])
                 {
-                    if (LOGGING == 2) printf("Affected cluster: %zu\n", i);
+                    //if (LOGGING == 2) printf("Affected cluster: %zu\n", i);
 
                     clusterMSEs[i] = calculateClusterMSE(dataPoints, centroids, i);
-                    MseDrops[i] = tentativeMseDrop(dataPoints, centroids, i, iterations, clusterMSEs[i]);
+                    MseDrops[i] = tentativeMseDrop(dataPoints, i, iterations, clusterMSEs[i]);
                 }
             }
 
             memset(clustersAffected, 0, (maxCentroids * 2) * sizeof(bool));
         }
 
-        if (LOGGING == 2 && splitType == 2)
+		//DEBUGGING
+        /*if (LOGGING == 2 && splitType == 2)
         {
             size_t ci = calculateCentroidIndex(centroids, groundTruth);
             double mse = calculateMSE(dataPoints, centroids);
             printf("(MseSplit) Number of centroids: %zu, CI: %zu, and MSE: %.5f \n", centroids->size, ci, mse / 10000);
-        }
+        }*/
 
 
-        if (LOGGING == 2 && splitType == 2) printf("Round over\n\n");
+        //if (LOGGING == 2 && splitType == 2) printf("Round over\n\n");
     }
 
     free(clusterMSEs);
@@ -1875,46 +1929,42 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
 	free(clustersAffected);
 
     //TODO: globaali k-means  
-    double finalResultMse = runKMeans(dataPoints, MAX_ITERATIONS, centroids, groundTruth);
+    double finalResultMse = runKMeans(dataPoints, maxIterations, centroids, groundTruth);
 
     return finalResultMse;
 }
 
-// Function to run the Bisecting k-means algorithm
-double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, Centroids* groundTruth)
+/**
+ * @brief Runs the Bisecting k-means algorithm on the given data points and centroids.
+ *
+ * This function iterates through partition and centroid steps, selects a cluster to split based on the SSE,
+ * and updates the centroids and partitions based on the results of the local k-means.
+ * It returns the best mean squared error (MSE) obtained during the iterations.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param centroids A pointer to the Centroids structure containing the centroids.
+ * @param maxCentroids The maximum number of centroids to generate.
+ * @param maxIterations The maximum number of iterations for the k-means algorithm.
+ * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
+ * @return The best mean squared error (MSE) obtained during the iterations.
+ */double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, const Centroids* groundTruth)
 {
 	size_t bisectingIterations = 5;
     
     double* SseList = malloc(maxCentroids * sizeof(size_t));
     handleMemoryError(SseList);
+    double bestMse = DBL_MAX;
 
-    ClusteringResult bestResult;
-    bestResult.mse = DBL_MAX;
-
-    DataPoint newCentroid1;
-    newCentroid1.attributes = malloc(sizeof(double) * dataPoints->points[0].dimensions);
-    handleMemoryError(newCentroid1.attributes);
-    newCentroid1.dimensions = dataPoints->points[0].dimensions;
-    newCentroid1.partition = SIZE_MAX;
-
-    DataPoint newCentroid2;
-    newCentroid2.attributes = malloc(sizeof(double) * dataPoints->points[0].dimensions);
-    handleMemoryError(newCentroid2.attributes);
-    newCentroid2.dimensions = dataPoints->points[0].dimensions;
-    newCentroid2.partition = SIZE_MAX;
-
-    DataPoint ogCentroid;
-    ogCentroid.attributes = malloc(sizeof(double) * dataPoints->points[0].dimensions);
-    handleMemoryError(ogCentroid.attributes);
-    ogCentroid.dimensions = dataPoints->points[0].dimensions;
-    ogCentroid.partition = SIZE_MAX;
+    DataPoint newCentroid1 = allocateDataPoint(dataPoints->points[0].dimensions);
+    DataPoint newCentroid2 = allocateDataPoint(dataPoints->points[0].dimensions);
+    DataPoint ogCentroid = allocateDataPoint(dataPoints->points[0].dimensions);
 
     size_t* ogPartitions = malloc(dataPoints->size * sizeof(size_t));
 	handleMemoryError(ogPartitions);
 
 	//Step 0: Only 1 cluster, so no need for decision making
     size_t initialClusterToSplit = 0;
-    splitClusterIntraCluster(dataPoints, centroids, initialClusterToSplit, MAX_ITERATIONS, groundTruth);
+    splitClusterIntraCluster(dataPoints, centroids, initialClusterToSplit, maxIterations, groundTruth);
 
 	SseList[0] = calculateClusterMSE(dataPoints, centroids, 0);
     SseList[1] = calculateClusterMSE(dataPoints, centroids, 1);
@@ -1922,7 +1972,7 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
     //Repeat until we have K clusters
     for (size_t i = 2; centroids->size < maxCentroids; ++i)
     {
-        if (LOGGING == 1) printf("(BKM) Round %zu: Centroids: %zu\n", i-1, centroids->size);
+        //if (LOGGING == 1) printf("(BKM) Round %zu: Centroids: %zu\n", i-1, centroids->size);
 
         size_t clusterToSplit = 0;
         double maxSSE = SseList[0];
@@ -1937,7 +1987,7 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
             }
         }
         
-        //TODO: ota talteen alkuperäinen centroid        
+        // Save the original centroid       
         deepCopyDataPoint(&ogCentroid, &centroids->points[clusterToSplit]);
 
         //TODO: myös alkuperäinen partition?
@@ -1951,17 +2001,17 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
         {
 			//options 2: eli vain lasketaan, mutta ei suoriteta
             //tämä kuulostaa paremmalta
-			ClusteringResult curr = tentativeSplitterForBisecting(dataPoints, centroids, clusterToSplit, 1000);
+			ClusteringResult curr = tentativeSplitterForBisecting(dataPoints, clusterToSplit, 1000);
 
             //if (LOGGING == 2) printf("(RKM) Round %d: Latest Centroid Index (CI): %zu and Latest Mean Sum-of-Squared Errors (MSE): %.4f\n", repeat, result1.centroidIndex, result1.mse / 10000);
 
 			// If the result is better than the best result so far, update the best result
-            if (curr.mse < bestResult.mse)
+            if (curr.mse < bestMse)
             {
                 if (LOGGING == 1) printf("(from inner) Round %zu\n", j);
 
                 // Save the SSE
-                bestResult.mse = curr.mse;
+                bestMse = curr.mse;
                 Centroids tempCentroids; //Debug helper
                 tempCentroids.size = 2; // Number of centroids in curr <- this is why we needed debug helper
                 tempCentroids.points = curr.centroids;
@@ -2027,7 +2077,7 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
         //DEBUGGING if(LOGGING == 3) printf("round: %d\n", repeat);
         //centroids->size++;
 
-        bestResult.mse = DBL_MAX;
+        bestMse = DBL_MAX;
     }
 
 	//Step 4: Run the final k-means
@@ -2178,9 +2228,6 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size
 
     for (size_t i = 0; i < loopCount; ++i)
     {
-        //TODO: Käy läpi, että tarvitaanko ClusteringResult vai riittääkö double
-        ClusteringResult result = allocateClusteringResult(dataPoints->size, numCentroids, dataPoints->points[0].dimensions);
-
         Centroids centroids = allocateCentroids(numCentroids, dataPoints->points[0].dimensions);
 
         start = clock();
@@ -2188,19 +2235,19 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size
         generateRandomCentroids(numCentroids, dataPoints, &centroids);
 
         // Random Swap
-        randomSwap(dataPoints, &centroids, groundTruth, &result);
+        double resultMse = randomSwap(dataPoints, &centroids, groundTruth);
 
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
 
-        result.centroidIndex = calculateCentroidIndex(&centroids, groundTruth);
+        size_t centroidIndex = calculateCentroidIndex(&centroids, groundTruth);
 
         if (LOGGING == 3) printf("(Random Swap)Time taken: %.2f seconds\n\n", duration);
 
-        stats.mseSum += result.mse;
-        stats.ciSum += result.centroidIndex;
+        stats.mseSum += resultMse;
+        stats.ciSum += centroidIndex;
         stats.timeSum += duration;
-        if (result.centroidIndex == 0) stats.successRate++;
+        if (centroidIndex == 0) stats.successRate++;
 
         if (LOGGING == 3) printf("Round %zu\n", i + 1);
 
@@ -2210,7 +2257,6 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size
             writeDataPointPartitionsToFile("outputs/randomSwap_partitions.txt", dataPoints);
         }
 
-        freeClusteringResult(&result, numCentroids);
         freeCentroids(&centroids);
     }
 
@@ -2219,7 +2265,7 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size
     writeResultsToFile(fileName, stats, numCentroids, "Random swap", loopCount, scaling, outputDirectory);
 }
 
-void runRandomSplitAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t numCentroids, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
+void runRandomSplitAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
 {
     Statistics stats;
     initializeStatistics(&stats);
@@ -2237,7 +2283,7 @@ void runRandomSplitAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, siz
 
         generateRandomCentroids(centroids.size, dataPoints, &centroids);
 
-        double resultMse = runRandomSplit(dataPoints, &centroids, numCentroids, groundTruth);
+        double resultMse = runRandomSplit(dataPoints, &centroids, numCentroids, maxIterations, groundTruth);
 
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
@@ -2266,7 +2312,7 @@ void runRandomSplitAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, siz
     writeResultsToFile(fileName, stats, numCentroids, "Random Split", loopCount, scaling, outputDirectory);
 }
 
-void runMseSplitAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t numCentroids, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, int splitType)
+void runMseSplitAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, int splitType)
 {
     Statistics stats;
     initializeStatistics(&stats);
@@ -2288,7 +2334,7 @@ void runMseSplitAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t
 
         generateRandomCentroids(centroids.size, dataPoints, &centroids);
 
-        double resultMse = runMseSplit(dataPoints, &centroids, numCentroids, groundTruth, splitType);
+        double resultMse = runMseSplit(dataPoints, &centroids, numCentroids, maxIterations, groundTruth, splitType);
 
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
@@ -2321,7 +2367,7 @@ void runMseSplitAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t
     writeResultsToFile(fileName, stats, numCentroids, splitTypeName, loopCount, scaling, outputDirectory);
 }
 
-void runBisectingKMeansAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t numCentroids, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
+void runBisectingKMeansAlgorithm(DataPoints* dataPoints, Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
 {
     Statistics stats;
     initializeStatistics(&stats);
@@ -2343,7 +2389,7 @@ void runBisectingKMeansAlgorithm(DataPoints* dataPoints, Centroids* groundTruth,
 
         if (LOGGING == 3) printDataPointsPartitions(dataPoints, centroids.size);
 
-        double resultMse = runBisectingKMeans(dataPoints, &centroids, numCentroids, groundTruth);
+        double resultMse = runBisectingKMeans(dataPoints, &centroids, numCentroids, maxIterations, groundTruth);
 
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
@@ -2450,6 +2496,7 @@ void initializeLists(char** datasetList, char** gtList, size_t* kNumList, size_t
 //      ja/vai/tai komentoriviargumentit, kuten "split k-means" ja "random swap" jne? (eli että voi ajaa suoraan powershellistä)
 //TODO: onko kNumList tarpeellinen? Periaatteessa sama löytyy myös gtList.size?
 //TODO: käy LOGGING tasot läpi (myös ehdot, sillä nyt useat == kun pitäisi olla >=)
+//TODO: Käy läpi ClusteringResultit, että tarvitaanko niitä ollenkaan vai riittääkö double
 
 /**
  * @brief Main function to run various clustering algorithms on multiple datasets.
@@ -2523,19 +2570,19 @@ int main()
             runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, loopCount, scaling, fileName, outputDirectory);
             
             // Run Random Split
-            runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, loopCount, scaling, fileName, outputDirectory);
+            runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, outputDirectory);
 
             // Run MSE Split (Intra-cluster)
-            runMseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, loopCount, scaling, fileName, outputDirectory, 0);
+            runMseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, outputDirectory, 0);
                         
             // Run MSE Split (Global)
-            runMseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, loopCount, scaling, fileName, outputDirectory, 1);
+            runMseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, outputDirectory, 1);
                         
             // Run MSE Split (Local Repartition)
-            runMseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, loopCount, scaling, fileName, outputDirectory, 2);
+            runMseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, outputDirectory, 2);
                         
             // Run Bisecting K-means
-            runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, loopCount, scaling, fileName, outputDirectory);
+            runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, outputDirectory);
 
             // Clean up
             freeDataPoints(&dataPoints);
