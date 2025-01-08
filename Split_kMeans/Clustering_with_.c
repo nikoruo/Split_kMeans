@@ -2623,9 +2623,9 @@ int main()
     for (size_t i = 6; i < 7; ++i)
     {
         //Settings
-		size_t maxIterations = 1000; // Maximum number of iterations for the k-means algorithm
-		size_t maxRepeats = 10; // Maximum number of repeats for the repeated k-means algorithm
-		size_t maxSwaps = 100; // Maximum number of swaps for the random swap algorithm
+		size_t maxIterations = 1000; // Maximum number of iterations for the k-means algorithm //TODO lopulliseen 1000(?)
+		size_t maxRepeats = 10; // Maximum number of repeats for the repeated k-means algorithm //TODO lopulliseen 100(?)
+		size_t maxSwaps = 10; // Maximum number of swaps for the random swap algorithm //TODO lopulliseen 1000(?)
 		size_t loopCount = 100; // Number of loops to run the algorithms
 		size_t scaling = 10000; // Scaling factor for the MSE values
 
