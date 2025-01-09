@@ -1448,11 +1448,11 @@ void splitClusterIntraCluster(DataPoints* dataPoints, Centroids* centroids, size
         }
     }
 
-    //Debugging
-    /*if (clusterSize < 2)
+    // Random split will break without this
+    if (clusterSize < 2)
     {
         return;
-    }*/
+    }
 
     // Collect indices of points in the cluster
     size_t* clusterIndices = malloc(clusterSize * sizeof(size_t));
@@ -2363,6 +2363,7 @@ void runRandomSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTrut
 
         //if (LOGGING >= 3) printf("Round %zu\n", i + 1);
 
+		//TODO: kaikki tälläiset pois lopullisesta versiosta
         if (i == 0)
         {
             writeCentroidsToFile("outputs/randomSplit_centroids.txt", &centroids);
@@ -2620,7 +2621,7 @@ int main()
     createUniqueDirectory(outputDirectory, sizeof(outputDirectory));
 
     //TODO: muista laittaa loopin rajat oikein
-    for (size_t i = 6; i < 7; ++i)
+    for (size_t i = 0; i < datasetCount; ++i)
     {
         //Settings
 		size_t maxIterations = 1000; // Maximum number of iterations for the k-means algorithm //TODO lopulliseen 1000(?)
