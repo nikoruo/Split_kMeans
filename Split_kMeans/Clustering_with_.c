@@ -284,7 +284,7 @@ void freeClusteringResult(ClusteringResult* result, size_t numCentroids)
      point.attributes = malloc(dimensions * sizeof(double));
      handleMemoryError(point.attributes);
      point.dimensions = dimensions;
-     point.partition = SIZE_MAX; // Initialize partition to default value, here SIZE_MAX
+     point.partition = SIZE_MAX; // Initialize partition to default value, here SIZE_MAX. Cant use -1 as its size_t
 
      return point;
  }
@@ -2663,7 +2663,8 @@ int main()
             runKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, outputDirectory);
 
             // Run Repeated K-means
-            runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, outputDirectory);
+			// Too slow to keep it enabled
+            //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, outputDirectory);
 
             // Run Random Swap
             runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, outputDirectory);
