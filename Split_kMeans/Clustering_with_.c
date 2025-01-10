@@ -2086,10 +2086,7 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
         // Recalculate MSE for the affected clusters
         SseList[clusterToSplit] = calculateClusterMSE(dataPoints, centroids, clusterToSplit);
         SseList[centroids->size - 1] = calculateClusterMSE(dataPoints, centroids, centroids->size - 1);
-
-		//TODO: Kommentoi/poista/tee jotain, ei tartte joka kierroksella kirjoittaa tiedostoon
-		writeCentroidsToFile("outputs/centroids.txt", centroids);
-		writeDataPointPartitionsToFile("outputs/partitions.txt", dataPoints);
+        	
 
         bestMse = DBL_MAX;
     }
@@ -2101,6 +2098,10 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
     free(SseList);
 	freeDataPoint(&newCentroid1);
 	freeDataPoint(&newCentroid2);
+
+    //TODO: Kommentoi/poista/tee jotain, ei tartte joka kierroksella kirjoittaa tiedostoon
+    writeCentroidsToFile("outputs/centroids.txt", centroids);
+    writeDataPointPartitionsToFile("outputs/partitions.txt", dataPoints);
 
     return finalResultMse;
 }
