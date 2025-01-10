@@ -148,6 +148,25 @@ void handleMemoryError(void* ptr)
 }
 
 /**
+ * @brief Frees the memory allocated for a single DataPoint structure.
+ *
+ * This function frees the memory allocated for the attributes of the DataPoint
+ * and then sets the pointer to the attributes to NULL.
+ *
+ * @param point A pointer to the DataPoint structure to be freed.
+ */
+void freeDataPoint(DataPoint* point)
+{
+    //if (point == NULL) return;
+
+    if (point->attributes != NULL)
+    {
+        free(point->attributes);
+        point->attributes = NULL;
+    }
+}
+
+/**
  * @brief Frees the memory allocated for an array of DataPoint structures.
  *
  * This function iterates through an array of DataPoint structures, freeing the memory
@@ -159,11 +178,11 @@ void handleMemoryError(void* ptr)
  */
 void freeDataPointArray(DataPoint* points, size_t size)
 {
-    if (points == NULL) return;
+    //if (points == NULL) return;
 
     for (size_t i = 0; i < size; ++i)
     {
-        if (points[i].attributes != NULL)
+        if (points[i].attributes != NULL) //TODO: if pois lopullisesta versiosta?
         {
             free(points[i].attributes);
             points[i].attributes = NULL;
@@ -1716,7 +1735,7 @@ double tentativeMseDrop(DataPoints* dataPoints, size_t clusterLabel, size_t loca
     //      Jos withSize, niin tätähän ei edes tarvita, resultMse on sama?
     double newClusterMSE = calculateMSEWithSize(&pointsInCluster, &localCentroids, dataPoints->size);
 
-    double mseDrop = originalClusterMSE - newClusterMSE;
+    double mseDrop = originalClusterMSE - resultMse;
 
     freeDataPoints(&pointsInCluster);
     freeCentroids(&localCentroids);
@@ -1790,7 +1809,7 @@ ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, size_t cl
     double newClusterMSE = calculateMSEWithSize(&pointsInCluster, &localCentroids, dataPoints->size);
 
     // Calculate the MSE drop
-    localResult.mse = newClusterMSE;
+    //localResult.mse = newClusterMSE;
 
 	deepCopyDataPoint(&localResult.centroids[0], &localCentroids.points[0]);
     deepCopyDataPoint(&localResult.centroids[1], &localCentroids.points[1]);
@@ -1862,7 +1881,7 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
 {
     //TODO: entä jos globaalia ei rajoittaisi, olisiko tullut paremmat tulokset???????
     //TODO: pohdi tarkemmat arvot, globaaliin 5 näyttää toimivan hyvin
-    size_t iterations = splitType == 0 ? maxIterations : splitType == 1 ? 4 : maxIterations;
+    size_t iterations = splitType == 0 ? maxIterations : splitType == 1 ? maxIterations : maxIterations;
 
     double* clusterMSEs = malloc(maxCentroids * sizeof(double));
     handleMemoryError(clusterMSEs);
@@ -1981,7 +2000,8 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
  * @param maxIterations The maximum number of iterations for the k-means algorithm.
  * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
  * @return The best mean squared error (MSE) obtained during the iterations.
- */double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, const Centroids* groundTruth)
+ */
+double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, const Centroids* groundTruth)
 {
 	size_t bisectingIterations = 5;
     
@@ -1991,10 +2011,6 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
 
     DataPoint newCentroid1 = allocateDataPoint(dataPoints->points[0].dimensions);
     DataPoint newCentroid2 = allocateDataPoint(dataPoints->points[0].dimensions);
-    DataPoint ogCentroid = allocateDataPoint(dataPoints->points[0].dimensions);
-
-    size_t* ogPartitions = malloc(dataPoints->size * sizeof(size_t));
-	handleMemoryError(ogPartitions);
 
 	//Step 0: Only 1 cluster, so no need for decision making
     size_t initialClusterToSplit = 0;
@@ -2020,9 +2036,6 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
                 clusterToSplit = j;
             }
         }
-        
-        // Save the original centroid       
-        deepCopyDataPoint(&ogCentroid, &centroids->points[clusterToSplit]);
 
 		//Repeat for a set number of iterations
         for (size_t j = 0; j < bisectingIterations; ++j)
@@ -2054,13 +2067,12 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
             }
         }
 
-		//Choose the best cluster split
+		// Replace the old centroid with the new centroid1
         deepCopyDataPoint(&centroids->points[clusterToSplit], &newCentroid1);
 
-        // Ensure the centroids array is resized before adding the new centroid
+		// Increase the size of the centroids array and add the new centroid2
         centroids->points = realloc(centroids->points, (centroids->size + 1) * sizeof(DataPoint));
         handleMemoryError(centroids->points);
-
         centroids->points[centroids->size] = allocateDataPoint(newCentroid2.dimensions);
         deepCopyDataPoint(&centroids->points[centroids->size], &newCentroid2);
         centroids->size++;
@@ -2068,7 +2080,6 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
         //if (LOGGING >= 3) printf("(from outer) Round %zu\n", i);
         //printCentroidsInfo(centroids);
 
-        //TODO: tässä partitionStep, mutta voisiko "if (curr.mse < bestMse)" sisällä pitää tallentaa partitionia?
         partitionStep(dataPoints, centroids);
 
 		//Step 3: Update the SSE list
@@ -2076,6 +2087,7 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
         SseList[clusterToSplit] = calculateClusterMSE(dataPoints, centroids, clusterToSplit);
         SseList[centroids->size - 1] = calculateClusterMSE(dataPoints, centroids, centroids->size - 1);
 
+		//TODO: Kommentoi/poista/tee jotain, ei tartte joka kierroksella kirjoittaa tiedostoon
 		writeCentroidsToFile("outputs/centroids.txt", centroids);
 		writeDataPointPartitionsToFile("outputs/partitions.txt", dataPoints);
 
@@ -2084,13 +2096,11 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
 
 	//Step 4: Run the final k-means
     double finalResultMse = runKMeans(dataPoints, maxIterations, centroids, groundTruth);
-
+    printf("size  %zu\n", centroids->size);
     // Cleanup
     free(SseList);
-    free(newCentroid1.attributes);
-    free(newCentroid2.attributes);
-    free(ogCentroid.attributes);
-    free(ogPartitions);
+	freeDataPoint(&newCentroid1);
+	freeDataPoint(&newCentroid2);
 
     return finalResultMse;
 }
@@ -2500,7 +2510,7 @@ void runBisectingKMeansAlgorithm(DataPoints* dataPoints, const Centroids* ground
         stats.ciSum += centroidIndex;
         stats.timeSum += duration;
         if (centroidIndex == 0) stats.successRate++;
-
+        printf("CI %zu\n", centroidIndex);
         //if (LOGGING >= 3) printf("Round %zu\n", i + 1);
 
         if (i == 0)
@@ -2621,12 +2631,12 @@ int main()
     createUniqueDirectory(outputDirectory, sizeof(outputDirectory));
 
     //TODO: muista laittaa loopin rajat oikein
-    for (size_t i = 0; i < datasetCount; ++i)
+    for (size_t i = 7; i < 8; ++i)
     {
         //Settings
 		size_t maxIterations = 1000; // Maximum number of iterations for the k-means algorithm //TODO lopulliseen 1000(?)
 		size_t maxRepeats = 10; // Maximum number of repeats for the repeated k-means algorithm //TODO lopulliseen 100(?)
-		size_t maxSwaps = 10; // Maximum number of swaps for the random swap algorithm //TODO lopulliseen 1000(?)
+		size_t maxSwaps = 1000; // Maximum number of swaps for the random swap algorithm //TODO lopulliseen 1000(?)
 		size_t loopCount = 100; // Number of loops to run the algorithms
 		size_t scaling = 10000; // Scaling factor for the MSE values
 
@@ -2667,10 +2677,10 @@ int main()
             //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, outputDirectory);
 
             // Run Random Swap
-            runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, outputDirectory);
+            //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, outputDirectory);
             
             // Run Random Split
-            runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, outputDirectory);
+            //runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, outputDirectory);
 
             // Run MSE Split (Intra-cluster)
             runMseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, outputDirectory, 0);
