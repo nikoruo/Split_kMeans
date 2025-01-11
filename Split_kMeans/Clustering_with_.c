@@ -1309,19 +1309,19 @@ size_t countOrphans(const Centroids* centroids1, const Centroids* centroids2)
  */
 size_t calculateCentroidIndex(const Centroids* centroids1, const Centroids* centroids2)
 {
-    /*if (LOGGING >= 3)
+    if (LOGGING >= 1)
     {
         printf("centroids1: %zu AND 2: %zu\n\n", centroids1->size, centroids2->size);
         printf("centroids1: %f AND 2: %f\n\n", centroids1->points->attributes[0], centroids2->points->attributes[0]);
-    }*/
+    }
     
     size_t countFrom1to2 = countOrphans(centroids1, centroids2);
     size_t countFrom2to1 = countOrphans(centroids2, centroids1);
 
-    /*if (LOGGING >= 3)
+    if (LOGGING >= 1)
     {
         printf("Count from 1 to 2: %zu AND 2 to 1: %zu\n\n", countFrom1to2, countFrom2to1);
-    }*/
+    }
 
     return (countFrom1to2 > countFrom2to1) ? countFrom1to2 : countFrom2to1;
 }
@@ -2048,7 +2048,6 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
             if (curr.mse < bestMse)
             {
                 //if (LOGGING >= 3) printf("(from inner) Round %zu\n", j);
-
                 bestMse = curr.mse;
                 
                 /*if (LOGGING >= 3)
@@ -2076,7 +2075,9 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
         centroids->points[centroids->size] = allocateDataPoint(newCentroid2.dimensions);
         deepCopyDataPoint(&centroids->points[centroids->size], &newCentroid2);
         centroids->size++;
-        
+
+        printf("CI %zu\n", calculateCentroidIndex(centroids, groundTruth));
+
         //if (LOGGING >= 3) printf("(from outer) Round %zu\n", i);
         //printCentroidsInfo(centroids);
 
@@ -2086,7 +2087,11 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
         // Recalculate MSE for the affected clusters
         SseList[clusterToSplit] = calculateClusterMSE(dataPoints, centroids, clusterToSplit);
         SseList[centroids->size - 1] = calculateClusterMSE(dataPoints, centroids, centroids->size - 1);
-        	
+        
+        if (centroids->size == maxCentroids - 1) {
+            writeCentroidsToFile("outputs/TESTcentroids.txt", centroids);
+            writeDataPointPartitionsToFile("outputs/TESTpartitions.txt", dataPoints);
+        }
 
         bestMse = DBL_MAX;
     }
@@ -2504,7 +2509,7 @@ void runBisectingKMeansAlgorithm(DataPoints* dataPoints, const Centroids* ground
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
         //if (LOGGING >= 3) printf("(Bisecting)Time taken: %.2f seconds\n\n", duration);
-
+        printf("Sizeeeee %zu\n", centroids.size);
         size_t centroidIndex = calculateCentroidIndex(&centroids, groundTruth);
 
         stats.mseSum += resultMse;
@@ -2684,13 +2689,13 @@ int main()
             //runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, outputDirectory);
 
             // Run MSE Split (Intra-cluster)
-            runMseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, outputDirectory, 0);
+            //runMseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, outputDirectory, 0);
                         
             // Run MSE Split (Global)
-            runMseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, outputDirectory, 1);
+            //runMseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, outputDirectory, 1);
                         
             // Run MSE Split (Local Repartition)
-            runMseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, outputDirectory, 2);
+            //runMseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, outputDirectory, 2);
                         
             // Run Bisecting K-means
             runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, outputDirectory);
