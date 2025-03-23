@@ -101,7 +101,6 @@ typedef struct
 {
     DataPoint* points;   /**< Array of DataPoint structures representing the centroids. */ //TODO: tarvitaanko Centroid -struct?
     size_t size;         /**< Number of centroids in the array. */
-	//size_t mse; TODO <- tarvitaanko?
 } Centroids;
 
 /**
@@ -1561,7 +1560,7 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps,
     char csvFile[256];
     if (trackTime)
     {
-        snprintf(csvFile, sizeof(csvFile), "%s/RandomSwap_sse_log.csv", outputDirectory);
+        snprintf(csvFile, sizeof(csvFile), "%s/RandomSwap_log.csv", outputDirectory);
 
         if (!fileExists(csvFile))
         {
@@ -1569,7 +1568,7 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps,
             if (openCsvFile == NULL) {
                 handleFileError(csvFile);
             }
-            fprintf(openCsvFile, "ci;iteration;sse\n");
+            fprintf(openCsvFile, "ci;iteration;mse\n");
             fclose(openCsvFile);
         }
 
@@ -1823,7 +1822,7 @@ void splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t clu
 }
 
 // TODO: vain split k-means, haluanko myˆs random swappiin?
-// TODO: kesken
+// TODO: kesken <- eli tarvitaanko new cluster -> old cluster vai riitt‰‰kˆ myˆs old cluster -> new cluster?
 /**
  * @brief Performs local repartitioning of data points to the nearest centroid.
  *
@@ -1880,7 +1879,6 @@ void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clust
     //if(LOGGING >= 3) printf("Local repartition is over\n\n");
 }
 
-//todo: centroids turha t‰nne?
 /**
  * @brief Calculates the MSE drop for a tentative split of a cluster.
  *
@@ -2050,7 +2048,7 @@ double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCe
     char csvFile[256];
     if (trackTime)
     {
-        snprintf(csvFile, sizeof(csvFile), "%s/RandomSplit_sse_log.csv", outputDirectory);
+        snprintf(csvFile, sizeof(csvFile), "%s/RandomSplit_log.csv", outputDirectory);
 
         if (!fileExists(csvFile))
         {
@@ -2058,7 +2056,7 @@ double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCe
             if (openCsvFile == NULL) {
                 handleFileError(csvFile);
             }
-            fprintf(openCsvFile, "ci;iteration;sse\n");
+            fprintf(openCsvFile, "ci;iteration;mse\n");
             fclose(openCsvFile);
         }
 
@@ -2146,8 +2144,10 @@ double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCe
 double runSseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, const Centroids* groundTruth, size_t splitType, const char* outputDirectory, 
     bool trackProgress, double* timeList, size_t* timeIndex, clock_t start, bool trackTime, bool createCsv)
 {
-    //TODO: ent‰ jos globaalia ei rajoittaisi, olisiko tullut paremmat tulokset???????
-    //TODO: pohdi tarkemmat arvot, globaaliin 5 n‰ytt‰‰ toimivan hyvin
+	//TODO: poista valinta? Kaikki kuitenkin maxIterations?
+    // Note: At first I limited Global variant to max 5 iterations
+    //       it seemed to hit a fairly good balance between speed/accuracy
+    //       but decided to remove the limit at the end, as there was no real reason for it
     size_t iterations = splitType == 0 ? maxIterations : splitType == 1 ? maxIterations : maxIterations;
 
     double* clusterSSEs = malloc(maxCentroids * sizeof(double));
@@ -2163,7 +2163,7 @@ double runSseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
     if (trackTime) 
     {
         const char* splitTypeName = getAlgorithmName(splitType);
-        snprintf(csvFile, sizeof(csvFile), "%s/%s_sse_log.csv", outputDirectory, splitTypeName);
+        snprintf(csvFile, sizeof(csvFile), "%s/%s_log.csv", outputDirectory, splitTypeName);
 
         if (!fileExists(csvFile))
         {
@@ -2171,7 +2171,7 @@ double runSseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
             if (openCsvFile == NULL) {
                 handleFileError(csvFile);
             }
-            fprintf(openCsvFile, "ci;iteration;sse\n");
+            fprintf(openCsvFile, "ci;iteration;mse\n");
             fclose(openCsvFile);
         }
 
@@ -2310,8 +2310,7 @@ double runSseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
     free(clusterSSEs);
 	free(SseDrops);
 	free(clustersAffected);
-
-    //TODO: globaali k-means  
+ 
     double finalResultMse = runKMeans(dataPoints, maxIterations, centroids, groundTruth);
 
     if (trackTime)
@@ -2361,7 +2360,7 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
     char csvFile[256];
     if (trackTime)
     {
-        snprintf(csvFile, sizeof(csvFile), "%s/Bisecting_sse_log.csv", outputDirectory);
+        snprintf(csvFile, sizeof(csvFile), "%s/Bisecting_log.csv", outputDirectory);
 
         if (!fileExists(csvFile))
         {
@@ -2369,7 +2368,7 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
             if (openCsvFile == NULL) {
                 handleFileError(csvFile);
             }
-            fprintf(openCsvFile, "ci;iteration;sse\n");
+            fprintf(openCsvFile, "ci;iteration;mse\n");
             fclose(openCsvFile);
         }
 
@@ -2527,10 +2526,6 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
     free(SseList);
 	freeDataPoint(&newCentroid1);
 	freeDataPoint(&newCentroid2);
-
-    //TODO: Kommentoi/poista/tee jotain, ei tartte joka kierroksella kirjoittaa tiedostoon
-    //writeCentroidsToFile("outputs/centroids.txt", centroids);
-    //writeDataPointPartitionsToFile("outputs/partitions.txt", dataPoints);
 
     return finalResultMse;
 }
@@ -3217,12 +3212,9 @@ static void initializeLists(char** datasetList, char** gtList, size_t* kNumList,
 //END: credits ja alkupuhe koodin alkuun
 //     edellisen alle voisi lis‰t‰ lokin, ett‰ kuka on p‰ivitt‰nyt ja milloin
 
-//TODO: "static " sellaisten funktioiden eteen jotka eiv‰t muuta mit‰‰n ja joita kutsutaan samasta tiedostosta?
+//TODO: "static " sellaisten funktioiden eteen jotka eiv‰t muuta mit‰‰n ja joita kutsutaan vain samasta tiedostosta?
 //TODO: koodin palastelu eri tiedostoihin
 //TODO: Osa tulostuksista k‰ytt‰‰ lokalea FI jolloin tiedostoon tulee pilkku, osa k‰ytt‰‰ lokalea C (eli kaikki miss‰ ei erikseen m‰‰ritelty) jolloin tulee piste
-
-//EXTRA: konsolikysymykset, kuten "do you want to run split k-means?" ja "do you want to run random swap?" jne?
-//      ja/vai/tai komentoriviargumentit, kuten "split k-means" ja "random swap" jne? (eli ett‰ voi ajaa suoraan powershellist‰)
 
 /**
  * @brief Main function to run various clustering algorithms on multiple datasets.
@@ -3249,16 +3241,17 @@ int main()
     createUniqueDirectory(outputDirectory, sizeof(outputDirectory));
 
     //TODO: muista laittaa loopin rajat oikein
-    for (size_t i = 6; i < 7; ++i)
+	// Modify this loop to run the algorithms on the desired datasets
+    for (size_t i = 0; i < 15; ++i)
     {
         //Settings
-        size_t loopCount = 10; // Number of loops to run the algorithms
+        size_t loopCount = 1000; // Number of loops to run the algorithms
         size_t scaling = 10000; // Scaling factor for the MSE values
 		size_t maxIterations = 1000; // Maximum number of iterations for the k-means algorithm //TODO lopulliseen 1000(?)
 		size_t maxRepeats = 10; // Maximum number of repeats for the repeated k-means algorithm //TODO lopulliseen 100(?)
 		size_t maxSwaps = 1000; // Maximum number of swaps for the random swap algorithm //TODO lopulliseen 1000(?)		
-		bool trackProgress = true; // Track progress for the algorithms
-		bool trackTime = true; // Track time for the algorithms
+		bool trackProgress = true; // Track progress of the algorithms
+		bool trackTime = true; // Track time of the algorithms
 
         size_t numCentroids = kNumList[i];
         const char* fileName = datasetList[i];
@@ -3268,7 +3261,7 @@ int main()
         char gtFile[256];
         snprintf(gtFile, sizeof(gtFile), "gt/%s", gtName);
 
-        // Create a subdirectory for the dataset
+        // Creates a subdirectory for each the dataset
         char datasetDirectory[256];
         createDatasetDirectory(outputDirectory, fileName, datasetDirectory, sizeof(datasetDirectory));
 
