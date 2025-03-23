@@ -660,7 +660,7 @@ Centroids readCentroids(const char* filename)
 }
 
 // Append a line with "iteration, numCentroids, sse" to a CSV file
-void appendLogCsv(const char* filePath, size_t numCentroids, size_t ci, double sse)
+void appendLogCsv(const char* filePath, size_t numCentroids, size_t ci, double mse)
 {
     setlocale(LC_NUMERIC, "fi_FI");
 
@@ -669,8 +669,8 @@ void appendLogCsv(const char* filePath, size_t numCentroids, size_t ci, double s
         handleFileError(filePath);
         return;
     }
-    // Write time, number of centroids, centroid index (CI) and SSE
-    fprintf(file, "%zu;%zu;%.0f\n", ci, numCentroids, sse);
+    // Write time, number of centroids, centroid index (CI) and mse
+    fprintf(file, "%zu;%zu;%.0f\n", ci, numCentroids, mse);
     fclose(file);
     setlocale(LC_NUMERIC, "C");
 }
@@ -1145,13 +1145,13 @@ double calculateMSE(const DataPoints* dataPoints, const Centroids* centroids)
  * @param size The size of the whole data set.
  * @return The mean squared error (MSE).
  */
-double calculateMSEWithSize(const DataPoints* dataPoints, const Centroids* centroids, size_t size)
+double calculateSSEWithSize(const DataPoints* dataPoints, const Centroids* centroids, size_t size)
 {
     double sse = calculateSSE(dataPoints, centroids);
 
-    double mse = sse / (size * dataPoints->points[0].dimensions);
+	double mse = sse / (size * dataPoints->points[0].dimensions); //TODO calculateMSEWithSize vai SSEWithSize?
 
-    return mse;
+    return sse;
 }
 
 //TODO: k‰y description l‰pi, ett‰ vastaa sit‰ mit‰ lasketaan (count vai size)
@@ -1167,7 +1167,7 @@ double calculateMSEWithSize(const DataPoints* dataPoints, const Centroids* centr
  * @param clusterLabel The label of the cluster for which to calculate the MSE.
  * @return The mean squared error (MSE) for the specified cluster.
  */
-double calculateClusterMSE(const DataPoints* dataPoints, const Centroids* centroids, size_t clusterLabel)
+double calculateClusterSSE(const DataPoints* dataPoints, const Centroids* centroids, size_t clusterLabel)
 {
     double sse = 0.0;
     size_t count = 0;
@@ -1189,8 +1189,9 @@ double calculateClusterMSE(const DataPoints* dataPoints, const Centroids* centro
     }*/
 
 	//TODO: count vai dataPoints->size? Eli datapisteiden m‰‰r‰ clusterissa vai koko datasetiss‰?
-    double mse = sse;// (dataPoints->size * dimensions);
-    return mse;
+	// Vai pelkk‰ SSE? calculateClusterSSE vai calculateClusterMSE?
+    //double mse = sse;// (dataPoints->size * dimensions);
+    return sse;
 }
 
 /**
@@ -1423,7 +1424,7 @@ void saveIterationState(const DataPoints* dataPoints, const Centroids* centroids
  * @param algorithmName A name identifier for the algorithm being run.
  */
 void writeIterationStats(const DataPoints* dataPoints, const Centroids* centroids,
-    const Centroids* groundTruth, size_t iteration, double mse,
+    const Centroids* groundTruth, size_t iteration, double sse,
     size_t splitCluster, const char* outputDirectory, const char* algorithmName)
 {
     char statsFileName[256];
@@ -1450,7 +1451,7 @@ void writeIterationStats(const DataPoints* dataPoints, const Centroids* centroid
 
     size_t ci = calculateCentroidIndex(centroids, groundTruth);
     fprintf(statsFile, "%zu;%zu;%.5f;%zu;%zu\n",
-        iteration, centroids->size, mse, ci, splitCluster);
+        iteration, centroids->size, sse, ci, splitCluster);
 
     fclose(statsFile);
 }
@@ -1458,8 +1459,8 @@ void writeIterationStats(const DataPoints* dataPoints, const Centroids* centroid
 static void trackProgressState(const DataPoints* dataPoints, const Centroids* centroids, const Centroids* groundTruth, size_t iteration, size_t clusterToSplit, size_t splitType, const char* outputDirectory)
 {
     const char* splitTypeName = getSplitTypeName(splitType);
-    double currentMse = calculateMSE(dataPoints, centroids);
-    writeIterationStats(dataPoints, centroids, groundTruth, iteration, currentMse, clusterToSplit, outputDirectory, splitTypeName);
+    double currentSse = calculateMSE(dataPoints, centroids); //TODO: Halutaanko MSE vai SSE?
+    writeIterationStats(dataPoints, centroids, groundTruth, iteration, currentSse, clusterToSplit, outputDirectory, splitTypeName);
     saveIterationState(dataPoints, centroids, iteration, outputDirectory, splitTypeName);
 }
 
@@ -1473,8 +1474,8 @@ static void updateTimeTracking(bool trackTime, clock_t start, double* timeList, 
 static void updateCsvLogging(bool createCsv, const DataPoints* dataPoints, const Centroids* centroids, const Centroids* groundTruth, const char* sseCsvFile, size_t iterationNumber)
 {
     size_t currentCi = calculateCentroidIndex(centroids, groundTruth);
-    double currentSse = calculateSSE(dataPoints, centroids);
-    appendLogCsv(sseCsvFile, iterationNumber, currentCi, currentSse);
+    double currentMse = calculateMSE(dataPoints, centroids); //TODO: SSE vai MSE?
+    appendLogCsv(sseCsvFile, iterationNumber, currentCi, currentMse);
 }
 
 
@@ -1492,8 +1493,8 @@ static void updateCsvLogging(bool createCsv, const DataPoints* dataPoints, const
  */
 double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids, const Centroids* groundTruth)
 {
-    double bestMse = DBL_MAX;
-    double mse = DBL_MAX;
+    double bestSse = DBL_MAX;
+    double sse = DBL_MAX;
 
     for (size_t iteration = 0; iteration < iterations; ++iteration)
     {
@@ -1501,8 +1502,7 @@ double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids
 
         centroidStep(centroids, dataPoints);
         
-        //TODO: mse vai SSE? T‰ll‰ hetkell‰ SSE vaikka muuttujat ovat mse
-        mse = calculateSSE(dataPoints, centroids);
+        sse = calculateSSE(dataPoints, centroids);
 
         /*if (LOGGING >= 3)
         {
@@ -1510,10 +1510,10 @@ double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids
             printf("(runKMeans)After iteration %zu: CI = %zu and MSE = %.5f\n", iteration + 1, centroidIndex, mse / 10000);
         }*/
 
-        if (mse < bestMse)
+        if (sse < bestSse)
         {
 			//if (LOGGING >= 3) printf("Best MSE so far: %.5f\n", mse / 10000);
-            bestMse = mse;
+            bestSse = sse;
         }
         else
         {
@@ -1521,7 +1521,7 @@ double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids
         }
     }
 
-    return bestMse;
+    return bestSse;
 }
 
 /**
@@ -1665,8 +1665,8 @@ void splitClusterIntraCluster(DataPoints* dataPoints, Centroids* centroids, size
     }
 
     // Run local k-means
-    //TODO: poista "resultMse" jos ei tarvita
-    double resultMse = runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, groundTruth);
+    //TODO: poista "resultSse" jos ei tarvita
+    double resultSse = runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, groundTruth);
 
     // Update partitions
     for (size_t i = 0; i < clusterSize; ++i)
@@ -1760,7 +1760,7 @@ void splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t clu
     deepCopyDataPoint(&centroids->points[centroids->size - 1], &dataPoints->points[datapoint2]);
 
     // Run global k-means, this time including the new centroids
-    double resultMse = runKMeans(dataPoints, globalMaxIterations, centroids, groundTruth);
+    double resultSse = runKMeans(dataPoints, globalMaxIterations, centroids, groundTruth);
 
     // Cleanup
     free(clusterIndices);
@@ -1837,7 +1837,7 @@ void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clust
  * @param originalClusterMSE The original MSE of the cluster before the split.
  * @return The MSE drop for the tentative split of the cluster.
  */
-double tentativeMseDrop(DataPoints* dataPoints, size_t clusterLabel, size_t localMaxIterations, double originalClusterMSE)
+double tentativeSseDrop(DataPoints* dataPoints, size_t clusterLabel, size_t localMaxIterations, double originalClusterSSE)
 {
     size_t clusterSize = 0;
     for (size_t i = 0; i < dataPoints->size; ++i)
@@ -1880,19 +1880,19 @@ double tentativeMseDrop(DataPoints* dataPoints, size_t clusterLabel, size_t loca
     deepCopyDataPoint(&localCentroids.points[1], &pointsInCluster.points[idx2]);
 
     // k-means
-    double resultMse = runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, NULL);
+    double resultSse = runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, NULL);
 
     // Calculate combined MSE of the two clusters
 	//TODO: WithSize vai ilman? Eli koko datasetin mukaan vai pelk‰st‰‰n clusterin mukaan?
     //      Jos withSize, niin t‰t‰h‰n ei edes tarvita, resultMse on sama?
-    double newClusterMSE = calculateMSEWithSize(&pointsInCluster, &localCentroids, dataPoints->size);
+    double newClusterSSE = calculateSSEWithSize(&pointsInCluster, &localCentroids, dataPoints->size);
 
-    double mseDrop = originalClusterMSE - resultMse;
+    double sseDrop = originalClusterSSE - resultSse;
 
     freeDataPoints(&pointsInCluster);
     freeCentroids(&localCentroids);
 
-    return mseDrop;
+    return sseDrop;
 }
 
 /**
@@ -1958,7 +1958,7 @@ ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, size_t cl
     // Calculate combined MSE of the two clusters
     //TODO: WithSize vai ilman? Eli koko datasetin mukaan vai pelk‰st‰‰n clusterin mukaan?
     //      Jos withSize, niin t‰t‰h‰n ei edes tarvita, resultMse on sama?
-    double newClusterMSE = calculateMSEWithSize(&pointsInCluster, &localCentroids, dataPoints->size);
+    double newClusterMSE = calculateSSEWithSize(&pointsInCluster, &localCentroids, dataPoints->size);
 
     // Calculate the MSE drop
     //localResult.mse = newClusterMSE;
@@ -2015,7 +2015,7 @@ double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCe
 }
 
 /**
- * @brief Runs the split k-means algorithm with tentative splitting (choosing to split the one that reduces the MSE the most).
+ * @brief Runs the split k-means algorithm with tentative splitting (choosing to split the one that reduces the SSE the most).
  *
  * This function iterates through partition and centroid steps, selects a cluster to split based on the MSE drop,
  * and updates the centroids and partitions based on the results of the local k-means.
@@ -2029,35 +2029,35 @@ double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCe
  * @param splitType The type of split to perform (0 = intra-cluster, 1 = global, 2 = local repartition).
  * @return The best mean squared error (MSE) obtained during the iterations.
  */
-double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, const Centroids* groundTruth, size_t splitType, const char* outputDirectory, 
+double runSseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, const Centroids* groundTruth, size_t splitType, const char* outputDirectory, 
     bool trackProgress, double* timeList, size_t* timeIndex, clock_t start, bool trackTime, bool createCsv)
 {
     //TODO: ent‰ jos globaalia ei rajoittaisi, olisiko tullut paremmat tulokset???????
     //TODO: pohdi tarkemmat arvot, globaaliin 5 n‰ytt‰‰ toimivan hyvin
     size_t iterations = splitType == 0 ? maxIterations : splitType == 1 ? maxIterations : maxIterations;
 
-    double* clusterMSEs = malloc(maxCentroids * sizeof(double));
-    handleMemoryError(clusterMSEs);
+    double* clusterSSEs = malloc(maxCentroids * sizeof(double));
+    handleMemoryError(clusterSSEs);
 
-    double* MseDrops = calloc(maxCentroids, sizeof(size_t));
-    handleMemoryError(MseDrops);
+    double* SseDrops = calloc(maxCentroids, sizeof(size_t));
+    handleMemoryError(SseDrops);
 
     bool* clustersAffected = calloc(maxCentroids*2, sizeof(bool));
     handleMemoryError(clustersAffected);
 
-    char sseCsvFile[256];    
+    char csvFile[256];    
     if (trackTime) 
     {
-        snprintf(sseCsvFile, sizeof(sseCsvFile), "%s/sse_log.csv", outputDirectory);
+        snprintf(csvFile, sizeof(csvFile), "%s/sse_log.csv", outputDirectory);
 
-        if (!fileExists(sseCsvFile))
+        if (!fileExists(csvFile))
         {
-            FILE* csvFile = fopen(sseCsvFile, "w");
-            if (csvFile == NULL) {
-                handleFileError(sseCsvFile);
+            FILE* openCsvFile = fopen(csvFile, "w");
+            if (openCsvFile == NULL) {
+                handleFileError(csvFile);
             }
-            fprintf(csvFile, "ci;iteration;sse\n");
-            fclose(csvFile);
+            fprintf(openCsvFile, "ci;iteration;sse\n");
+            fclose(openCsvFile);
         }
 
         updateTimeTracking(trackTime, start, timeList, timeIndex);
@@ -2070,7 +2070,7 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
 
     if (createCsv)
     {
-        updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, sseCsvFile, 0);
+        updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, csvFile, 0);
     }
 
     //Only 1 cluster, so no need for decision making
@@ -2084,7 +2084,7 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
 
     if (createCsv)
     {
-        updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, sseCsvFile, 1);
+        updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, csvFile, 1);
     }    
 
     if (trackProgress)
@@ -2094,8 +2094,8 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
 
     for (size_t i = 0; i < centroids->size; ++i)
     {
-        clusterMSEs[i] = calculateClusterMSE(dataPoints, centroids, i); //TODO: tarvitaanko omaa rakennetta?
-        MseDrops[i] = tentativeMseDrop(dataPoints, i, iterations, clusterMSEs[i]);
+        clusterSSEs[i] = calculateClusterSSE(dataPoints, centroids, i); //TODO: tarvitaanko omaa rakennetta?
+        SseDrops[i] = tentativeSseDrop(dataPoints, i, iterations, clusterSSEs[i]);
     }
 
     size_t iterationCount = 2; //Helper for tracking progress
@@ -2104,13 +2104,13 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
     {
 		// Choose the cluster that reduces the MSE the most
         size_t clusterToSplit = 0;
-        double maxMseDrop = MseDrops[0];
+        double maxMseDrop = SseDrops[0];
 
         for (size_t i = 1; i < centroids->size; ++i)
         {
-            if (MseDrops[i] > maxMseDrop)
+            if (SseDrops[i] > maxMseDrop)
             {
-                maxMseDrop = MseDrops[i];
+                maxMseDrop = SseDrops[i];
                 clusterToSplit = i;
             }
         }
@@ -2127,19 +2127,19 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
 		if (splitType == 0) // Intra-cluster
         {
             // Recalculate MSE for the affected clusters
-            clusterMSEs[clusterToSplit] = calculateClusterMSE(dataPoints, centroids, clusterToSplit);
-            clusterMSEs[centroids->size - 1] = calculateClusterMSE(dataPoints, centroids, centroids->size - 1);
+            clusterSSEs[clusterToSplit] = calculateClusterSSE(dataPoints, centroids, clusterToSplit);
+            clusterSSEs[centroids->size - 1] = calculateClusterSSE(dataPoints, centroids, centroids->size - 1);
 
-            // Update MseDrops for the affected clusters
-            MseDrops[clusterToSplit] = tentativeMseDrop(dataPoints, clusterToSplit, iterations, clusterMSEs[clusterToSplit]);
-            MseDrops[centroids->size - 1] = tentativeMseDrop(dataPoints, centroids->size - 1, iterations, clusterMSEs[centroids->size - 1]);
+            // Update SseDrops for the affected clusters
+            SseDrops[clusterToSplit] = tentativeSseDrop(dataPoints, clusterToSplit, iterations, clusterSSEs[clusterToSplit]);
+            SseDrops[centroids->size - 1] = tentativeSseDrop(dataPoints, centroids->size - 1, iterations, clusterSSEs[centroids->size - 1]);
         }
 		else if (splitType == 1) // Global
         {            
             for (size_t i = 0; i < centroids->size; ++i)
             {
-                clusterMSEs[i] = calculateClusterMSE(dataPoints, centroids, i);
-                MseDrops[i] = tentativeMseDrop(dataPoints, i, iterations, clusterMSEs[i]);
+                clusterSSEs[i] = calculateClusterSSE(dataPoints, centroids, i);
+                SseDrops[i] = tentativeSseDrop(dataPoints, i, iterations, clusterSSEs[i]);
             }
         }
 		else if (splitType == 2) // Local repartition
@@ -2156,8 +2156,8 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
                 {
                     //if (LOGGING >= 3) printf("Affected cluster: %zu\n", i);
 
-                    clusterMSEs[i] = calculateClusterMSE(dataPoints, centroids, i);
-                    MseDrops[i] = tentativeMseDrop(dataPoints, i, iterations, clusterMSEs[i]);
+                    clusterSSEs[i] = calculateClusterSSE(dataPoints, centroids, i);
+                    SseDrops[i] = tentativeSseDrop(dataPoints, i, iterations, clusterSSEs[i]);
                 }
             }
 
@@ -2176,7 +2176,7 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
         
         if (createCsv)
         {
-            updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, sseCsvFile, iterationCount);
+            updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, csvFile, iterationCount);
         }
 
         iterationCount++;
@@ -2192,8 +2192,8 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
         //if (LOGGING >= 3 && splitType == 2) printf("Round over\n\n");
     }
 
-    free(clusterMSEs);
-	free(MseDrops);
+    free(clusterSSEs);
+	free(SseDrops);
 	free(clustersAffected);
 
     //TODO: globaali k-means  
@@ -2211,7 +2211,7 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
 
     if (createCsv)
     {
-        updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, sseCsvFile, iterationCount);
+        updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, csvFile, iterationCount);
     }
 
     return finalResultMse;
@@ -2246,8 +2246,8 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
     size_t initialClusterToSplit = 0;
     splitClusterIntraCluster(dataPoints, centroids, initialClusterToSplit, maxIterations, groundTruth);
 
-	SseList[0] = calculateClusterMSE(dataPoints, centroids, 0);
-    SseList[1] = calculateClusterMSE(dataPoints, centroids, 1);
+	SseList[0] = calculateClusterSSE(dataPoints, centroids, 0);
+    SseList[1] = calculateClusterSSE(dataPoints, centroids, 1);
 
     //Repeat until we have K clusters
     for (size_t i = 2; centroids->size < maxCentroids; ++i)
@@ -2315,8 +2315,8 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
 
 		//Step 3: Update the SSE list
         // Recalculate MSE for the affected clusters
-        SseList[clusterToSplit] = calculateClusterMSE(dataPoints, centroids, clusterToSplit);
-        SseList[centroids->size - 1] = calculateClusterMSE(dataPoints, centroids, centroids->size - 1);
+        SseList[clusterToSplit] = calculateClusterSSE(dataPoints, centroids, clusterToSplit);
+        SseList[centroids->size - 1] = calculateClusterSSE(dataPoints, centroids, centroids->size - 1);
         
         /*if (centroids->size == maxCentroids - 1) {
             writeCentroidsToFile("Bisecting_lastStep_centroids.txt", centroids);
@@ -2650,7 +2650,7 @@ void runRandomSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTrut
  * @param outputDirectory The directory where the results file is located.
  * @param splitType The type of split to perform (0 = intra-cluster, 1 = global, 2 = local repartition).
  */
-void runMseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, int splitType, bool trackProgress, bool trackTime)
+void runSseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, int splitType, bool trackProgress, bool trackTime)
 {
     Statistics stats;
     initializeStatistics(&stats);
@@ -2681,7 +2681,7 @@ void runMseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, 
 
         generateRandomCentroids(centroids.size, dataPoints, &centroids);
 
-        double resultMse = runMseSplit(dataPoints, &centroids, numCentroids, maxIterations, groundTruth, splitType, outputDirectory, (i == 0 && trackProgress), timeList, &timeIndex, start, trackTime, trackProgress);
+        double resultMse = runSseSplit(dataPoints, &centroids, numCentroids, maxIterations, groundTruth, splitType, outputDirectory, (i == 0 && trackProgress), timeList, &timeIndex, start, trackTime, trackProgress);
 
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
@@ -2737,7 +2737,7 @@ void runMseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, 
         }
         for (size_t i = 0; i < timeIndex; ++i)
         {
-            fprintf(timesFilePtr, "%.5f\n", timeList[i]);
+            fprintf(timesFilePtr, "%.0f\n", timeList[i]);
         }
         fclose(timesFilePtr);
         setlocale(LC_NUMERIC, "C");
@@ -2918,10 +2918,10 @@ int main()
     createUniqueDirectory(outputDirectory, sizeof(outputDirectory));
 
     //TODO: muista laittaa loopin rajat oikein
-    for (size_t i = 0; i < 1; ++i)
+    for (size_t i = 6; i < 7; ++i)
     {
         //Settings
-        size_t loopCount = 10; // Number of loops to run the algorithms
+        size_t loopCount = 1000; // Number of loops to run the algorithms
         size_t scaling = 10000; // Scaling factor for the MSE values
 		size_t maxIterations = 1000; // Maximum number of iterations for the k-means algorithm //TODO lopulliseen 1000(?)
 		size_t maxRepeats = 10; // Maximum number of repeats for the repeated k-means algorithm //TODO lopulliseen 100(?)
@@ -2976,13 +2976,13 @@ int main()
             //runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory);
 
             // Run MSE Split (Intra-cluster)
-            //runMseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 0, trackProgress);
+            //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 0, trackProgress);
                         
             // Run MSE Split (Global)
-            //runMseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 1, trackProgress);
+            //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 1, trackProgress);
                         
             // Run MSE Split (Local Repartition)
-            runMseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 2, trackProgress, trackTime);
+            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 2, trackProgress, trackTime);
                         
             // Run Bisecting K-means
             //runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory);
