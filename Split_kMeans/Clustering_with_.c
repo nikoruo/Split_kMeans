@@ -1479,11 +1479,11 @@ static void updateTimeTracking(bool trackTime, clock_t start, double* timeList, 
     timeList[(*timeIndex)++] = iterDuration;
 }
 
-static void updateCsvLogging(bool createCsv, const DataPoints* dataPoints, const Centroids* centroids, const Centroids* groundTruth, const char* sseCsvFile, size_t iterationNumber)
+static void updateCsvLogging(bool createCsv, const DataPoints* dataPoints, const Centroids* centroids, const Centroids* groundTruth, const char* csvFile, size_t iterationNumber)
 {
     size_t currentCi = calculateCentroidIndex(centroids, groundTruth);
     double currentMse = calculateMSE(dataPoints, centroids); //TODO: SSE vai MSE?
-    appendLogCsv(sseCsvFile, iterationNumber, currentCi, currentMse);
+    appendLogCsv(csvFile, iterationNumber, currentCi, currentMse);
 }
 
 
@@ -1999,8 +1999,6 @@ ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, size_t cl
 double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, const Centroids* groundTruth, const char* outputDirectory,
     bool trackProgress, double* timeList, size_t* timeIndex, clock_t start, bool trackTime, bool createCsv)
 {
-    size_t localMaxIterations = 2;
-
     char csvFile[256];
     if (trackTime)
     {
@@ -2316,7 +2314,7 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
     char csvFile[256];
     if (trackTime)
     {
-        snprintf(csvFile, sizeof(csvFile), "%s/Bisecting_sse_log.csv", outputDirectory);
+        snprintf(csvFile, sizeof(csvFile), "%s/RandomSplit_sse_log.csv", outputDirectory);
 
         if (!fileExists(csvFile))
         {
