@@ -44,6 +44,7 @@
  * - Remember to update gtList, dataFiles and kNumList arrays with the correct information.
  * - Remember to set the "Settings" to desired levels before running the project.
  * - Future plans include adding more clustering algorithms and improving the performance of existing ones.
+ * - Some of the functions write to files using locale "fi_FI" to format numbers with commas and some with "C" to format numbers with dots. This was used to ensure compatibility with different systems (e.g., Excel and existing MATLAB).
  */
 
 //////////////
@@ -1438,7 +1439,7 @@ void writeIterationStats(const DataPoints* dataPoints, const Centroids* centroid
             handleFileError(outputFilePath);
             return;
         }
-        fprintf(statsFile, "Iteration,NumCentroids,MSE,CI,SplitCluster\n");
+        fprintf(statsFile, "Iteration;NumCentroids;MSE;CI;SplitCluster\n");
     }
     else {
         if (fopen_s(&statsFile, outputFilePath, "a") != 0) {
@@ -1448,11 +1449,34 @@ void writeIterationStats(const DataPoints* dataPoints, const Centroids* centroid
     }
 
     size_t ci = calculateCentroidIndex(centroids, groundTruth);
-    fprintf(statsFile, "%zu,%zu,%.5f,%zu,%zu\n",
+    fprintf(statsFile, "%zu;%zu;%.5f;%zu;%zu\n",
         iteration, centroids->size, mse, ci, splitCluster);
 
     fclose(statsFile);
 }
+
+static void trackProgressState(const DataPoints* dataPoints, const Centroids* centroids, const Centroids* groundTruth, size_t iteration, size_t clusterToSplit, size_t splitType, const char* outputDirectory)
+{
+    const char* splitTypeName = getSplitTypeName(splitType);
+    double currentMse = calculateMSE(dataPoints, centroids);
+    writeIterationStats(dataPoints, centroids, groundTruth, iteration, currentMse, clusterToSplit, outputDirectory, splitTypeName);
+    saveIterationState(dataPoints, centroids, iteration, outputDirectory, splitTypeName);
+}
+
+static void updateTimeTracking(bool trackTime, clock_t start, double* timeList, size_t* timeIndex)
+{
+    clock_t iterEnd = clock();
+    double iterDuration = ((double)(iterEnd - start)) / CLOCKS_PER_MS;
+    timeList[(*timeIndex)++] = iterDuration;
+}
+
+static void updateCsvLogging(bool createCsv, const DataPoints* dataPoints, const Centroids* centroids, const Centroids* groundTruth, const char* sseCsvFile, size_t iterationNumber)
+{
+    size_t currentCi = calculateCentroidIndex(centroids, groundTruth);
+    double currentSse = calculateSSE(dataPoints, centroids);
+    appendLogCsv(sseCsvFile, iterationNumber, currentCi, currentSse);
+}
+
 
 /**
  * @brief Runs the k-means algorithm on the given data points and centroids.
@@ -2021,8 +2045,6 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
     bool* clustersAffected = calloc(maxCentroids*2, sizeof(bool));
     handleMemoryError(clustersAffected);
 
-    clock_t iterEnd;
-	double iterDuration = 0.0;
     char sseCsvFile[256];    
     if (trackTime) 
     {
@@ -2034,30 +2056,21 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
             if (csvFile == NULL) {
                 handleFileError(sseCsvFile);
             }
-            fprintf(csvFile, "ci;centroids;sse\n");
+            fprintf(csvFile, "ci;iteration;sse\n");
             fclose(csvFile);
         }
 
-        iterEnd = clock();
-        iterDuration = ((double)(iterEnd - start)) / CLOCKS_PER_MS;
-        timeList[(*timeIndex)++] = iterDuration;
+        updateTimeTracking(trackTime, start, timeList, timeIndex);
     }
     
     if (trackProgress) //TODO: t‰m‰ tehd‰‰n nyt vain iteraatiolle 0. Halutaanko tehd‰ esim niin monta kertaa ett‰ CI=0 tmv?
     {
-        const char* splitTypeName = getSplitTypeName(splitType);
-        double initialMse = calculateMSE(dataPoints, centroids);
-        writeIterationStats(dataPoints, centroids, groundTruth, 0, initialMse, SIZE_MAX, outputDirectory, splitTypeName);
-        saveIterationState(dataPoints, centroids, 0, outputDirectory, splitTypeName);   
+        trackProgressState(dataPoints, centroids, groundTruth, 0, SIZE_MAX, splitType, outputDirectory);
     }
 
-    size_t currentCi = 0;
-    double currentSse = 0.0;
     if (createCsv)
     {
-        currentCi = calculateCentroidIndex(centroids, groundTruth);
-        currentSse = calculateSSE(dataPoints, centroids);
-        appendLogCsv(sseCsvFile, centroids->size, currentCi, currentSse);
+        updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, sseCsvFile, 0);
     }
 
     //Only 1 cluster, so no need for decision making
@@ -2066,24 +2079,17 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
 
     if (trackTime)
     {
-        iterEnd = clock();
-        iterDuration = ((double)(iterEnd - start)) / CLOCKS_PER_MS;
-        timeList[(*timeIndex)++] = iterDuration;
+        updateTimeTracking(trackTime, start, timeList, timeIndex);
     }
 
     if (createCsv)
     {
-        currentCi = calculateCentroidIndex(centroids, groundTruth);
-        currentSse = calculateSSE(dataPoints, centroids);
-        appendLogCsv(sseCsvFile, centroids->size, currentCi, currentSse);
+        updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, sseCsvFile, 1);
     }    
 
     if (trackProgress)
     {
-        const char* splitTypeName = getSplitTypeName(splitType);
-        double initialMse = calculateMSE(dataPoints, centroids);
-        writeIterationStats(dataPoints, centroids, groundTruth, 1, initialMse, SIZE_MAX, outputDirectory, splitTypeName);
-        saveIterationState(dataPoints, centroids, 1, outputDirectory, splitTypeName);
+        trackProgressState(dataPoints, centroids, groundTruth, 1, initialClusterToSplit, splitType, outputDirectory);
     }
 
     for (size_t i = 0; i < centroids->size; ++i)
@@ -2160,26 +2166,20 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
 
         if (trackTime)
         {
-            iterEnd = clock();
-            iterDuration = ((double)(iterEnd - start)) / CLOCKS_PER_MS;
-            timeList[(*timeIndex)++] = iterDuration;
+            updateTimeTracking(trackTime, start, timeList, timeIndex);
         }
 
         if (trackProgress)
         {
-            const char* splitTypeName = getSplitTypeName(splitType);
-            double initialMse = calculateMSE(dataPoints, centroids);
-            writeIterationStats(dataPoints, centroids, groundTruth, iterationCount, initialMse, SIZE_MAX, outputDirectory, splitTypeName);
-            saveIterationState(dataPoints, centroids, iterationCount, outputDirectory, splitTypeName);
-            iterationCount++;
+            trackProgressState(dataPoints, centroids, groundTruth, iterationCount, clusterToSplit, splitType, outputDirectory);
         }
         
         if (createCsv)
         {
-            currentCi = calculateCentroidIndex(centroids, groundTruth);
-            currentSse = calculateSSE(dataPoints, centroids);
-            appendLogCsv(sseCsvFile, centroids->size, currentCi, currentSse);
-        }        
+            updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, sseCsvFile, iterationCount);
+        }
+
+        iterationCount++;
         
         /*if (LOGGING >= 3 && splitType == 2)
         {
@@ -2201,24 +2201,17 @@ double runMseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
 
     if (trackTime)
     {
-        iterEnd = clock();
-        iterDuration = ((double)(iterEnd - start)) / CLOCKS_PER_SEC;
-        timeList[(*timeIndex)++] = iterDuration;
+        updateTimeTracking(trackTime, start, timeList, timeIndex);
     }
 
     if (trackProgress)
     {
-        const char* splitTypeName = getSplitTypeName(splitType);
-        writeIterationStats(dataPoints, centroids, groundTruth, iterationCount, finalResultMse, SIZE_MAX, outputDirectory, splitTypeName);
-        saveIterationState(dataPoints, centroids, iterationCount, outputDirectory, splitTypeName);
-        iterationCount++;
+        trackProgressState(dataPoints, centroids, groundTruth, iterationCount, SIZE_MAX, splitType, outputDirectory);
     }
 
     if (createCsv)
     {
-        currentCi = calculateCentroidIndex(centroids, groundTruth);
-        currentSse = calculateSSE(dataPoints, centroids);
-        appendLogCsv(sseCsvFile, centroids->size, currentCi, currentSse);
+        updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, sseCsvFile, iterationCount);
     }
 
     return finalResultMse;
@@ -2673,7 +2666,7 @@ void runMseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, 
     printf("%s\n", splitTypeName);
 
     //Tracker helpers
-    size_t totalIterations = loopCount * numCentroids;
+    size_t totalIterations = loopCount * numCentroids + loopCount;
     double* timeList = malloc(totalIterations * sizeof(double));
     handleMemoryError(timeList);
     size_t timeIndex = 0;
@@ -2734,7 +2727,7 @@ void runMseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, 
 
     if (trackTime)
     {
-        // Write iteration times to a new text file
+        setlocale(LC_NUMERIC, "fi_FI");
         char timesFile[256];
         snprintf(timesFile, sizeof(timesFile), "%s/times.txt", outputDirectory);
         FILE* timesFilePtr = fopen(timesFile, "w");
@@ -2747,6 +2740,7 @@ void runMseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, 
             fprintf(timesFilePtr, "%.5f\n", timeList[i]);
         }
         fclose(timesFilePtr);
+        setlocale(LC_NUMERIC, "C");
 
         free(timeList);
     }    
@@ -2894,6 +2888,7 @@ static void initializeLists(char** datasetList, char** gtList, size_t* kNumList,
 
 //TODO: "static " sellaisten funktioiden eteen jotka eiv‰t muuta mit‰‰n ja joita kutsutaan samasta tiedostosta?
 //TODO: koodin palastelu eri tiedostoihin
+//TODO: Osa tulostuksista k‰ytt‰‰ lokalea FI jolloin tiedostoon tulee pilkku, osa k‰ytt‰‰ lokalea C (eli kaikki miss‰ ei erikseen m‰‰ritelty) jolloin tulee piste
 
 //EXTRA: konsolikysymykset, kuten "do you want to run split k-means?" ja "do you want to run random swap?" jne?
 //      ja/vai/tai komentoriviargumentit, kuten "split k-means" ja "random swap" jne? (eli ett‰ voi ajaa suoraan powershellist‰)
@@ -2923,7 +2918,7 @@ int main()
     createUniqueDirectory(outputDirectory, sizeof(outputDirectory));
 
     //TODO: muista laittaa loopin rajat oikein
-    for (size_t i = 4; i < 6; ++i)
+    for (size_t i = 0; i < 1; ++i)
     {
         //Settings
         size_t loopCount = 10; // Number of loops to run the algorithms
