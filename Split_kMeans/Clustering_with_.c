@@ -1005,19 +1005,19 @@ const char* getAlgorithmName(size_t splitType)
     switch (splitType)
     {
     case 0:
-        return "Intra-cluster";
+        return "IntraCluster";
     case 1:
         return "Global";
     case 2:
-        return "Local repartition";
+        return "LocalRepartition";
 	case 3:
-        return "Random Swap";
+        return "RandomSwap";
 	case 4:
 		return "Bisecting";
 	case 5:
-		return "Random Swap";
+		return "RandomSplit";
     case 6:
-		return "K-Means";
+		return "KMeans";
     default:
         fprintf(stderr, "Error: Invalid split type provided\n");
         return NULL;
@@ -2022,7 +2022,7 @@ double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCe
 
     if (trackProgress) //TODO: t‰m‰ tehd‰‰n nyt vain iteraatiolle 0. Halutaanko tehd‰ esim niin monta kertaa ett‰ CI=0 tmv?
     {
-        trackProgressState(dataPoints, centroids, groundTruth, 0, SIZE_MAX, 6, outputDirectory);
+        trackProgressState(dataPoints, centroids, groundTruth, 0, SIZE_MAX, 5, outputDirectory);
     }
 
     if (createCsv)
@@ -2052,7 +2052,7 @@ double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCe
 
         if (trackProgress)
         {
-            trackProgressState(dataPoints, centroids, groundTruth, iterationCount, clusterToSplit, 6, outputDirectory);
+            trackProgressState(dataPoints, centroids, groundTruth, iterationCount, clusterToSplit, 5, outputDirectory);
         }
 
         if (createCsv)
@@ -2072,7 +2072,7 @@ double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCe
 
     if (trackProgress)
     {
-        trackProgressState(dataPoints, centroids, groundTruth, iterationCount, SIZE_MAX, 6, outputDirectory);
+        trackProgressState(dataPoints, centroids, groundTruth, iterationCount, SIZE_MAX, 5, outputDirectory);
     }
 
     if (createCsv)
@@ -2811,7 +2811,7 @@ void runRandomSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTrut
     {
         setlocale(LC_NUMERIC, "fi_FI");
         char timesFile[256];
-        snprintf(timesFile, sizeof(timesFile), "%s/RandomSwap_times.txt", outputDirectory, 6);
+        snprintf(timesFile, sizeof(timesFile), "%s/RandomSplit_times.txt", outputDirectory);
         FILE* timesFilePtr = fopen(timesFile, "w");
         if (timesFilePtr == NULL)
         {
