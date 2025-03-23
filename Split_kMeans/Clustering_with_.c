@@ -1545,9 +1545,10 @@ double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids
  * @param maxSwaps The maximum number of attempted swaps.
  * @return The best mean squared error (MSE) obtained during the swaps.
  */
-double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps, const Centroids* groundTruth)
+double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps, const Centroids* groundTruth, const char* outputDirectory,
+    bool trackProgress, double* timeList, size_t* timeIndex, clock_t start, bool trackTime, bool createCsv)
 {
-    double bestMse = DBL_MAX;
+    double bestSse = DBL_MAX;
     size_t kMeansIterations = 2;
     size_t numCentroids = centroids->size;
     size_t dimensions = centroids->points[0].dimensions;
@@ -1556,6 +1557,36 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps,
 
     double* backupAttributes = malloc(totalAttributes * sizeof(double));
     handleMemoryError(backupAttributes);
+
+    char csvFile[256];
+    if (trackTime)
+    {
+        snprintf(csvFile, sizeof(csvFile), "%s/RandomSwap_sse_log.csv", outputDirectory);
+
+        if (!fileExists(csvFile))
+        {
+            FILE* openCsvFile = fopen(csvFile, "w");
+            if (openCsvFile == NULL) {
+                handleFileError(csvFile);
+            }
+            fprintf(openCsvFile, "ci;iteration;sse\n");
+            fclose(openCsvFile);
+        }
+
+        updateTimeTracking(trackTime, start, timeList, timeIndex);
+    }
+
+    if (trackProgress) //TODO: t‰m‰ tehd‰‰n nyt vain iteraatiolle 0. Halutaanko tehd‰ esim niin monta kertaa ett‰ CI=0 tmv?
+    {
+        trackProgressState(dataPoints, centroids, groundTruth, 0, SIZE_MAX, 3, outputDirectory);
+    }
+
+    if (createCsv)
+    {
+        updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, csvFile, 0);
+    }
+
+    size_t iterationCount = 2; //Helper for tracking progress
 
     for (size_t i = 0; i < maxSwaps; ++i)
     {
@@ -1573,11 +1604,11 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps,
         memcpy(centroids->points[randomCentroidId].attributes, dataPoints->points[randomDataPointId].attributes, dimensions * sizeof(double));
         
         //K-means
-        double resultMse = runKMeans(dataPoints, kMeansIterations, centroids, groundTruth);
+        double resultSse = runKMeans(dataPoints, kMeansIterations, centroids, groundTruth);
 
         //If 1) MSE improves, we keep the change
         //if not, we reverse the swap
-        if (resultMse < bestMse)
+        if (resultSse < bestSse)
         {
             /*if (LOGGING >= 3)
             {
@@ -1585,7 +1616,22 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps,
                 printf("(RS) Round %zu: Best Centroid Index (CI): %zu and Best Sum-of-Squared Errors (MSE): %.5f\n", i + 1, centroidIndex, resultMse / 10000);
             }*/
             
-            bestMse = resultMse;
+            bestSse = resultSse;
+
+            if (trackTime)
+            {
+                updateTimeTracking(trackTime, start, timeList, timeIndex);
+            }
+
+            if (trackProgress)
+            {
+                trackProgressState(dataPoints, centroids, groundTruth, iterationCount, SIZE_MAX, 3, outputDirectory);
+            }
+
+            if (createCsv)
+            {
+                updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, csvFile, iterationCount);
+            }            
         }
         else
         {
@@ -1596,11 +1642,13 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps,
                 offset += dimensions;
             }
         }
+
+        iterationCount++;
     }
 
     free(backupAttributes);
 
-    return bestMse;
+    return bestSse;
 }
 
 /**
@@ -2002,8 +2050,7 @@ double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCe
     char csvFile[256];
     if (trackTime)
     {
-        const char* splitTypeName = getAlgorithmName(6);
-        snprintf(csvFile, sizeof(csvFile), "%s/%s_sse_log.csv", outputDirectory, splitTypeName);
+        snprintf(csvFile, sizeof(csvFile), "%s/RandomSplit_sse_log.csv", outputDirectory);
 
         if (!fileExists(csvFile))
         {
@@ -2314,7 +2361,7 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
     char csvFile[256];
     if (trackTime)
     {
-        snprintf(csvFile, sizeof(csvFile), "%s/RandomSplit_sse_log.csv", outputDirectory);
+        snprintf(csvFile, sizeof(csvFile), "%s/Bisecting_sse_log.csv", outputDirectory);
 
         if (!fileExists(csvFile))
         {
@@ -2667,13 +2714,22 @@ void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundT
  * @param fileName The name of the file to write the results to.
  * @param outputDirectory The directory where the results file is located.
  */
-void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxSwaps, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
+void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxSwaps, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, bool trackProgress, bool trackTime)
 {
     Statistics stats;
     initializeStatistics(&stats);
 
     clock_t start, end;
     double duration;
+
+    //Tracker helpers
+    size_t totalIterations = loopCount * maxSwaps;
+    double* timeList = malloc(totalIterations * sizeof(double));
+    handleMemoryError(timeList);
+    size_t timeIndex = 0;
+
+    bool savedZeroResults = false;
+    bool savedNonZeroResults = false;
 
     printf("Random swap\n");
 
@@ -2684,9 +2740,10 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth
         start = clock();
 
         generateRandomCentroids(numCentroids, dataPoints, &centroids);
+		if (trackProgress || trackTime) partitionStep(dataPoints, &centroids);
 
         // Random Swap
-        double resultMse = randomSwap(dataPoints, &centroids, maxSwaps, groundTruth);
+        double resultMse = randomSwap(dataPoints, &centroids, maxSwaps, groundTruth, outputDirectory, (i == 0 && trackProgress), timeList, &timeIndex, start, trackTime, trackProgress);
 
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
@@ -2702,10 +2759,26 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth
 
         //if (LOGGING >= 3) printf("Round %zu\n", i + 1);
 
-        if (i == 0)
+        if (centroidIndex != 0 && savedNonZeroResults == false)
         {
-            writeCentroidsToFile("randomSwap_centroids.txt", &centroids, outputDirectory);
-            writeDataPointPartitionsToFile("randomSwap_partitions.txt", dataPoints, outputDirectory);
+            char centroidsFile[256];
+            char partitionsFile[256];
+            snprintf(centroidsFile, sizeof(centroidsFile), "%RandomSwap_centroids_failed.txt");
+            snprintf(partitionsFile, sizeof(partitionsFile), "%RandomSwap_partitions_failed.txt");
+            writeCentroidsToFile(centroidsFile, &centroids, outputDirectory);
+            writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
+            savedNonZeroResults = true;
+        }
+        else if (centroidIndex == 0 && savedZeroResults == false)
+        {
+            char centroidsFile[256];
+            char partitionsFile[256];
+            snprintf(centroidsFile, sizeof(centroidsFile), "%RandomSwap_centroids_perfect.txt");
+            snprintf(partitionsFile, sizeof(partitionsFile), "%RandomSwap_partitions_perfect.txt");
+
+            writeCentroidsToFile(centroidsFile, &centroids, outputDirectory);
+            writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
+            savedZeroResults = true;
         }
 
         freeCentroids(&centroids);
@@ -2714,6 +2787,26 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth
     printStatistics("Random Swap", stats, loopCount, numCentroids, scaling);
 
     writeResultsToFile(fileName, stats, numCentroids, "Random swap", loopCount, scaling, outputDirectory);
+
+    if (trackTime)
+    {
+        setlocale(LC_NUMERIC, "fi_FI");
+        char timesFile[256];
+        snprintf(timesFile, sizeof(timesFile), "%s/RandomSwap_times.txt", outputDirectory);
+        FILE* timesFilePtr = fopen(timesFile, "w");
+        if (timesFilePtr == NULL)
+        {
+            handleFileError(timesFile);
+        }
+        for (size_t i = 0; i < timeIndex; ++i)
+        {
+            fprintf(timesFilePtr, "%.0f\n", timeList[i]);
+        }
+        fclose(timesFilePtr);
+        setlocale(LC_NUMERIC, "C");
+
+        free(timeList);
+    }
 }
 
 /**
@@ -3208,7 +3301,7 @@ int main()
             //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory);
 
             // Run Random Swap
-            //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory);
+            runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
             
             // Run Random Split
             runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
