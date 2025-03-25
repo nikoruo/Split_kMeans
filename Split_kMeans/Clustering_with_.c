@@ -2829,7 +2829,8 @@ void runRandomSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTrut
     double duration;
 
     //Tracker helpers
-    size_t totalIterations = loopCount * numCentroids + loopCount;
+	size_t failSafety = 0.5 * loopCount; //TODO: ei käytössä // Note: It may randomly choose a cluster with just 1 data point -> No split. I started with 0.1 multiplier, but 0.5 seems to be a good balance
+    size_t totalIterations = loopCount * numCentroids * 2 + loopCount;
     double* timeList = malloc(totalIterations * sizeof(double));
     handleMemoryError(timeList);
     size_t timeIndex = 0;
@@ -3245,7 +3246,7 @@ int main()
     for (size_t i = 0; i < 15; ++i)
     {
         //Settings
-        size_t loopCount = 1000; // Number of loops to run the algorithms
+        size_t loopCount = 100; // Number of loops to run the algorithms
         size_t scaling = 10000; // Scaling factor for the MSE values
 		size_t maxIterations = 1000; // Maximum number of iterations for the k-means algorithm //TODO lopulliseen 1000(?)
 		size_t maxRepeats = 10; // Maximum number of repeats for the repeated k-means algorithm //TODO lopulliseen 100(?)
@@ -3290,11 +3291,11 @@ int main()
             runKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory);
 
             // Run Repeated K-means
-			// Too slow to keep it enabled
+			// Note: Too slow to keep it enabled
             //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory);
 
             // Run Random Swap
-            runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
+            //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
             
             // Run Random Split
             runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
