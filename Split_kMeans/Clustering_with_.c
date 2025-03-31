@@ -2563,9 +2563,9 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
                 // Save the two new centroids
 				deepCopyDataPoint(&newCentroid1, &curr.centroids[0]);
                 deepCopyDataPoint(&newCentroid2, &curr.centroids[1]);
-
-				freeClusteringResult(&curr, 2);
             }
+
+            freeClusteringResult(&curr, 2);
         }
 
 		// Replace the old centroid with the new centroid1
