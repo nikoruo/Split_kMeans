@@ -672,7 +672,7 @@ Centroids readCentroids(const char* filename)
 }
 
 // Append a line with "iteration, numCentroids, sse" to a CSV file
-void appendLogCsv(const char* filePath, size_t numCentroids, size_t ci, double mse)
+void appendLogCsv(const char* filePath, size_t iteration, size_t ci, double mse)
 {
     setlocale(LC_NUMERIC, "fi_FI");
 
@@ -682,7 +682,7 @@ void appendLogCsv(const char* filePath, size_t numCentroids, size_t ci, double m
         return;
     }
     // Write time, number of centroids, centroid index (CI) and mse
-    fprintf(file, "%zu;%zu;%.0f\n", ci, numCentroids, mse);
+    fprintf(file, "%zu;%zu;%.0f\n", ci, iteration, mse);
     fclose(file);
     setlocale(LC_NUMERIC, "C");
 }
