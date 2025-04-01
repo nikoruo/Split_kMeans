@@ -2771,6 +2771,7 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth
             char partitionsFile[256];
             snprintf(centroidsFile, sizeof(centroidsFile), "%RandomSwap_centroids_failed.txt");
             snprintf(partitionsFile, sizeof(partitionsFile), "%RandomSwap_partitions_failed.txt");
+
             writeCentroidsToFile(centroidsFile, &centroids, outputDirectory);
             writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
             savedNonZeroResults = true;
@@ -2869,6 +2870,7 @@ void runRandomSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTrut
             char partitionsFile[256];
             snprintf(centroidsFile, sizeof(centroidsFile), "%RandomSplit_centroids_failed.txt");
             snprintf(partitionsFile, sizeof(partitionsFile), "%RandomSplit_partitions_failed.txt");
+
             writeCentroidsToFile(centroidsFile, &centroids, outputDirectory);
             writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
             savedNonZeroResults = true;
@@ -2915,7 +2917,7 @@ void runRandomSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTrut
  * @param outputDirectory The directory where the results file is located.
  * @param splitType The type of split to perform (0 = intra-cluster, 1 = global, 2 = local repartition).
  */
-void runSseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, int splitType, bool trackProgress, bool trackTime)
+void runSseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, size_t splitType, bool trackProgress, bool trackTime)
 {
     Statistics stats;
     initializeStatistics(&stats);
@@ -2967,6 +2969,7 @@ void runSseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, 
             char partitionsFile[256];
             snprintf(centroidsFile, sizeof(centroidsFile), "%s_centroids_failed.txt", splitTypeName);
             snprintf(partitionsFile, sizeof(partitionsFile), "%s_partitions_failed.txt", splitTypeName);
+            
             writeCentroidsToFile(centroidsFile, &centroids, outputDirectory);
             writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
             savedNonZeroResults = true;
@@ -2994,6 +2997,8 @@ void runSseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, 
     {
         writeTimeTrackingData(outputDirectory, splitType, timeList, timeIndex);
     }
+
+    free(timeList);
 }
 
 /**
@@ -3065,6 +3070,7 @@ void runBisectingKMeansAlgorithm(DataPoints* dataPoints, const Centroids* ground
             char partitionsFile[256];
             snprintf(centroidsFile, sizeof(centroidsFile), "%Bisecting_centroids_failed.txt");
             snprintf(partitionsFile, sizeof(partitionsFile), "%Bisecting_partitions_failed.txt");
+
             writeCentroidsToFile(centroidsFile, &centroids, outputDirectory);
             writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
             savedNonZeroResults = true;
@@ -3222,7 +3228,7 @@ int main()
         createDatasetDirectory(outputDirectory, fileName, datasetDirectory, sizeof(datasetDirectory));
 
         // Seeding the random number generator
-		srand((unsigned int)time(NULL) ^ (unsigned int)_getpid()); // Windows specific. Remove "^ (unsigned int)_getpid()" if not using Windows
+		srand((unsigned int)time(NULL));
 
         printf("Starting the process\n");
         printf("Dataset: %s\n", fileName);
