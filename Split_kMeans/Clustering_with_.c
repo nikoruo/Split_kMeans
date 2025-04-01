@@ -3192,13 +3192,14 @@ void runBisectingKMeansAlgorithm(DataPoints* dataPoints, const Centroids* ground
         end = clock();
         duration = ((double)(end - start)) / CLOCKS_PER_SEC;
         //if (LOGGING >= 3) printf("(Bisecting)Time taken: %.2f seconds\n\n", duration);
-        //printf("Sizeeeee %zu\n", centroids.size);
+
         size_t centroidIndex = calculateCentroidIndex(&centroids, groundTruth);
 
         stats.sseSum += resultMse;
         stats.ciSum += centroidIndex;
         stats.timeSum += duration;
         if (centroidIndex == 0) stats.successRate++;
+
         //printf("CI %zu\n", centroidIndex);
         //if (LOGGING >= 3) printf("Round %zu\n", i + 1);
 
@@ -3355,10 +3356,10 @@ int main()
 
     //TODO: muista laittaa loopin rajat oikein
 	// Modify this loop to run the algorithms on the desired datasets
-    for (size_t i = 0; i < 15; ++i)
+    for (size_t i = 6; i < 7; ++i)
     {
         //Settings
-        size_t loopCount = 100; // Number of loops to run the algorithms //todo lopulliseen 1000 vai 100? 1000 menee jumalattomasti aikaa
+        size_t loopCount = 1000; // Number of loops to run the algorithms //todo lopulliseen 1000 vai 100? 1000 menee jumalattomasti aikaa
         size_t scaling = 1; // Scaling factor for the printed values
 		size_t maxIterations = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
 		size_t maxRepeats = 10; // Maximum number of repeats for the repeated k-means algorithm //TODO lopulliseen 100(?)
@@ -3383,7 +3384,7 @@ int main()
 		srand((unsigned int)time(NULL) ^ (unsigned int)_getpid()); // Windows specific. Remove "^ (unsigned int)_getpid()" if not using Windows
 
         printf("Starting the process\n");
-        printf("Data file: %s\n", dataFile);
+        printf("Dataset: %s\n", fileName);
 
         size_t numDimensions = getNumDimensions(dataFile);
 
@@ -3414,16 +3415,16 @@ int main()
             //runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
 
             // Run MSE Split (Intra-cluster)
-            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 0, trackProgress, trackTime);
+            //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 0, trackProgress, trackTime);
                         
             // Run MSE Split (Global)
-            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 1, trackProgress, trackTime);
+            //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 1, trackProgress, trackTime);
                         
             // Run MSE Split (Local Repartition)
-            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 2, trackProgress, trackTime);
+            //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 2, trackProgress, trackTime);
                         
             // Run Bisecting K-means
-            runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
+            //runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
 
             // Clean up
             freeDataPoints(&dataPoints);
