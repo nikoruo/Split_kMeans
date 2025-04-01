@@ -423,7 +423,6 @@ void freeClusteringResult(ClusteringResult* result, size_t numCentroids)
      stats->successRate = 0.0;
  }
 
-
 //////////////
 // Helpers //
 ////////////
@@ -1108,6 +1107,70 @@ char* removeExtension(const char* filename) {
     return baseFileName;
 }
 
+/**
+ * @brief Initializes a CSV file for logging and returns the file path.
+ *
+ * This function creates a CSV file based on the algorithm type in the output directory.
+ * If the file does not exist, it creates the file and writes the header.
+ *
+ * @param splitType The type of algorithm used.
+ * @param outputDirectory The directory where the CSV file will be created.
+ * @param csvFilePath Buffer to store the created file path.
+ * @param csvFilePathSize Size of the csvFilePath buffer.
+ */
+void initializeCsvFile(size_t splitType, const char* outputDirectory, char* csvFilePath, size_t csvFilePathSize)
+{
+    const char* algorithmName = getAlgorithmName(splitType);
+    snprintf(csvFilePath, csvFilePathSize, "%s/%s_log.csv", outputDirectory, algorithmName);
+
+    if (!fileExists(csvFilePath))
+    {
+        FILE* csvFile = fopen(csvFilePath, "w");
+        if (csvFile == NULL) {
+            handleFileError(csvFilePath);
+        }
+        fprintf(csvFile, "%s\n", "ci;iteration;sse");
+        fclose(csvFile);
+    }
+}
+
+/**
+ * @brief Writes time tracking data to a file.
+ *
+ * This function writes the time tracking data collected during algorithm execution
+ * to a file for later analysis.
+ *
+ * @param outputDirectory The directory where the file will be created.
+ * @param splitType The algorithm type index.
+ * @param timeList An array containing the time data points.
+ * @param timeIndex The number of time data points in the array.
+ */
+void writeTimeTrackingData(const char* outputDirectory, size_t splitType, const double* timeList, size_t timeIndex)
+{
+    if (timeIndex == 0 || timeList == NULL)
+        return;
+
+    const char* algorithmName = getAlgorithmName(splitType);
+    
+    setlocale(LC_NUMERIC, "fi_FI");
+    char timesFile[256];
+    snprintf(timesFile, sizeof(timesFile), "%s/%s_times.txt", outputDirectory, algorithmName);
+
+    FILE* timesFilePtr = fopen(timesFile, "w");
+    if (timesFilePtr == NULL) {
+        handleFileError(timesFile);
+		return; //TODO: t‰‰ on periaatteessa turha, koska handleFileError lopettaa ohjelman. Mutta t‰n avulla saa warningit pois koska timefileprt ei voikaan olla null alhaalla
+    }
+
+    for (size_t i = 0; i < timeIndex; ++i) {
+        fprintf(timesFilePtr, "%.0f\n", timeList[i]);
+    }
+
+    fclose(timesFilePtr);
+    setlocale(LC_NUMERIC, "C");
+}
+
+
 /////////////////
 // Clustering //
 ///////////////
@@ -1559,7 +1622,7 @@ void writeIterationStats(const DataPoints* dataPoints, const Centroids* centroid
             handleFileError(outputFilePath);
             return;
         }
-        fprintf(statsFile, "Iteration;NumCentroids;MSE;CI;SplitCluster\n");
+        fprintf(statsFile, "Iteration;NumCentroids;SSE;CI;SplitCluster\n");
     }
     else {
         if (fopen_s(&statsFile, outputFilePath, "a") != 0) {
@@ -1597,6 +1660,26 @@ static void updateCsvLogging(bool createCsv, const DataPoints* dataPoints, const
     appendLogCsv(csvFile, iterationNumber, currentCi, currentMse);
 }
 
+static void handleLoggingAndTracking(bool trackTime, clock_t start, double* timeList, size_t* timeIndex, bool trackProgress, const DataPoints* dataPoints,
+    const Centroids* centroids, const Centroids* groundTruth, size_t iterationCount, const char* outputDirectory, bool createCsv, FILE* csvFile,
+    size_t clusterToSplit, size_t splitType)
+{
+    if (trackTime)
+    {
+        updateTimeTracking(trackTime, start, timeList, timeIndex);
+    }
+
+    //TODO: t‰m‰ tehd‰‰n nyt vain iteraatiolle 0. Halutaanko tehd‰ esim niin monta kertaa ett‰ CI=0 tmv? Tai kommentoida kokonaan pois?
+    if (trackProgress)
+    {
+        trackProgressState(dataPoints, centroids, groundTruth, iterationCount, clusterToSplit, splitType, outputDirectory);
+    }
+
+    if (createCsv)
+    {
+        updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, csvFile, iterationCount);
+    }
+}
 
 /**
  * @brief Runs the k-means algorithm on the given data points and centroids.
@@ -1670,34 +1753,16 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps,
     handleMemoryError(backupAttributes);
 
     char csvFile[256];
-    if (trackTime)
-    {
-        snprintf(csvFile, sizeof(csvFile), "%s/RandomSwap_log.csv", outputDirectory);
-
-        if (!fileExists(csvFile))
-        {
-            FILE* openCsvFile = fopen(csvFile, "w");
-            if (openCsvFile == NULL) {
-                handleFileError(csvFile);
-            }
-            fprintf(openCsvFile, "ci;iteration;mse\n");
-            fclose(openCsvFile);
-        }
-
-        updateTimeTracking(trackTime, start, timeList, timeIndex);
-    }
-
-    if (trackProgress) //TODO: t‰m‰ tehd‰‰n nyt vain iteraatiolle 0. Halutaanko tehd‰ esim niin monta kertaa ett‰ CI=0 tmv?
-    {
-        trackProgressState(dataPoints, centroids, groundTruth, 0, SIZE_MAX, 3, outputDirectory);
-    }
-
     if (createCsv)
     {
-        updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, csvFile, 0);
+        initializeCsvFile(3, outputDirectory, csvFile, sizeof(csvFile));
+
     }
 
-    size_t iterationCount = 2; //Helper for tracking progress
+    handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
+        dataPoints, centroids, groundTruth, 0, outputDirectory, createCsv, csvFile, SIZE_MAX, 3);
+
+    size_t iterationCount = 1; //Helper for tracking progress
 
     for (size_t i = 0; i < maxSwaps; ++i)
     {
@@ -1729,20 +1794,8 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps,
             
             bestSse = resultSse;
 
-            if (trackTime)
-            {
-                updateTimeTracking(trackTime, start, timeList, timeIndex);
-            }
-
-            if (trackProgress)
-            {
-                trackProgressState(dataPoints, centroids, groundTruth, iterationCount, SIZE_MAX, 3, outputDirectory);
-            }
-
-            if (createCsv)
-            {
-                updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, csvFile, iterationCount);
-            }            
+            handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
+                dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, 3);
         }
         else
         {
@@ -2158,34 +2211,15 @@ double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCe
     bool trackProgress, double* timeList, size_t* timeIndex, clock_t start, bool trackTime, bool createCsv)
 {
     char csvFile[256];
-    if (trackTime)
-    {
-        snprintf(csvFile, sizeof(csvFile), "%s/RandomSplit_log.csv", outputDirectory);
-
-        if (!fileExists(csvFile))
-        {
-            FILE* openCsvFile = fopen(csvFile, "w");
-            if (openCsvFile == NULL) {
-                handleFileError(csvFile);
-            }
-            fprintf(openCsvFile, "ci;iteration;mse\n");
-            fclose(openCsvFile);
-        }
-
-        updateTimeTracking(trackTime, start, timeList, timeIndex);
-    }
-
-    if (trackProgress) //TODO: t‰m‰ tehd‰‰n nyt vain iteraatiolle 0. Halutaanko tehd‰ esim niin monta kertaa ett‰ CI=0 tmv?
-    {
-        trackProgressState(dataPoints, centroids, groundTruth, 0, SIZE_MAX, 5, outputDirectory);
-    }
-
     if (createCsv)
     {
-        updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, csvFile, 0);
+        initializeCsvFile(5, outputDirectory, csvFile, sizeof(csvFile));
     }
 
-    size_t iterationCount = 2; //Helper for tracking progress
+    handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
+        dataPoints, centroids, groundTruth, 0, outputDirectory, createCsv, csvFile, SIZE_MAX, 5);
+
+    size_t iterationCount = 1; //Helper for tracking progress
 
     while(centroids->size < maxCentroids)
     {
@@ -2200,40 +2234,16 @@ double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCe
             printf("(RandomSplit) Number of centroids: %zu, CI: %zu, and MSE: %.5f \n", centroids->size, ci, mse / 10000);
         }*/
 
-        if (trackTime)
-        {
-            updateTimeTracking(trackTime, start, timeList, timeIndex);
-        }
-
-        if (trackProgress)
-        {
-            trackProgressState(dataPoints, centroids, groundTruth, iterationCount, clusterToSplit, 5, outputDirectory);
-        }
-
-        if (createCsv)
-        {
-            updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, csvFile, iterationCount);
-        }
+        handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
+            dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, clusterToSplit, 5);
 
 		iterationCount++;
     }	
  
     double finalResultMse = runKMeans(dataPoints, maxIterations, centroids, groundTruth);
 
-    if (trackTime)
-    {
-        updateTimeTracking(trackTime, start, timeList, timeIndex);
-    }
-
-    if (trackProgress)
-    {
-        trackProgressState(dataPoints, centroids, groundTruth, iterationCount, SIZE_MAX, 5, outputDirectory);
-    }
-
-    if (createCsv)
-    {
-        updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, csvFile, iterationCount);
-    }
+    handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
+        dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, 5);
 
     return finalResultMse;
 }
@@ -2272,52 +2282,20 @@ double runSseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
     handleMemoryError(clustersAffected);
 
     char csvFile[256];    
-    if (trackTime) 
-    {
-        const char* splitTypeName = getAlgorithmName(splitType);
-        snprintf(csvFile, sizeof(csvFile), "%s/%s_log.csv", outputDirectory, splitTypeName);
-
-        if (!fileExists(csvFile))
-        {
-            FILE* openCsvFile = fopen(csvFile, "w");
-            if (openCsvFile == NULL) {
-                handleFileError(csvFile);
-            }
-            fprintf(openCsvFile, "ci;iteration;mse\n");
-            fclose(openCsvFile);
-        }
-
-        updateTimeTracking(trackTime, start, timeList, timeIndex);
-    }
-    
-    if (trackProgress) //TODO: t‰m‰ tehd‰‰n nyt vain iteraatiolle 0. Halutaanko tehd‰ esim niin monta kertaa ett‰ CI=0 tmv?
-    {
-        trackProgressState(dataPoints, centroids, groundTruth, 0, SIZE_MAX, splitType, outputDirectory);
-    }
-
     if (createCsv)
     {
-        updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, csvFile, 0);
+        initializeCsvFile(splitType, outputDirectory, csvFile, sizeof(csvFile));
     }
+
+    handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
+        dataPoints, centroids, groundTruth, 0, outputDirectory, createCsv, csvFile, SIZE_MAX, splitType);
 
     //Only 1 cluster, so no need for decision making
     size_t initialClusterToSplit = 0;
     splitClusterIntraCluster(dataPoints, centroids, initialClusterToSplit, iterations, groundTruth);
 
-    if (trackTime)
-    {
-        updateTimeTracking(trackTime, start, timeList, timeIndex);
-    }
-
-    if (createCsv)
-    {
-        updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, csvFile, 1);
-    }    
-
-    if (trackProgress)
-    {
-        trackProgressState(dataPoints, centroids, groundTruth, 1, initialClusterToSplit, splitType, outputDirectory);
-    }
+    handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
+        dataPoints, centroids, groundTruth, 1, outputDirectory, createCsv, csvFile, initialClusterToSplit, splitType);
 
     for (size_t i = 0; i < centroids->size; ++i)
     {
@@ -2391,20 +2369,8 @@ double runSseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
             memset(clustersAffected, 0, (maxCentroids * 2) * sizeof(bool));
         }
 
-        if (trackTime)
-        {
-            updateTimeTracking(trackTime, start, timeList, timeIndex);
-        }
-
-        if (trackProgress)
-        {
-            trackProgressState(dataPoints, centroids, groundTruth, iterationCount, clusterToSplit, splitType, outputDirectory);
-        }
-        
-        if (createCsv)
-        {
-            updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, csvFile, iterationCount);
-        }
+        handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
+            dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, clusterToSplit, splitType);
 
         iterationCount++;
         
@@ -2425,20 +2391,8 @@ double runSseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
  
     double finalResultMse = runKMeans(dataPoints, maxIterations, centroids, groundTruth);
 
-    if (trackTime)
-    {
-        updateTimeTracking(trackTime, start, timeList, timeIndex);
-    }
-
-    if (trackProgress)
-    {
-        trackProgressState(dataPoints, centroids, groundTruth, iterationCount, SIZE_MAX, splitType, outputDirectory);
-    }
-
-    if (createCsv)
-    {
-        updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, csvFile, iterationCount);
-    }
+    handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
+        dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, splitType);
 
     return finalResultMse;
 }
@@ -2470,32 +2424,13 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
     DataPoint newCentroid2 = allocateDataPoint(dataPoints->points[0].dimensions);
 
     char csvFile[256];
-    if (trackTime)
-    {
-        snprintf(csvFile, sizeof(csvFile), "%s/Bisecting_log.csv", outputDirectory);
-
-        if (!fileExists(csvFile))
-        {
-            FILE* openCsvFile = fopen(csvFile, "w");
-            if (openCsvFile == NULL) {
-                handleFileError(csvFile);
-            }
-            fprintf(openCsvFile, "ci;iteration;mse\n");
-            fclose(openCsvFile);
-        }
-
-        updateTimeTracking(trackTime, start, timeList, timeIndex);
-    }
-
-    if (trackProgress) //TODO: t‰m‰ tehd‰‰n nyt vain iteraatiolle 0. Halutaanko tehd‰ esim niin monta kertaa ett‰ CI=0 tmv?
-    {
-        trackProgressState(dataPoints, centroids, groundTruth, 0, SIZE_MAX, 4, outputDirectory);
-    }
-
     if (createCsv)
     {
-        updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, csvFile, 0);
+        initializeCsvFile(4, outputDirectory, csvFile, sizeof(csvFile));
     }
+
+    handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
+        dataPoints, centroids, groundTruth, 0, outputDirectory, createCsv, csvFile, SIZE_MAX, 4);
 
 	//Step 0: Only 1 cluster, so no need for decision making
     size_t initialClusterToSplit = 0;
@@ -2504,20 +2439,8 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
 	SseList[0] = calculateClusterSSE(dataPoints, centroids, 0);
     SseList[1] = calculateClusterSSE(dataPoints, centroids, 1);
 
-    if (trackTime)
-    {
-        updateTimeTracking(trackTime, start, timeList, timeIndex);
-    }
-
-    if (trackProgress)
-    {
-        trackProgressState(dataPoints, centroids, groundTruth, 1, initialClusterToSplit, 4, outputDirectory);
-    }
-
-    if (createCsv)
-    {
-        updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, csvFile, 1);
-    }
+    handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
+        dataPoints, centroids, groundTruth, 1, outputDirectory, createCsv, csvFile, initialClusterToSplit, 4);
 
     size_t iterationCount = 2; //Helper for tracking progress
 
@@ -2597,20 +2520,8 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
 
         bestSse = DBL_MAX;
 
-        if (trackTime)
-        {
-            updateTimeTracking(trackTime, start, timeList, timeIndex);
-        }
-
-        if (trackProgress)
-        {
-            trackProgressState(dataPoints, centroids, groundTruth, iterationCount, clusterToSplit, 4, outputDirectory);
-        }
-
-        if (createCsv)
-        {
-            updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, csvFile, iterationCount);
-        }
+        handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
+            dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, clusterToSplit, 4);
 
         iterationCount++;
     }
@@ -2618,21 +2529,9 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
 	//Step 4: Run the final k-means
     double finalResultMse = runKMeans(dataPoints, maxIterations, centroids, groundTruth); //TODO: Pit‰isikˆ poistaa? Final K-means ei taida olla algoritmia
     //printf("size  %zu\n", centroids->size);
-    
-    if (trackTime)
-    {
-        updateTimeTracking(trackTime, start, timeList, timeIndex);
-    }
 
-    if (trackProgress)
-    {
-        trackProgressState(dataPoints, centroids, groundTruth, iterationCount, SIZE_MAX, 4, outputDirectory);
-    }
-
-    if (createCsv)
-    {
-        updateCsvLogging(createCsv, dataPoints, centroids, groundTruth, csvFile, iterationCount);
-    }
+    handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
+        dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, 4);
     
     // Cleanup
     free(SseList);
@@ -2847,7 +2746,7 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth
         start = clock();
 
         generateRandomCentroids(numCentroids, dataPoints, &centroids);
-		if (trackProgress || trackTime) partitionStep(dataPoints, &centroids);
+		if (trackProgress) partitionStep(dataPoints, &centroids);
 
         // Random Swap
         double resultMse = randomSwap(dataPoints, &centroids, maxSwaps, groundTruth, outputDirectory, (i == 0 && trackProgress), timeList, &timeIndex, start, trackTime, trackProgress);
@@ -2895,25 +2794,12 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth
 
     writeResultsToFile(fileName, stats, numCentroids, "Random swap", loopCount, scaling, outputDirectory, dataPoints->size);
 
-    if (trackTime)
+    if (trackTime) 
     {
-        setlocale(LC_NUMERIC, "fi_FI");
-        char timesFile[256];
-        snprintf(timesFile, sizeof(timesFile), "%s/RandomSwap_times.txt", outputDirectory);
-        FILE* timesFilePtr = fopen(timesFile, "w");
-        if (timesFilePtr == NULL)
-        {
-            handleFileError(timesFile);
-        }
-        for (size_t i = 0; i < timeIndex; ++i)
-        {
-            fprintf(timesFilePtr, "%.0f\n", timeList[i]);
-        }
-        fclose(timesFilePtr);
-        setlocale(LC_NUMERIC, "C");
-
-        free(timeList);
+        writeTimeTrackingData(outputDirectory, 3, timeList, timeIndex);
     }
+
+    free(timeList);
 }
 
 /**
@@ -3005,25 +2891,10 @@ void runRandomSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTrut
     printStatistics("Random Split", stats, loopCount, numCentroids, scaling, dataPoints->size);
 
     writeResultsToFile(fileName, stats, numCentroids, "Random Split", loopCount, scaling, outputDirectory, dataPoints->size);
-
-    if (trackTime)
+    
+    if (trackTime) 
     {
-        setlocale(LC_NUMERIC, "fi_FI");
-        char timesFile[256];
-        snprintf(timesFile, sizeof(timesFile), "%s/RandomSplit_times.txt", outputDirectory);
-        FILE* timesFilePtr = fopen(timesFile, "w");
-        if (timesFilePtr == NULL)
-        {
-            handleFileError(timesFile);
-        }
-        for (size_t i = 0; i < timeIndex; ++i)
-        {
-            fprintf(timesFilePtr, "%.0f\n", timeList[i]);
-        }
-        fclose(timesFilePtr);
-        setlocale(LC_NUMERIC, "C");
-
-        free(timeList);
+        writeTimeTrackingData(outputDirectory, 5, timeList, timeIndex);
     }
 }
 
@@ -3121,22 +2992,7 @@ void runSseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, 
 
     if (trackTime)
     {
-        setlocale(LC_NUMERIC, "fi_FI");
-        char timesFile[256];
-        snprintf(timesFile, sizeof(timesFile), "%s/%s_times.txt", outputDirectory, splitTypeName);
-        FILE* timesFilePtr = fopen(timesFile, "w");
-        if (timesFilePtr == NULL)
-        {
-            handleFileError(timesFile);
-        }
-        for (size_t i = 0; i < timeIndex; ++i)
-        {
-            fprintf(timesFilePtr, "%.0f\n", timeList[i]);
-        }
-        fclose(timesFilePtr);
-        setlocale(LC_NUMERIC, "C");
-
-        free(timeList);
+        writeTimeTrackingData(outputDirectory, splitType, timeList, timeIndex);
     }
 }
 
@@ -3234,22 +3090,7 @@ void runBisectingKMeansAlgorithm(DataPoints* dataPoints, const Centroids* ground
 
     if (trackTime)
     {
-        setlocale(LC_NUMERIC, "fi_FI");
-        char timesFile[256];
-        snprintf(timesFile, sizeof(timesFile), "%s/Bisecting_times.txt", outputDirectory);
-        FILE* timesFilePtr = fopen(timesFile, "w");
-        if (timesFilePtr == NULL)
-        {
-            handleFileError(timesFile);
-        }
-        for (size_t i = 0; i < timeIndex; ++i)
-        {
-            fprintf(timesFilePtr, "%.0f\n", timeList[i]);
-        }
-        fclose(timesFilePtr);
-        setlocale(LC_NUMERIC, "C");
-
-        free(timeList);
+        writeTimeTrackingData(outputDirectory, 4, timeList, timeIndex);
     }
 }
 
@@ -3359,7 +3200,7 @@ int main()
     for (size_t i = 6; i < 7; ++i)
     {
         //Settings
-        size_t loopCount = 1000; // Number of loops to run the algorithms //todo lopulliseen 1000 vai 100? 1000 menee jumalattomasti aikaa
+        size_t loopCount = 2; // Number of loops to run the algorithms //todo lopulliseen 1000 vai 100? 1000 menee jumalattomasti aikaa
         size_t scaling = 1; // Scaling factor for the printed values
 		size_t maxIterations = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
 		size_t maxRepeats = 10; // Maximum number of repeats for the repeated k-means algorithm //TODO lopulliseen 100(?)
@@ -3409,22 +3250,22 @@ int main()
             //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory);
 
             // Run Random Swap
-            //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
+            runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
             
             // Run Random Split
             //runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
 
             // Run MSE Split (Intra-cluster)
-            //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 0, trackProgress, trackTime);
+            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 0, trackProgress, trackTime);
                         
             // Run MSE Split (Global)
-            //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 1, trackProgress, trackTime);
+            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 1, trackProgress, trackTime);
                         
             // Run MSE Split (Local Repartition)
-            //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 2, trackProgress, trackTime);
+            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 2, trackProgress, trackTime);
                         
             // Run Bisecting K-means
-            //runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
+            runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
 
             // Clean up
             freeDataPoints(&dataPoints);
