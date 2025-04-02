@@ -2170,15 +2170,6 @@ ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, size_t cl
     // k-means
     localResult.mse = runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, groundTruth);
 
-    // Calculate combined MSE of the two clusters
-    //TODO: WithSize vai ilman? Eli koko datasetin mukaan vai pelk‰st‰‰n clusterin mukaan?
-    //      Jos withSize, niin t‰t‰h‰n ei edes tarvita, resultMse on sama?
-    //      vai vaan SSE instead of MSE? <-nykytilanne
-    double newClusterMSE = calculateSSEWithSize(&pointsInCluster, &localCentroids, dataPoints->size);
-
-    // Calculate the MSE drop
-    //localResult.mse = newClusterMSE;
-
 	deepCopyDataPoint(&localResult.centroids[0], &localCentroids.points[0]);
     deepCopyDataPoint(&localResult.centroids[1], &localCentroids.points[1]);
 
@@ -3195,14 +3186,14 @@ int main()
 
     //TODO: muista laittaa loopin rajat oikein
 	// Modify this loop to run the algorithms on the desired datasets
-    for (size_t i = 0; i < 15; ++i)
+    for (size_t i = 0; i < 8; ++i)
     {
         //Settings
         size_t loopCount = 1000; // Number of loops to run the algorithms //todo lopulliseen 1000 vai 100? 1000 menee jumalattomasti aikaa
         size_t scaling = 1; // Scaling factor for the printed values
 		size_t maxIterations = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
 		size_t maxRepeats = 10; // Maximum number of repeats for the repeated k-means algorithm //TODO lopulliseen 100(?)
-		size_t maxSwaps = 100; // Maximum number of swaps for the random swap algorithm //TODO lopulliseen 1000(?)
+		size_t maxSwaps = 1000; // Maximum number of swaps for the random swap algorithm //TODO lopulliseen 1000(?) vai 5000? Vai datasetin koon verran?
 		size_t bisectingIterations = 5; // Number of tryouts for the bisecting k-means algorithm
 		bool trackProgress = true; // Track progress of the algorithms
 		bool trackTime = true; // Track time of the algorithms
@@ -3249,7 +3240,7 @@ int main()
             //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory);
 
             // Run Random Swap
-            runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
+            //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
             
             // Run Random Split
             //runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
@@ -3264,7 +3255,7 @@ int main()
             //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 2, trackProgress, trackTime);
                         
             // Run Bisecting K-means
-            //runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime, bisectingIterations);
+            runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime, bisectingIterations);
 
             // Clean up
             freeDataPoints(&dataPoints);
