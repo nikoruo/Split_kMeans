@@ -3116,6 +3116,10 @@ static void initializeLists(char** datasetList, char** gtList, size_t* kNumList,
     strcpy_s(datasetList[12], 20, "dim064.txt");
     strcpy_s(datasetList[13], 20, "g2-1-10.txt");
     strcpy_s(datasetList[14], 20, "g2-1-20.txt");
+    strcpy_s(datasetList[15], 20, "n1.txt");
+    strcpy_s(datasetList[16], 20, "n2.txt");
+    strcpy_s(datasetList[17], 20, "worms_2d.txt");
+    strcpy_s(datasetList[18], 20, "worms_64d.txt");
 
     strcpy_s(gtList[0], 20, "a1-ga-cb.txt");
     strcpy_s(gtList[1], 20, "a2-ga-cb.txt");
@@ -3132,6 +3136,10 @@ static void initializeLists(char** datasetList, char** gtList, size_t* kNumList,
     strcpy_s(gtList[12], 20, "dim064.txt");
     strcpy_s(gtList[13], 20, "g2-1-10-gt.txt");
     strcpy_s(gtList[14], 20, "g2-1-20-gt.txt");
+    strcpy_s(gtList[15], 20, "n1-gt.txt");
+    strcpy_s(gtList[16], 20, "n2-gt.txt");
+    strcpy_s(gtList[17], 20, "worms_2d-gt.txt");
+    strcpy_s(gtList[18], 20, "worms_64d-gt.txt");
 
     kNumList[0] = 20;   // A1
     kNumList[1] = 35;   // A2
@@ -3148,6 +3156,11 @@ static void initializeLists(char** datasetList, char** gtList, size_t* kNumList,
     kNumList[12] = 16;  // Dim (high)
     kNumList[13] = 2;   // G2
     kNumList[14] = 2;   // G2
+    kNumList[15] = 3;   // N3 (n1)
+    kNumList[16] = 6;   // N6 (n2)
+    kNumList[17] = 35;  // Worms 2d
+	kNumList[18] = 25;  // Worms 64d
+
 }
 
 //END: disabloi false positive varoitukset kommenttien kera
@@ -3172,7 +3185,7 @@ static void initializeLists(char** datasetList, char** gtList, size_t* kNumList,
 int main()
 {
 	// Number of datasets
-    size_t datasetCount = 15;
+    size_t datasetCount = 19;
 
     // List of dataset file names, ground truth file names, and number of clusters
     const char** datasetList = createStringList(datasetCount);
@@ -3186,14 +3199,14 @@ int main()
 
     //TODO: muista laittaa loopin rajat oikein
 	// Modify this loop to run the algorithms on the desired datasets
-    for (size_t i = 0; i < 8; ++i)
+    for (size_t i = 8; i < 11; ++i)
     {
         //Settings
-        size_t loopCount = 1000; // Number of loops to run the algorithms //todo lopulliseen 1000 vai 100? 1000 menee jumalattomasti aikaa
+        size_t loopCount = 1; // Number of loops to run the algorithms //todo lopulliseen 1000 vai 100? 1000 menee jumalattomasti aikaa
         size_t scaling = 1; // Scaling factor for the printed values
 		size_t maxIterations = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
-		size_t maxRepeats = 10; // Maximum number of repeats for the repeated k-means algorithm //TODO lopulliseen 100(?)
-		size_t maxSwaps = 1000; // Maximum number of swaps for the random swap algorithm //TODO lopulliseen 1000(?) vai 5000? Vai datasetin koon verran?
+		size_t maxRepeats = 1; // Maximum number of repeats for the repeated k-means algorithm //TODO lopulliseen 100(?)
+		size_t maxSwaps = 100000; // Maximum number of swaps for the random swap algorithm //TODO lopulliseen 1000(?) vai 5000? Vai datasetin koon verran?
 		size_t bisectingIterations = 5; // Number of tryouts for the bisecting k-means algorithm
 		bool trackProgress = true; // Track progress of the algorithms
 		bool trackTime = true; // Track time of the algorithms
@@ -3234,28 +3247,31 @@ int main()
 
             // Run K-means
             //runKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory);
-
+            
+            loopCount = 3;
             // Run Repeated K-means
 			// Note: Too slow to keep it enabled
-            //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory);
-
+            runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory);
+            
+            loopCount = 1;
             // Run Random Swap
             //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
-            
+            loopCount = 1000;
+
             // Run Random Split
             //runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
 
             // Run MSE Split (Intra-cluster)
             //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 0, trackProgress, trackTime);
-                        
+
             // Run MSE Split (Global)
             //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 1, trackProgress, trackTime);
-                        
+
             // Run MSE Split (Local Repartition)
             //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 2, trackProgress, trackTime);
                         
             // Run Bisecting K-means
-            runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime, bisectingIterations);
+            //runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime, bisectingIterations);
 
             // Clean up
             freeDataPoints(&dataPoints);
