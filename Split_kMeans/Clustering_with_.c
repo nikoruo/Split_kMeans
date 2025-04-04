@@ -447,7 +447,9 @@ void freeClusteringResult(ClusteringResult* result, size_t numCentroids)
 
      /*if (point1->dimensions != point2->dimensions)
      {
-         fprintf(stderr, "Error: Data points have different dimensions in calculateSquaredEuclideanDistance\n");
+         fprintf(stderr, "Error: Dimension mismatch in calculateSquaredEuclideanDistance\n");
+         fprintf(stderr, "Point 1 has %zu dimensions, Point 2 has %zu dimensions\n",
+             point1->dimensions, point2->dimensions);
          exit(EXIT_FAILURE);
      }*/
 
@@ -565,77 +567,81 @@ DataPoints readDataPoints(const char* filename)
         handleFileError(filename);
     }
 
+    // First pass to count actual lines in the file
+    size_t lineCount = 0;
+    char countBuffer[1024];
+    while (fgets(countBuffer, sizeof(countBuffer), file) != NULL) {
+        // Skip empty lines
+        if (strlen(countBuffer) > 1) { // More than just a newline character
+            lineCount++;
+        }
+    }
+
+    // Reset file position to beginning
+    rewind(file);
+
+    // Allocate data points based on actual line count
     DataPoints dataPoints;
-    dataPoints.points = NULL;
-    dataPoints.size = 0;
-    size_t allocatedSize = 0;
+    dataPoints.size = lineCount;
+    dataPoints.points = malloc(lineCount * sizeof(DataPoint));
+    handleMemoryError(dataPoints.points);
 
-    char line[512]; // Buffer size = 512, increase if needed
-    while (fgets(line, sizeof(line), file))
+    // Read the file line by line
+    char line[1024]; // Buffer size = 512, increase if needed
+    size_t currentPoint = 0;
+
+    while (fgets(line, sizeof(line), file) && currentPoint < lineCount)
     {
-        size_t attributeAllocatedSize = 6;
+        // Skip empty lines
+        if (strlen(line) <= 1) {
+            continue;
+        }
 
-        DataPoint point;
-        point.attributes = malloc(sizeof(double) * attributeAllocatedSize);
-        handleMemoryError(point.attributes);
-        point.dimensions = 0;
-        point.partition = SIZE_MAX;
+        // Initialize the data point
+        DataPoint* point = &dataPoints.points[currentPoint];
 
+        // Count tokens first to allocate the right size
+        size_t tokenCount = 0;
+        char* countContext = NULL;
+        char lineCopy[1024];
+        strcpy(lineCopy, line);
+
+        char* countToken = strtok_s(lineCopy, " \t\r\n", &countContext);
+        while (countToken != NULL) {
+            tokenCount++;
+            countToken = strtok_s(NULL, " \t\r\n", &countContext);
+        }
+
+        // Allocate memory for attributes
+        point->attributes = malloc(tokenCount * sizeof(double));
+        handleMemoryError(point->attributes);
+        point->dimensions = 0;
+        point->partition = SIZE_MAX;
+
+        // Parse the actual values
         char* context = NULL;
-        char* token = strtok_s(line, " \t\r\n", &context); // Delimiter = " ", tabs "\t", newlines "\n", carriage return "\r"
-        while (token != NULL)
+        char* token = strtok_s(line, " \t\r\n", &context);
+
+        while (token != NULL && point->dimensions < tokenCount)
         {
-            if (point.dimensions == attributeAllocatedSize)
-            {
-                attributeAllocatedSize = attributeAllocatedSize > 0 ? attributeAllocatedSize * 2 : 1;
-                double* temp = realloc(point.attributes, sizeof(double) * attributeAllocatedSize);
-                handleMemoryError(temp);
-                point.attributes = temp;
-            }
-            
-            // if(LOGGING >= 3) printf("Token: %s\n", token);
-            point.attributes[point.dimensions++] = strtod(token, NULL); // atoi(token) for int or strtod(token, NULL) for double
-            token = strtok_s(NULL, " \t\r\n", &context); // Delimiter = " ", tabs "\t", newlines "\n", carriage return "\r"
+            point->attributes[point->dimensions++] = strtod(token, NULL);
+            token = strtok_s(NULL, " \t\r\n", &context);
         }
 
-        // if(LOGGING >= 3) printf("\n", token);
-
-        if (dataPoints.size == allocatedSize)
-        {
-            allocatedSize = allocatedSize > 0 ? allocatedSize * 2 : 1;
-            DataPoint* temp = realloc(dataPoints.points, sizeof(DataPoint) * allocatedSize);
-            handleMemoryError(temp);
-            dataPoints.points = temp;
-        }
-
-        // Remove the suppression, if there are unknown issues while running the code.
-        // The "if(dataPoints.size == allocatedSize)" -check above should be enough
-		// to handle this warning, but the static analyzer is not able to detect it.
-        // 
-        // Suppress warning C6386 for this line
-        #pragma warning(suppress : 6386)
-        dataPoints.points[dataPoints.size++] = point;
+        currentPoint++;
     }
 
     fclose(file);
 
-    /*if (LOGGING >= 3)
-    {
-        // for (size_t i = 0; i < dataPoints.size; ++i) // Debug helper: print all data points
-        for (size_t i = 0; i < dataPoints.size; ++i) // Debug helper: print the first two data points
-        {
-            printf("Data point %zu attributes: ", i);
-            for (size_t j = 0; j < dataPoints.points[i].dimensions; ++j)
-            {
-                printf("%.0f ", dataPoints.points[i].attributes[j]);
-            }
-            printf("\n");
-        }
-    }*/
-    
+    // Verify we read the expected number of points
+    if (currentPoint != lineCount) {
+        printf("Warning: Expected to read %zu points but actually read %zu points\n", lineCount, currentPoint);
+        // Adjust the actual size
+        dataPoints.size = currentPoint;
+    }
+
     return dataPoints;
 }
-
 
 /**
  * @brief Reads centroids from a file.
@@ -654,7 +660,9 @@ Centroids readCentroids(const char* filename)
     Centroids centroids;
     centroids.size = points.size;
     centroids.points = points.points;
-    
+
+    //printf("Read %zu centroids from %s, each with %zu dimensions\n", centroids.size, filename, centroids.points[0].dimensions);
+        
     /*if (LOGGING >= 3)
     {
         for (size_t i = 0; i < centroids.size; ++i)
@@ -3182,8 +3190,186 @@ static void initializeLists(char** datasetList, char** gtList, size_t* kNumList,
  *
  * @return int Returns 0 on successful execution.
  */
+
+ /**
+  * @brief Generates ground truth centroids from data and partition files.
+  *
+  * This function reads a data file and its corresponding partition file, calculates
+  * the centroids for each partition, and writes them to a ground truth file.
+  *
+  * @param dataFileName The name of the file containing the data points.
+  * @param partitionFileName The name of the file containing the partition indices.
+  * @param outputFileName The name of the file to write the centroids to.
+  * @return 0 on success, non-zero on failure.
+  */
+  /**
+   * @brief Generates ground truth centroids from data and partition files.
+   *
+   * This function reads a data file and its corresponding partition file, calculates
+   * the centroids for each partition, and writes them to a ground truth file.
+   *
+   * @param dataFileName The name of the file containing the data points.
+   * @param partitionFileName The name of the file containing the partition indices.
+   * @param outputFileName The name of the file to write the centroids to.
+   * @return 0 on success, non-zero on failure.
+   */
+int generateGroundTruthCentroids(const char* dataFileName, const char* partitionFileName, const char* outputFileName) {
+    // Read the data points
+    DataPoints dataPoints = readDataPoints(dataFileName);
+
+    if (dataPoints.size == 0) {
+        printf("Error: No data points read from file %s\n", dataFileName);
+        return 1;
+    }
+
+    printf("Read %zu data points from %s\n", dataPoints.size, dataFileName);
+
+    // Read the partition indices
+    FILE* partitionFile = fopen(partitionFileName, "r");
+    if (partitionFile == NULL) {
+        fprintf(stderr, "Error: Unable to open partition file '%s'\n", partitionFileName);
+        freeDataPoints(&dataPoints);
+        return 1;
+    }
+
+    // Assign the partition indices to the data points
+    size_t maxPartitionIndex = 0;
+    size_t validDataPoints = 0;
+
+    // Determine if we have a mismatch between dataPoints size and partition file entries
+    for (size_t i = 0; i < dataPoints.size; ++i) {
+        int partitionIndex;
+        if (fscanf(partitionFile, "%d", &partitionIndex) != 1) {
+            // If we can't read more partitions but still have data points, we have a mismatch
+            if (i < dataPoints.size - 1) {
+                printf("Warning: Partition file has fewer entries (%zu) than data points (%zu).\n",
+                    i, dataPoints.size);
+
+                // Adjust the dataPoints size to match the valid entries we read
+                dataPoints.size = i;
+                break;
+            }
+
+            // Normal end of file
+            break;
+        }
+
+        // Subtract 1 to adjust for partitions starting from 1 instead of 0
+        partitionIndex -= 1;
+
+        // Make sure partition index is non-negative
+        if (partitionIndex < 0) {
+            fprintf(stderr, "Error: Negative partition index found for data point %zu\n", i);
+            fclose(partitionFile);
+            freeDataPoints(&dataPoints);
+            return 1;
+        }
+
+        dataPoints.points[i].partition = (size_t)partitionIndex;
+
+        if (dataPoints.points[i].partition > maxPartitionIndex) {
+            maxPartitionIndex = dataPoints.points[i].partition;
+        }
+
+        validDataPoints++;
+    }
+
+    // Check if there are more partitions in the file than data points
+    int extraPartition;
+    if (fscanf(partitionFile, "%d", &extraPartition) == 1) {
+        printf("Warning: Partition file has more entries than data points. Data file has %zu points.\n",
+            dataPoints.size);
+
+        // Count how many extra partitions there are
+        size_t extraPartitions = 1;  // We already read one
+        while (fscanf(partitionFile, "%d", &extraPartition) == 1) {
+            extraPartitions++;
+        }
+        printf("Found %zu extra partition entries.\n", extraPartitions);
+    }
+
+    fclose(partitionFile);
+
+    printf("Processing %zu valid data points with partitions ranging from 0 to %zu\n",
+        validDataPoints, maxPartitionIndex);
+
+    // The number of centroids is maxPartitionIndex + 1 (assuming 0-based indexing)
+    size_t numCentroids = maxPartitionIndex + 1;
+    printf("Will calculate %zu centroids\n", numCentroids);
+
+    // Allocate memory for the centroids
+    Centroids centroids = allocateCentroids(numCentroids, dataPoints.points[0].dimensions);
+
+    // Initialize count array to track how many points are in each cluster
+    size_t* clusterCounts = calloc(numCentroids, sizeof(size_t));
+    handleMemoryError(clusterCounts);
+
+    // Sum up the attribute values for each cluster
+    for (size_t i = 0; i < dataPoints.size; ++i) {
+        size_t clusterIndex = dataPoints.points[i].partition;
+
+        // Skip any invalid cluster indices (this is a safety check)
+        if (clusterIndex >= numCentroids) {
+            fprintf(stderr, "Error: Invalid cluster index %zu for data point %zu\n", clusterIndex, i);
+            continue;
+        }
+
+        // Add the attribute values to the centroid sum
+        for (size_t j = 0; j < dataPoints.points[i].dimensions; ++j) {
+            centroids.points[clusterIndex].attributes[j] += dataPoints.points[i].attributes[j];
+        }
+
+        clusterCounts[clusterIndex]++;
+    }
+
+    // Calculate the mean values (centroids)
+    for (size_t i = 0; i < numCentroids; ++i) {
+        if (clusterCounts[i] > 0) {
+            for (size_t j = 0; j < centroids.points[i].dimensions; ++j) {
+                centroids.points[i].attributes[j] /= clusterCounts[i];
+            }
+            printf("Cluster %zu has %zu points\n", i, clusterCounts[i]);
+        }
+        else {
+            printf("Warning: Cluster %zu has no points assigned to it\n", i);
+        }
+    }
+
+    // Write the centroids to the output file
+    FILE* outputFile = fopen(outputFileName, "w");
+    if (outputFile == NULL) {
+        fprintf(stderr, "Error: Unable to open output file '%s'\n", outputFileName);
+        free(clusterCounts);
+        freeCentroids(&centroids);
+        freeDataPoints(&dataPoints);
+        return 1;
+    }
+
+    for (size_t i = 0; i < numCentroids; ++i) {
+        for (size_t j = 0; j < centroids.points[i].dimensions; ++j) {
+            fprintf(outputFile, "%f ", centroids.points[i].attributes[j]);
+        }
+        fprintf(outputFile, "\n");
+    }
+
+    fclose(outputFile);
+
+    printf("Successfully wrote %zu centroids to %s\n", numCentroids, outputFileName);
+
+    // Clean up
+    free(clusterCounts);
+    freeCentroids(&centroids);
+    freeDataPoints(&dataPoints);
+
+    return 0;
+}
+
+
 int main()
 {
+         //generateGroundTruthCentroids("data/worms_2d.txt", "data/worms_2d_partitions.txt", "gt/worms_2d-gt.txt");
+         //generateGroundTruthCentroids("data/worms_64d.txt", "data/worms_64d_partitions.txt", "gt/worms_64d-gt.txt");
+         //return 0;
 	// Number of datasets
     size_t datasetCount = 19;
 
@@ -3199,10 +3385,10 @@ int main()
 
     //TODO: muista laittaa loopin rajat oikein
 	// Modify this loop to run the algorithms on the desired datasets
-    for (size_t i = 8; i < 11; ++i)
+    for (size_t i = 0; i < 19; ++i)
     {
         //Settings
-        size_t loopCount = 1; // Number of loops to run the algorithms //todo lopulliseen 1000 vai 100? 1000 menee jumalattomasti aikaa
+        size_t loopCount = 1000; // Number of loops to run the algorithms //todo lopulliseen 1000 vai 100? 1000 menee jumalattomasti aikaa
         size_t scaling = 1; // Scaling factor for the printed values
 		size_t maxIterations = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
 		size_t maxRepeats = 1; // Maximum number of repeats for the repeated k-means algorithm //TODO lopulliseen 100(?)
@@ -3262,16 +3448,16 @@ int main()
             //runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
 
             // Run MSE Split (Intra-cluster)
-            //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 0, trackProgress, trackTime);
+            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 0, trackProgress, trackTime);
 
             // Run MSE Split (Global)
-            //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 1, trackProgress, trackTime);
+            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 1, trackProgress, trackTime);
 
             // Run MSE Split (Local Repartition)
-            //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 2, trackProgress, trackTime);
+            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 2, trackProgress, trackTime);
                         
             // Run Bisecting K-means
-            //runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime, bisectingIterations);
+            runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime, bisectingIterations);
 
             // Clean up
             freeDataPoints(&dataPoints);
