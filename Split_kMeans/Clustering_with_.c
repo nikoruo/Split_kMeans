@@ -3435,6 +3435,7 @@ int main()
             //runKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory);
             
             loopCount = 3;
+            if (i == 18) loopCount = 1;
             // Run Repeated K-means
 			// Note: Too slow to keep it enabled
             runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory);
@@ -3443,6 +3444,7 @@ int main()
             // Run Random Swap
             //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
             loopCount = 1000;
+            if (i == 18) loopCount = 1;
 
             // Run Random Split
             //runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
