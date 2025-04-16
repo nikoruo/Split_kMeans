@@ -3183,14 +3183,14 @@ int main()
 
     //TODO: muista laittaa loopin rajat oikein
 	// Modify this loop to run the algorithms on the desired datasets
-    for (size_t i = 10; i < 11; ++i)
+    for (size_t i = 0; i < 19; ++i)
     {
         //Settings
-        size_t loopCount = 100; // Number of loops to run the algorithms //todo lopulliseen 1000 vai 100? 1000 menee jumalattomasti aikaa
+        size_t loops = 100; // Number of loops to run the algorithms //todo lopulliseen 1000 vai 100? 1000 menee jumalattomasti aikaa
         size_t scaling = 1; // Scaling factor for the printed values
 		size_t maxIterations = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
 		size_t maxRepeats = 1000; // Maximum number of repeats for the repeated k-means algorithm //TODO lopulliseen 100(?)
-		size_t maxSwaps = 100; // Maximum number of swaps for the random swap algorithm //TODO lopulliseen 1000(?) vai 5000? Vai datasetin koon verran?
+		size_t maxSwaps = 10000; // Maximum number of swaps for the random swap algorithm //TODO lopulliseen 1000(?) vai 5000? Vai datasetin koon verran?
 		size_t bisectingIterations = 5; // Number of tryouts for the bisecting k-means algorithm
 		bool trackProgress = true; // Track progress of the algorithms
 		bool trackTime = true; // Track time of the algorithms
@@ -3218,11 +3218,13 @@ int main()
 
         if (numDimensions > 0)
         {
+			size_t loopCount = loops;
+
             printf("Number of dimensions in the data: %zu\n", numDimensions);
 
             DataPoints dataPoints = readDataPoints(dataFile);
             printf("Dataset size: %zu\n", dataPoints.size);
-
+            maxSwaps = dataPoints.size;
             printf("Number of clusters in the data: %zu\n", numCentroids);
 
             Centroids groundTruth = readCentroids(gtFile);
@@ -3233,32 +3235,31 @@ int main()
             //runKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory);
             
             loopCount = 3;
-            if (i == 18) loopCount = 1;
             // Run Repeated K-means
-			// Note: Too slow to keep it enabled
-            //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory);
-            if (i > 7){
-            loopCount = 1;
-            // Run Random Swap
-            //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
-            loopCount = 10;
-            if (i == 18) loopCount = 1;
+            runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory);
 
+            if (i != 8 && i != 9 && i != 10 && i != 17 && i != 18) {
+                loopCount = 1;
+                // Run Random Swap
+                runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
+            }
+
+            loopCount = loops;
             // Run Random Split
             //runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
 
             // Run MSE Split (Intra-cluster)
-            //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 0, trackProgress, trackTime);
+            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 0, trackProgress, trackTime);
 
             // Run MSE Split (Global)
-            //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 1, trackProgress, trackTime);
+            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 1, trackProgress, trackTime);
 
             // Run MSE Split (Local Repartition)
             runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 2, trackProgress, trackTime);
                         
             // Run Bisecting K-means
-            //runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime, bisectingIterations);
-            }
+            runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime, bisectingIterations);
+            
             // Clean up
             freeDataPoints(&dataPoints);
             freeCentroids(&groundTruth);
