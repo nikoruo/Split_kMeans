@@ -1164,6 +1164,69 @@ void generateRandomCentroids(size_t numCentroids, const DataPoints* dataPoints, 
 }
 
 /**
+ * K-means++ centroid initialization.
+ *   - numCentroids: number of centroids (k)
+ *   - dataPoints:   the entire dataset
+ *   - centroids:    array for storing initialized centroids
+ */
+void generateKMeansPlusPlusCentroids(size_t numCentroids, const DataPoints* dataPoints, Centroids* centroids)
+{
+    // 1) Pick the first centroid uniformly at random
+    size_t firstIndex = (size_t)(rand() % dataPoints->size);
+    deepCopyDataPoint(&centroids->points[0], &dataPoints->points[firstIndex]);
+
+    // Allocate space for distances
+    double* distances = malloc(sizeof(double) * dataPoints->size);
+    handleMemoryError(distances);
+
+    // Number of centroids chosen so far
+    size_t chosenCenters = 1;
+    
+    // 2) For the remaining centroids:
+    while (chosenCenters < numCentroids)
+    {
+        // For each data point, compute its distance squared to the nearest already chosen centroid
+        double distanceSum = 0.0;
+        for (size_t i = 0; i < dataPoints->size; ++i)
+        {
+            // Find the min distance to any of the chosen centroids
+            double minDist = calculateSquaredEuclideanDistance(&dataPoints->points[i], &centroids->points[0]);
+            for (size_t c = 1; c < chosenCenters; ++c)
+            {
+                double distC = calculateSquaredEuclideanDistance(&dataPoints->points[i], &centroids->points[c]);
+                if (distC < minDist)
+                {
+                    minDist = distC;
+                }
+            }
+            distances[i] = minDist;
+            distanceSum += minDist;
+        }
+
+        // 3) Pick the new centroid using weighted probability
+        //    with probability = (distances[i] / distanceSum)
+        double r = ((double)rand() / RAND_MAX) * distanceSum;
+        double cumulative = 0.0;
+        size_t chosenIndex = 0; // fallback
+        for (size_t i = 0; i < dataPoints->size; ++i)
+        {
+            cumulative += distances[i];
+            if (cumulative >= r)
+            {
+                chosenIndex = i;
+                break;
+            }
+        }
+
+        // Add this data point as the next centroid
+        deepCopyDataPoint(&centroids->points[chosenCenters], &dataPoints->points[chosenIndex]);
+        chosenCenters++;
+    }
+
+    free(distances);
+}
+
+/**
  * @brief Calculates the sum of squared errors (SSE) for the given data points and centroids.
  *
  * This function computes the SSE by summing the squared Euclidean distances between each data point
@@ -1658,7 +1721,7 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps,
 
     for (size_t i = 0; i < maxSwaps; ++i)
     {
-        printf("Swap %zu\n", i + 1);
+        //printf("Swap %zu\n", i + 1);
 
         //Backup
         size_t offset = 0;
@@ -2415,7 +2478,8 @@ void runKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, si
 
         start = clock();
 
-        generateRandomCentroids(numCentroids, dataPoints, &centroids);
+        //generateRandomCentroids(numCentroids, dataPoints, &centroids);
+		generateKMeansPlusPlusCentroids(numCentroids, dataPoints, &centroids);
 
         double resultSse = runKMeans(dataPoints, maxIterations, &centroids, groundTruth);
 
@@ -2488,7 +2552,8 @@ void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundT
         for (size_t j = 0; j < maxRepeats; ++j)
         {
             Centroids centroids = allocateCentroids(numCentroids, dataPoints->points[0].dimensions);
-            generateRandomCentroids(numCentroids, dataPoints, &centroids);
+            //generateRandomCentroids(numCentroids, dataPoints, &centroids);
+			generateKMeansPlusPlusCentroids(numCentroids, dataPoints, &centroids);
 
             double resultSse = runKMeans(dataPoints, maxIterations, &centroids, groundTruth);
 
@@ -2567,8 +2632,9 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth
 
         start = clock();
 
-        generateRandomCentroids(numCentroids, dataPoints, &centroids);
-		if (trackProgress) partitionStep(dataPoints, &centroids);
+        //generateRandomCentroids(numCentroids, dataPoints, &centroids);
+		generateKMeansPlusPlusCentroids(numCentroids, dataPoints, &centroids);
+        if (trackProgress) partitionStep(dataPoints, &centroids);
 
         double resultSse = randomSwap(dataPoints, &centroids, maxSwaps, groundTruth, outputDirectory, (i == 0 && trackProgress), timeList, &timeIndex, start, trackTime, trackProgress);
 
@@ -3224,7 +3290,7 @@ int main()
 
             DataPoints dataPoints = readDataPoints(dataFile);
             printf("Dataset size: %zu\n", dataPoints.size);
-            maxSwaps = dataPoints.size;
+
             printf("Number of clusters in the data: %zu\n", numCentroids);
 
             Centroids groundTruth = readCentroids(gtFile);
@@ -3234,15 +3300,13 @@ int main()
             // Run K-means
             //runKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory);
             
-            loopCount = 3;
+            loopCount = 5;
             // Run Repeated K-means
             runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory);
 
-            if (i != 8 && i != 9 && i != 10 && i != 17 && i != 18) {
-                loopCount = 1;
-                // Run Random Swap
-                runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
-            }
+            loopCount = 1;
+            // Run Random Swap
+            runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
 
             loopCount = loops;
             // Run Random Split
