@@ -1884,7 +1884,7 @@ void splitClusterIntraCluster(DataPoints* dataPoints, Centroids* centroids, size
  * @param globalMaxIterations The maximum number of iterations for the global k-means.
  * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
  */
-void splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t globalMaxIterations, const Centroids* groundTruth)
+double splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t globalMaxIterations, const Centroids* groundTruth)
 {
     size_t clusterSize = 0;
 
@@ -1940,6 +1940,8 @@ void splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t clu
 
     // Cleanup
     free(clusterIndices);
+
+    return resultSse;
 }
 
 // TODO: vain split k-means, haluanko myös random swappiin?
@@ -2209,6 +2211,8 @@ double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCe
 double runSseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, const Centroids* groundTruth, size_t splitType, const char* outputDirectory, 
     bool trackProgress, double* timeList, size_t* timeIndex, clock_t start, bool trackTime, bool createCsv)
 {
+    double finalResultSse = DBL_MAX;
+
 	double* clusterSSEs = malloc(maxCentroids * sizeof(double));
     handleMemoryError(clusterSSEs);
 
@@ -2258,47 +2262,48 @@ double runSseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
         }
 
         if(splitType == 0) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth);
-		else if (splitType == 1) splitClusterGlobal(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth);
+		else if (splitType == 1) finalResultSse = splitClusterGlobal(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth);
 		else if (splitType == 2) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth);
 
-		if (splitType == 0) // Intra-cluster
-        {
-            // Recalculate SSE for the affected clusters
-            clusterSSEs[clusterToSplit] = calculateClusterSSE(dataPoints, centroids, clusterToSplit);
-            clusterSSEs[centroids->size - 1] = calculateClusterSSE(dataPoints, centroids, centroids->size - 1);
-
-            // Update SseDrops for the affected clusters
-            SseDrops[clusterToSplit] = tentativeSseDrop(dataPoints, clusterToSplit, maxIterations, clusterSSEs[clusterToSplit]);
-            SseDrops[centroids->size - 1] = tentativeSseDrop(dataPoints, centroids->size - 1, maxIterations, clusterSSEs[centroids->size - 1]);
-        }
-		else if (splitType == 1) // Global
-        {            
-            for (size_t i = 0; i < centroids->size; ++i)
+        if(centroids->size < maxCentroids){
+	        if (splitType == 0) // Intra-cluster
             {
-                clusterSSEs[i] = calculateClusterSSE(dataPoints, centroids, i);
-                SseDrops[i] = tentativeSseDrop(dataPoints, i, maxIterations, clusterSSEs[i]);
+                // Recalculate SSE for the affected clusters
+                clusterSSEs[clusterToSplit] = calculateClusterSSE(dataPoints, centroids, clusterToSplit);
+                clusterSSEs[centroids->size - 1] = calculateClusterSSE(dataPoints, centroids, centroids->size - 1);
+
+                // Update SseDrops for the affected clusters
+                SseDrops[clusterToSplit] = tentativeSseDrop(dataPoints, clusterToSplit, maxIterations, clusterSSEs[clusterToSplit]);
+                SseDrops[centroids->size - 1] = tentativeSseDrop(dataPoints, centroids->size - 1, maxIterations, clusterSSEs[centroids->size - 1]);
             }
-        }
-		else if (splitType == 2) // Local repartition
-        {            
-            localRepartition(dataPoints, centroids, clusterToSplit, clustersAffected);
-            
-			clustersAffected[clusterToSplit] = true;
-			clustersAffected[centroids->size - 1] = true;
-
-			// Recalculate SseDrop for affected clusters (old and new)
-            for (size_t i = 0; i < centroids->size; ++i)
-            {
-                if (clustersAffected[i])
+	        else if (splitType == 1) // Global
+            {            
+                for (size_t i = 0; i < centroids->size; ++i)
                 {
                     clusterSSEs[i] = calculateClusterSSE(dataPoints, centroids, i);
                     SseDrops[i] = tentativeSseDrop(dataPoints, i, maxIterations, clusterSSEs[i]);
                 }
             }
+	        else if (splitType == 2) // Local repartition
+            {            
+                localRepartition(dataPoints, centroids, clusterToSplit, clustersAffected);
+            
+		        clustersAffected[clusterToSplit] = true;
+		        clustersAffected[centroids->size - 1] = true;
 
-            memset(clustersAffected, 0, (maxCentroids) * sizeof(bool));
+		        // Recalculate SseDrop for affected clusters (old and new)
+                for (size_t i = 0; i < centroids->size; ++i)
+                {
+                    if (clustersAffected[i])
+                    {
+                        clusterSSEs[i] = calculateClusterSSE(dataPoints, centroids, i);
+                        SseDrops[i] = tentativeSseDrop(dataPoints, i, maxIterations, clusterSSEs[i]);
+                    }
+                }
+
+                memset(clustersAffected, 0, (maxCentroids) * sizeof(bool));
+            }
         }
-
         handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
             dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, clusterToSplit, splitType);
 
@@ -2316,10 +2321,11 @@ double runSseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
 	free(SseDrops);
 	free(clustersAffected);
  
-    double finalResultSse = runKMeans(dataPoints, maxIterations, centroids, groundTruth);
-
-    handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
-        dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, splitType);
+    if (splitType != 1) {
+        finalResultSse = runKMeans(dataPoints, maxIterations, centroids, groundTruth);
+        handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
+            dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, splitType);
+    }
 
     return finalResultSse;
 }
@@ -3287,10 +3293,10 @@ int main()
 
     //TODO: muista laittaa loopin rajat oikein
 	// Modify this loop to run the algorithms on the desired datasets
-    for (size_t i = 8; i < 19; ++i)
+    for (size_t i = 1; i < 11; ++i)
     {
         //Settings
-        size_t loops = 100; // Number of loops to run the algorithms //todo lopulliseen 1000 vai 100? 1000 menee jumalattomasti aikaa
+        size_t loops = 10; // Number of loops to run the algorithms //todo lopulliseen 1000 vai 100? 1000 menee jumalattomasti aikaa
         size_t scaling = 1; // Scaling factor for the printed values
 		size_t maxIterations = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
 		size_t maxRepeats = 1000; // Maximum number of repeats for the repeated k-means algorithm //TODO lopulliseen 100(?)
@@ -3346,7 +3352,7 @@ int main()
             maxSwaps = dataPoints.size * 2;
             loopCount = 1;
             // Run Random Swap
-            runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
+            //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
 
             loopCount = loops;
             // Run Random Split
