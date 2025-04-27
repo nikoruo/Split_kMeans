@@ -1721,7 +1721,7 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps,
 
     for (size_t i = 0; i < maxSwaps; ++i)
     {
-        //printf("Swap %zu\n", i + 1);
+        printf("Swap %zu\n", i + 1);
 
         //Backup
         size_t offset = 0;
@@ -2551,6 +2551,7 @@ void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundT
 
         for (size_t j = 0; j < maxRepeats; ++j)
         {
+			printf("Repeat %zu\n", j + 1);
             Centroids centroids = allocateCentroids(numCentroids, dataPoints->points[0].dimensions);
             //generateRandomCentroids(numCentroids, dataPoints, &centroids);
 			generateKMeansPlusPlusCentroids(numCentroids, dataPoints, &centroids);
@@ -3143,6 +3144,40 @@ int generateGroundTruthCentroids(const char* dataFileName, const char* partition
     return 0;
 }
 
+/**
+ * @brief Debug function that calculates CI between a debug centroid file and ground truth.
+ *
+ * This temporary function reads centroids from a debug file and compares them with
+ * ground truth centroids to calculate the Centroid Index (CI).
+ */
+void debugCalculateCI()
+{
+    const char* debugCentroidsFile = "debuggery/output_s3.txt";
+    const char* groundTruthFile = "gt/s3-cb.txt";
+
+    printf("Debugging CI calculation between:\n");
+    printf("  Debug file: %s\n", debugCentroidsFile);
+    printf("  Ground truth: %s\n", groundTruthFile);
+
+    // Read centroids from both files
+    Centroids debugCentroids = readCentroids(debugCentroidsFile);
+    Centroids groundTruth = readCentroids(groundTruthFile);
+
+    printf("Debug centroids: %zu with %zu dimensions\n",
+        debugCentroids.size, debugCentroids.points[0].dimensions);
+    printf("Ground truth centroids: %zu with %zu dimensions\n",
+        groundTruth.size, groundTruth.points[0].dimensions);
+
+    // Calculate Centroid Index
+    size_t ci = calculateCentroidIndex(&debugCentroids, &groundTruth);
+    printf("Centroid Index (CI): %zu\n\n", ci);
+
+    // Clean up
+    freeCentroids(&debugCentroids);
+    freeCentroids(&groundTruth);
+}
+
+
 ///////////
 // Main //
 /////////
@@ -3234,7 +3269,10 @@ static void initializeLists(char** datasetList, char** gtList, size_t* kNumList,
 
 int main()
 {
-	// Number of datasets
+    //debugCalculateCI();
+    //return 0;
+    
+    // Number of datasets
     size_t datasetCount = 19; //TODO: "halutaan softa jonka voi vaan ajaa", eli t‰m‰ pit‰‰ pohtia uudestaan
 
     // List of dataset file names, ground truth file names, and number of clusters
@@ -3249,7 +3287,7 @@ int main()
 
     //TODO: muista laittaa loopin rajat oikein
 	// Modify this loop to run the algorithms on the desired datasets
-    for (size_t i = 0; i < 19; ++i)
+    for (size_t i = 8; i < 19; ++i)
     {
         //Settings
         size_t loops = 100; // Number of loops to run the algorithms //todo lopulliseen 1000 vai 100? 1000 menee jumalattomasti aikaa
@@ -3299,11 +3337,13 @@ int main()
 
             // Run K-means
             //runKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory);
-            
-            loopCount = 5;
+            if(i>10 && i<17) continue;
+            if(i<10 || i == 17) loopCount = 2;
+			else loopCount = 1;
             // Run Repeated K-means
-            runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory);
+            //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory);
 
+            maxSwaps = dataPoints.size * 2;
             loopCount = 1;
             // Run Random Swap
             runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
@@ -3313,16 +3353,16 @@ int main()
             //runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
 
             // Run SSE Split (Intra-cluster)
-            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 0, trackProgress, trackTime);
+            //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 0, trackProgress, trackTime);
 
             // Run SSE Split (Global)
-            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 1, trackProgress, trackTime);
+            //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 1, trackProgress, trackTime);
 
             // Run SSE Split (Local Repartition)
-            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 2, trackProgress, trackTime);
+            //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 2, trackProgress, trackTime);
                         
             // Run Bisecting K-means
-            runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime, bisectingIterations);
+            //runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime, bisectingIterations);
             
             // Clean up
             freeDataPoints(&dataPoints);
