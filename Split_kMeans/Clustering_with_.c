@@ -997,7 +997,7 @@ void createDatasetDirectory(const char* baseDirectory, const char* datasetName, 
  */
 const char* getAlgorithmName(size_t splitType)
 {
-    switch (splitType)
+    switch (splitType) //TODO: katso lopulliset nimet pasin spostista
     {
     case 0:
         return "IntraCluster";
@@ -1013,6 +1013,8 @@ const char* getAlgorithmName(size_t splitType)
 		return "RandomSplit";
     case 6:
 		return "KMeans";
+    case 7:
+        return "RKM";
     default:
         fprintf(stderr, "Error: Invalid split type provided\n");
         return NULL;
@@ -1676,6 +1678,59 @@ double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids
         {
             break; // Exit the loop if the SSE does not improve
         }
+    }
+
+    return bestSse;
+}
+
+/**
+ * @brief Runs the k-means algorithm on the given data points and centroids.
+ *
+ * This function iterates through partition and centroid steps, calculates the SSE,
+ * and returns the best SSE obtained during the iterations.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param iterations The maximum number of iterations to run the k-means algorithm.
+ * @param centroids A pointer to the Centroids structure containing the centroids.
+ * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
+ * @return The best mean squared error (SSE) obtained during the iterations.
+ */
+double runKMeansWithTracking(DataPoints* dataPoints, size_t iterations, Centroids* centroids, const Centroids* groundTruth, const char* outputDirectory,
+    bool trackProgress, double* timeList, size_t* timeIndex, clock_t start, bool trackTime, bool createCsv, size_t* iterationCount, bool firstRun, FILE* csvFile)
+{
+    double bestSse = DBL_MAX;
+    double sse = DBL_MAX;
+
+    for (size_t iteration = 0; iteration < iterations; ++iteration)
+    {
+        partitionStep(dataPoints, centroids);
+
+        centroidStep(centroids, dataPoints);
+
+        if (firstRun) {
+            handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
+                dataPoints, centroids, groundTruth, *iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, 7);
+        }
+
+        sse = calculateSSE(dataPoints, centroids);
+
+        /*if (LOGGING >= 3)
+        {
+            size_t centroidIndex = calculateCentroidIndex(centroids, groundTruth);
+            printf("(runKMeans)After iteration %zu: CI = %zu and SSE = %.0f\n", iteration + 1, centroidIndex, sse);
+        }*/
+
+        if (sse < bestSse)
+        {
+            //if (LOGGING >= 3) printf("Best SSE so far: %.5f\n", sse);
+            bestSse = sse;
+        }
+        else
+        {
+            break; // Exit the loop if the SSE does not improve
+        }
+
+		(*iterationCount)++;
     }
 
     return bestSse;
@@ -2535,13 +2590,26 @@ void runKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, si
  * @param fileName The name of the file to write the results to.
  * @param outputDirectory The directory where the results file is located.
  */
-void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t maxRepeats, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
+void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t maxRepeats, size_t loopCount, size_t scaling, 
+    const char* fileName, const char* outputDirectory, bool trackProgress, bool trackTime)
 {
     Statistics stats;
     initializeStatistics(&stats);
 
     clock_t start, end;
     double duration;
+
+    size_t totalIterations = loopCount * maxRepeats + 100;
+    double* timeList = malloc(totalIterations * sizeof(double)); //TODO: vois varmaan olla myös size_t koska millisekunteja
+    handleMemoryError(timeList);
+    size_t timeIndex = 0;
+
+    char csvFile[256];
+    if (trackProgress)
+    {
+        initializeCsvFile(7, outputDirectory, csvFile, sizeof(csvFile));
+
+    }
 
     printf("Repeated K-means\n");
 
@@ -2550,6 +2618,10 @@ void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundT
 		printf("Round %zu\n", i + 1);
 
 		double bestSse = DBL_MAX;
+		size_t bestCI = SIZE_MAX;
+        
+        size_t iterationCount = 0; //Helper for tracking progress
+        bool firstRun = true;
 
         Centroids bestCentroids = allocateCentroids(numCentroids, dataPoints->points[0].dimensions);
 
@@ -2561,13 +2633,29 @@ void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundT
             Centroids centroids = allocateCentroids(numCentroids, dataPoints->points[0].dimensions);
             //generateRandomCentroids(numCentroids, dataPoints, &centroids);
 			generateKMeansPlusPlusCentroids(numCentroids, dataPoints, &centroids);
-
-            double resultSse = runKMeans(dataPoints, maxIterations, &centroids, groundTruth);
+            double resultSse = runKMeansWithTracking(dataPoints, maxIterations, &centroids, groundTruth, outputDirectory, (i == 0 && trackProgress), timeList, &timeIndex, start, trackTime, trackProgress, &iterationCount, firstRun, csvFile);
 
             if (resultSse < bestSse)
             {
                 bestSse = resultSse;
 				deepCopyCentroids(&centroids, &bestCentroids, numCentroids);
+
+                if(!firstRun)
+                {
+                    size_t currentCi = calculateCentroidIndex(&centroids, groundTruth);
+                    bestCI = currentCi;
+
+                    appendLogCsv(csvFile, iterationCount, currentCi, resultSse);
+                    updateTimeTracking(trackTime, start, timeList, &timeIndex);
+                }
+                else
+                {
+					firstRun = false;
+                }
+            }
+            else {
+                appendLogCsv(csvFile, iterationCount, bestCI, bestSse);
+                updateTimeTracking(trackTime, start, timeList, &timeIndex);
             }
 
             freeCentroids(&centroids);
@@ -2594,6 +2682,13 @@ void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundT
 
     printStatistics("Repeated K-means", stats, loopCount, numCentroids, scaling, dataPoints->size);
     writeResultsToFile(fileName, stats, numCentroids, "Repeated K-means", loopCount, scaling, outputDirectory, dataPoints->size);
+
+    if (trackTime)
+    {
+        writeTimeTrackingData(outputDirectory, 7, timeList, timeIndex);
+    }
+
+    free(timeList);
 }
 
 /**
@@ -3293,10 +3388,10 @@ int main()
 
     //TODO: muista laittaa loopin rajat oikein
 	// Modify this loop to run the algorithms on the desired datasets
-    for (size_t i = 1; i < 11; ++i)
+    for (size_t i = 0; i < 19; ++i)
     {
         //Settings
-        size_t loops = 10; // Number of loops to run the algorithms //todo lopulliseen 1000 vai 100? 1000 menee jumalattomasti aikaa
+        size_t loops = 1; // Number of loops to run the algorithms //todo lopulliseen 1000 vai 100? 1000 menee jumalattomasti aikaa
         size_t scaling = 1; // Scaling factor for the printed values
 		size_t maxIterations = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
 		size_t maxRepeats = 1000; // Maximum number of repeats for the repeated k-means algorithm //TODO lopulliseen 100(?)
@@ -3343,11 +3438,10 @@ int main()
 
             // Run K-means
             //runKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory);
-            if(i>10 && i<17) continue;
-            if(i<10 || i == 17) loopCount = 2;
-			else loopCount = 1;
+            loopCount = 3;
+			if (i == 8 || i == 9 || i == 10 || i == 17 || i == 18) loopCount = 1;
             // Run Repeated K-means
-            //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory);
+            runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
 
             maxSwaps = dataPoints.size * 2;
             loopCount = 1;
