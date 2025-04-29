@@ -1,8 +1,30 @@
+/**
+ * @brief Suppresses warnings about unsafe functions in Visual Studio.
+ *
+ * This macro disables warnings for functions like `strcpy` and `sprintf`
+ * when using the Microsoft C compiler. It is ignored by other compilers.
+ */
 #ifdef _MSC_VER
-    #define _CRT_SECURE_NO_WARNINGS
+    #define _CRT_SECURE_NO_WARNINGS //TODO: tarkista tarvitaanko enää
 #endif
 
-//TODO: Unix compatibility
+//TODO: lisää Unix compatibility alapuolelle
+// ja käy nykyiset läpi
+
+/**
+ * @brief Platform-specific macro for creating directories.
+ *
+ * This macro defines a platform-independent way to create directories.
+ * On Windows, it uses `_mkdir` from `<direct.h>`. On Unix-like systems,
+ * it uses `mkdir` from `<sys/stat.h>` and `<sys/types.h>` with permissions set to 0755.
+ *
+ * Usage:
+ * - Use `MAKE_DIR(path)` to create a directory at the specified path.
+ *
+ * Notes:
+ * - Ensure the path provided is valid and accessible.
+ * - On Unix-like systems, the permissions are set to 0755 by default.
+ */
 #ifdef _WIN32
     #include <direct.h>  // For _mkdir
     #define MAKE_DIR(path) _mkdir(path)
@@ -12,6 +34,20 @@
     #define MAKE_DIR(path) mkdir(path, 0755)
 #endif
 
+ /**
+  * @brief Platform-specific macro for secure random number generation.
+  *
+  * This macro provides a platform-independent way to generate random numbers.
+  * On Windows, it uses `rand_s` for secure random number generation.
+  * On Unix-like systems, it uses `arc4random`.
+  *
+  * Usage:
+  * - Use `RANDOMIZE(randomValue)` to generate a random number and store it in `randomValue`.
+  *
+  * Notes:
+  * - Ensure `randomValue` is an unsigned integer.
+  * - On failure (Windows), the program will exit with an error message.
+  */
 #ifdef _WIN32
 #include <stdlib.h> // For rand_s
 #define RANDOMIZE(randomValue) \
@@ -25,8 +61,8 @@
         randomValue = arc4random();
 #endif
 
+// General includes
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <time.h>
@@ -38,7 +74,7 @@
 #include <locale.h>
 
 // Change logs
-// 20-01-2025: Initial release by Niko Ruohonen
+// 29-04-2025: Initial 1.0v release by Niko Ruohonen
 
 // Introduction
 /**
@@ -51,7 +87,7 @@
  * to ensure maximum efficiency and effectiveness when applied to multi-dimensional data points.
   * 
  * Author: Niko Ruohonen
- * Date: January 20, 2025
+ * Date: April 29, 2025
  * Version: 1.0.0
  *
  * Details:
@@ -77,6 +113,14 @@
 // DEFINES //
 ////////////
 
+/**
+ * @brief Converts clock ticks to milliseconds.
+ *
+ * This macro defines the number of clock ticks per millisecond
+ * based on the platform-specific `CLOCKS_PER_SEC` constant.
+ * It is used to simplify time calculations when measuring durations
+ * in milliseconds using `clock()`.
+ */
 #define CLOCKS_PER_MS (CLOCKS_PER_SEC / 1000)
 
  /////////////
@@ -125,14 +169,14 @@ typedef struct
  */
 typedef struct
 {
-    DataPoint* points;   /**< Array of DataPoint structures representing the centroids. */ //TODO: tarvitaanko Centroid -struct?
+    DataPoint* points;   /**< Array of DataPoint structures representing the centroids. */
     size_t size;         /**< Number of centroids in the array. */
 } Centroids;
 
 /**
  * @brief Represents the result of a clustering algorithm.
  *
- * This struct contains the mean squared error (SSE) of the clustering result, //TODO: SSE
+ * This struct contains the mean squared error (SSE) of the clustering result,
  * an array of partition indices indicating the cluster assignment for each data point,
  * an array of centroids representing the cluster centers, and the Centroid Index (CI) value.
  */
@@ -523,7 +567,7 @@ size_t getNumDimensions(const char* filename)
 
     size_t dimensions = 0;
     char* context = NULL;
-	char* token = strtok_s(firstLine, " \t\r\n", &context); //Delimiter = " ", tabs "\t", newlines "\n", carriage return "\r" //TODO: Haluanko muuta kuin " "? TODO: halutaanko CONST?
+	char* token = strtok_s(firstLine, " \t\r\n", &context); //Delimiter = " ", tabs "\t", newlines "\n", carriage return "\r"
     while (token != NULL)
     {
         dimensions++;
@@ -665,7 +709,17 @@ Centroids readCentroids(const char* filename)
     return centroids;
 }
 
-// Append a line with "iteration, numCentroids, sse" to a CSV file
+/**
+ * @brief Appends a log entry to a CSV file.
+ *
+ * This function appends a log entry to the specified CSV file with the given parameters.
+ * The log entry includes the number of centroids, iteration number, and SSE value.
+ *
+ * @param filePath The path to the CSV file.
+ * @param iteration The current iteration number.
+ * @param ci The number of centroids.
+ * @param sse The sum of squared errors (SSE) value.
+ */
 void appendLogCsv(const char* filePath, size_t iteration, size_t ci, double sse)
 {
     setlocale(LC_NUMERIC, "fi_FI");
@@ -846,59 +900,6 @@ void deepCopyCentroids(const Centroids* source, Centroids* destination, size_t n
 }
 
 /**
- * @brief Prints all information about the centroids.
- *
- * This function prints the number of centroids and the attributes of each centroid.
- * Each centroid's attributes are printed on a new line, with attributes separated by spaces.
- *
- * @param centroids A pointer to the Centroids structure containing the centroids to be printed.
- */
- //TODO ei käytössä
-void printCentroidsInfo(const Centroids* centroids)
-{
-    printf("Number of centroids: %zu\n", centroids->size);
-
-    for (size_t i = 0; i < centroids->size; ++i)
-    {
-        DataPoint* centroid = &centroids->points[i];
-
-        printf("Centroid %zu (dimensions: %zu) attributes: ", i, centroid->dimensions);
-
-        for (size_t j = 0; j < centroid->dimensions; ++j)
-        {
-            printf("%f ", centroid->attributes[j]);
-        }
-        printf("\n");
-    }
-    printf("\n");
-}
-
-/**
- * @brief Prints partition assignments for data points with partition >= cMax.
- *
- * This function prints the partition assignments for data points whose partition index
- * is greater than or equal to the specified cMax value. It prints the data point index
- * and its partition index.
- *
- * @param dataPoints A pointer to the DataPoints structure containing the data points.
- * @param cMax The partition index threshold.
- */
-//TODO ei käytössä
-void printDataPointsPartitions(const DataPoints* dataPoints, size_t cMax)
-{
-    printf("Data Points Partition Assignments (Partition <= %zu):\n", cMax);
-    printf("Data Points size: %zu\n", dataPoints->size);
-    for (size_t i = 0; i < dataPoints->size; ++i)
-    {
-        if (dataPoints->points[i].partition >= cMax)
-        {
-            printf("Data Point %zu: Partition %zu\n", i, dataPoints->points[i].partition);
-        }
-    }
-    printf("\n");
-}
-
-/**
  * @brief Resets all partitions to 0.
  *
  * This function iterates through all data points in the DataPoints structure
@@ -988,6 +989,17 @@ void createUniqueDirectory(char* outputDirectory, size_t size)
     }
 }
 
+/**
+ * @brief Creates a dataset directory based on the base directory and dataset name.
+ *
+ * This function generates a dataset directory name by combining the base directory
+ * and the dataset name. It attempts to create the directory and handles any errors.
+ *
+ * @param baseDirectory The base directory where the dataset directory will be created.
+ * @param datasetName The name of the dataset.
+ * @param datasetDirectory A buffer to store the generated dataset directory name.
+ * @param size The size of the datasetDirectory buffer.
+ */
 void createDatasetDirectory(const char* baseDirectory, const char* datasetName, char* datasetDirectory, size_t size)
 {
     snprintf(datasetDirectory, size, "%s/%s", baseDirectory, datasetName);
@@ -1010,7 +1022,7 @@ void createDatasetDirectory(const char* baseDirectory, const char* datasetName, 
  */
 const char* getAlgorithmName(size_t aName)
 {
-    switch (aName) //TODO: katso lopulliset nimet pasin spostista
+    switch (aName) //TODO: katso lopulliset nimet Pasin spostista
     {
     case 0:
         return "IntraCluster";
@@ -1029,7 +1041,7 @@ const char* getAlgorithmName(size_t aName)
     case 7:
         return "RKM";
     default:
-        fprintf(stderr, "Error: Invalid split type provided\n");
+        fprintf(stderr, "Error: Invalid algorithm type provided\n");
         return NULL;
     }
 }
@@ -1054,6 +1066,14 @@ void printStatistics(const char* algorithmName, Statistics stats, size_t loopCou
     printf("(%s) Success rate: %.2f%%\n\n", algorithmName, stats.successRate / loopCount * 100);
 }
 
+/**
+ * @brief Removes the file extension from a filename.
+ *
+ * This function removes the file extension from the given filename and returns the base filename.
+ *
+ * @param filename The name of the file from which to remove the extension.
+ * @return The base filename without the extension.
+ */
 char* removeExtension(const char* filename) {
     static char baseFileName[256];
 
@@ -1120,7 +1140,7 @@ void writeTimeTrackingData(const char* outputDirectory, size_t splitType, const 
     FILE* timesFilePtr = fopen(timesFile, "w");
     if (timesFilePtr == NULL) {
         handleFileError(timesFile);
-		return; //TODO: tää on periaatteessa turha, koska handleFileError lopettaa ohjelman. Mutta tän avulla saa warningit pois koska timefileprt ei voikaan olla null alhaalla
+		return; //TODO: tää on turha, koska handleFileError lopettaa ohjelman. Mutta tän avulla saa warningit pois koska timefileprt ei voikaan olla null alhaalla
     }
 
     for (size_t i = 0; i < timeIndex; ++i) {
@@ -1182,10 +1202,13 @@ void generateRandomCentroids(size_t numCentroids, const DataPoints* dataPoints, 
 }
 
 /**
- * K-means++ centroid initialization.
- *   - numCentroids: number of centroids (k)
- *   - dataPoints:   the entire dataset
- *   - centroids:    array for storing initialized centroids
+ * @brief Generates KMeans++ centroids from the data points.
+ *
+ * This function selects initial centroids for KMeans clustering using the KMeans++ algorithm.
+ *
+ * @param numCentroids The number of centroids to generate.
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param centroids A pointer to the Centroids structure to store the generated centroids.
  */
 void generateKMeansPlusPlusCentroids(size_t numCentroids, const DataPoints* dataPoints, Centroids* centroids)
 {
@@ -1301,18 +1324,16 @@ double calculateMSE(const DataPoints* dataPoints, const Centroids* centroids)
     return mse;
 }
 
-//TODO: käy description läpi, että vastaa sitä mitä lasketaan (count vai size)
 /**
- * @brief Calculates the mean squared error (SSE) for a specific cluster.
+ * @brief Calculates the sum of squared errors (SSE) for a specific cluster.
  *
- * This function computes the SSE for a specific cluster by summing the Euclidean distances
- * between data points and their assigned centroid, and then dividing by the number of data points
- * in the cluster and the number of dimensions.
+ * This function computes the SSE for a specific cluster by summing the squared Euclidean distances
+ * between each data point in the cluster and its assigned centroid.
  *
  * @param dataPoints A pointer to the DataPoints structure containing the data points.
  * @param centroids A pointer to the Centroids structure containing the centroids.
  * @param clusterLabel The label of the cluster for which to calculate the SSE.
- * @return The mean squared error (SSE) for the specified cluster.
+ * @return The sum of squared errors (SSE) for the specified cluster.
  */
 double calculateClusterSSE(const DataPoints* dataPoints, const Centroids* centroids, size_t clusterLabel)
 {
@@ -1584,6 +1605,20 @@ void writeIterationStats(const DataPoints* dataPoints, const Centroids* centroid
     fclose(statsFile);
 }
 
+/**
+ * @brief Tracks the progress of the algorithm by writing statistics and saving state.
+ *
+ * This function tracks the progress of the algorithm by writing statistics to a file
+ * and saving the current state of centroids and partitions at each iteration.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param centroids A pointer to the Centroids structure containing the centroids.
+ * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
+ * @param iteration The current iteration number.
+ * @param clusterToSplit The cluster that was split at this iteration (if applicable).
+ * @param splitType The type of split performed.
+ * @param outputDirectory The directory where the files should be created.
+ */
 static void trackProgressState(const DataPoints* dataPoints, const Centroids* centroids, const Centroids* groundTruth, size_t iteration, size_t clusterToSplit, size_t splitType, const char* outputDirectory)
 {
 	const char* splitTypeName = getAlgorithmName(splitType); 
@@ -1592,6 +1627,17 @@ static void trackProgressState(const DataPoints* dataPoints, const Centroids* ce
     saveIterationState(dataPoints, centroids, iteration, outputDirectory, splitTypeName);
 }
 
+/**
+ * @brief Updates the time tracking data and logs it to a file.
+ *
+ * This function updates the time tracking data by calculating the elapsed time
+ * since the start of the algorithm and appending it to a CSV file.
+ *
+ * @param trackTime A boolean indicating whether to track time.
+ * @param start The starting clock time.
+ * @param timeList An array to store the time data points.
+ * @param timeIndex The index for the next time data point.
+ */
 static void updateTimeTracking(bool trackTime, clock_t start, double* timeList, size_t* timeIndex)
 {
     clock_t iterEnd = clock();
@@ -1599,6 +1645,19 @@ static void updateTimeTracking(bool trackTime, clock_t start, double* timeList, 
     timeList[(*timeIndex)++] = iterDuration;
 }
 
+/**
+ * @brief Updates the CSV logging with the current iteration statistics.
+ *
+ * This function appends the current iteration statistics to a CSV file,
+ * including the Centroid Index (CI) and sum of squared errors (SSE).
+ *
+ * @param createCsv A boolean indicating whether to create a CSV file.
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param centroids A pointer to the Centroids structure containing the centroids.
+ * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
+ * @param csvFile The name of the CSV file to log the data.
+ * @param iterationNumber The current iteration number.
+ */
 static void updateCsvLogging(bool createCsv, const DataPoints* dataPoints, const Centroids* centroids, const Centroids* groundTruth, const char* csvFile, size_t iterationNumber)
 {
     size_t currentCi = calculateCentroidIndex(centroids, groundTruth);
@@ -1606,6 +1665,25 @@ static void updateCsvLogging(bool createCsv, const DataPoints* dataPoints, const
     appendLogCsv(csvFile, iterationNumber, currentCi, currentSse);
 }
 
+/**
+ * @brief Handles logging and tracking of the algorithm's progress.
+ *
+ * This function manages the logging and tracking of the algorithm's progress,
+ * including time tracking, progress tracking, and CSV logging.
+ *
+ * @param trackTime A boolean indicating whether to track time.
+ * @param start The starting clock time.
+ * @param timeList An array to store the time data points.
+ * @param timeIndex The index for the next time data point.
+ * @param trackProgress A boolean indicating whether to track progress.
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param centroids A pointer to the Centroids structure containing the centroids.
+ * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
+ * @param iterationCount The current iteration number.
+ * @param outputDirectory The directory where the files should be created.
+ * @param createCsv A boolean indicating whether to create a CSV file.
+ * @param csvFile The name of the CSV file to log the data.
+ */
 static void handleLoggingAndTracking(bool trackTime, clock_t start, double* timeList, size_t* timeIndex, bool trackProgress, const DataPoints* dataPoints,
     const Centroids* centroids, const Centroids* groundTruth, size_t iterationCount, const char* outputDirectory, bool createCsv, FILE* csvFile,
     size_t clusterToSplit, size_t splitType)
@@ -1627,6 +1705,16 @@ static void handleLoggingAndTracking(bool trackTime, clock_t start, double* time
     }
 }
 
+/**
+ * @brief Repartitions data points after a centroid has been removed.
+ *
+ * This function updates the partition of each data point based on the nearest centroid
+ * after a centroid has been removed from the clustering process.
+ *
+ * @param dataPoints A pointer to the DataPoints structure containing the data points.
+ * @param centroids A pointer to the Centroids structure containing the centroids.
+ * @param removed The index of the removed centroid.
+ */
 void localRepartitionForRS(DataPoints* dataPoints, Centroids* centroids, size_t removed)
 {
     // from removed -> to existing
@@ -2051,8 +2139,6 @@ double splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t c
     return resultSse;
 }
 
-// TODO: vain split k-means, haluanko myös random swappiin?
-// TODO: kesken <- eli tarvitaanko new cluster -> old cluster vai riittääkö myös old cluster -> new cluster?
 /**
  * @brief Performs local repartitioning of data points to the nearest centroid.
  *
@@ -2069,7 +2155,7 @@ void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clust
 {
     size_t newClusterIndex = centroids->size - 1;
 
-    // TODO: Kysy/selvitä, että tarvitaanko tätä? Oma oletus on, että ei tarvita
+    // TODO: Selvitä, että tarvitaanko tätä? Oma oletus on, että ei tarvita
     // new clusters -> old clusters
     /*for (size_t i = 0; i < dataPoints->size; ++i)
     {
@@ -2249,7 +2335,6 @@ ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, size_t cl
 
     return localResult;
 }
-
 
 /**
  * @brief Runs the split k-means algorithm with random splitting.
@@ -3489,14 +3574,14 @@ int main()
 
     //TODO: muista laittaa loopin rajat oikein
 	// Modify this loop to run the algorithms on the desired datasets
-    for (size_t i = 8; i < 9; ++i)
+    for (size_t i = 0; i < 19; ++i)
     {
         //Settings
-        size_t loops = 1; // Number of loops to run the algorithms //todo lopulliseen 1000 vai 100? 1000 menee jumalattomasti aikaa
-        size_t scaling = 1; // Scaling factor for the printed values
+        size_t loops = 100; // Number of loops to run the algorithms //todo lopulliseen 100(?)
+        size_t scaling = 1; // Scaling factor for the printed values //TODO: Ei käytössä
 		size_t maxIterations = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
-		size_t maxRepeats = 1000; // Maximum number of repeats for the repeated k-means algorithm //TODO lopulliseen 100(?)
-		size_t maxSwaps = 1000; // Maximum number of swaps for the random swap algorithm //TODO lopulliseen 1000(?) vai 5000? Vai datasetin koon verran?
+		size_t maxRepeats = 1000; // Number of "repeats" for the repeated k-means algorithm //TODO lopulliseen 1000(?)
+		size_t maxSwaps = 5000; // Number of trial swaps for the random swap algorithm //TODO lopulliseen 5000(?)
 		size_t bisectingIterations = 5; // Number of tryouts for the bisecting k-means algorithm
 		bool trackProgress = true; // Track progress of the algorithms
 		bool trackTime = true; // Track time of the algorithms
@@ -3536,26 +3621,27 @@ int main()
 
             // Run K-means
             //runKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory);
-            loopCount = 1;
+            
+            loopCount = 5;
             // Run Repeated K-means
-           // runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
+            runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
 
             loopCount = 1;
             // Run Random Swap
-            //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
+            runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
 
             loopCount = loops;
             // Run Random Split
             //runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
 
             // Run SSE Split (Intra-cluster)
-            //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 0, trackProgress, trackTime);
+            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 0, trackProgress, trackTime);
 
             // Run SSE Split (Global)
             runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 1, trackProgress, trackTime);
 
             // Run SSE Split (Local Repartition)
-            //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 2, trackProgress, trackTime);
+            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 2, trackProgress, trackTime);
                         
             // Run Bisecting K-means
             runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime, bisectingIterations);
