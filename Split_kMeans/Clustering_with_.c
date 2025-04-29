@@ -12,6 +12,19 @@
     #define MAKE_DIR(path) mkdir(path, 0755)
 #endif
 
+#ifdef _WIN32
+#include <stdlib.h> // For rand_s
+#define RANDOMIZE(randomValue) \
+        if (rand_s(&randomValue) != 0) { \
+            fprintf(stderr, "Error: rand_s failed\n"); \
+            exit(EXIT_FAILURE); \
+        }
+#else
+#include <stdlib.h> // For arc4random
+#define RANDOMIZE(randomValue) \
+        randomValue = arc4random();
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -995,9 +1008,9 @@ void createDatasetDirectory(const char* baseDirectory, const char* datasetName, 
  * @param splitType The index of the split type.
  * @return The name of the split type, or NULL if the split type index is invalid.
  */
-const char* getAlgorithmName(size_t splitType)
+const char* getAlgorithmName(size_t aName)
 {
-    switch (splitType) //TODO: katso lopulliset nimet pasin spostista
+    switch (aName) //TODO: katso lopulliset nimet pasin spostista
     {
     case 0:
         return "IntraCluster";
@@ -1142,6 +1155,8 @@ void generateRandomCentroids(size_t numCentroids, const DataPoints* dataPoints, 
 
     size_t* indices = malloc(sizeof(size_t) * dataPoints->size);
     handleMemoryError(indices);
+    
+    unsigned int randomValue;
 
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
@@ -1150,7 +1165,8 @@ void generateRandomCentroids(size_t numCentroids, const DataPoints* dataPoints, 
 
     for (size_t i = 0; i < numCentroids; ++i)
     {
-        size_t j = i + rand() % (dataPoints->size - i);
+        RANDOMIZE(randomValue);
+        size_t j = i + randomValue % (dataPoints->size - i);
         size_t temp = indices[i];
         indices[i] = indices[j];
         indices[j] = temp;
@@ -1173,59 +1189,67 @@ void generateRandomCentroids(size_t numCentroids, const DataPoints* dataPoints, 
  */
 void generateKMeansPlusPlusCentroids(size_t numCentroids, const DataPoints* dataPoints, Centroids* centroids)
 {
-    // 1) Pick the first centroid uniformly at random
-    size_t firstIndex = (size_t)(rand() % dataPoints->size);
+    // 1. Choose the first centroid at random
+    unsigned int randomValue;
+    RANDOMIZE(randomValue);
+    size_t firstIndex = (size_t)(randomValue % dataPoints->size);
     deepCopyDataPoint(&centroids->points[0], &dataPoints->points[firstIndex]);
 
-    // Allocate space for distances
-    double* distances = malloc(sizeof(double) * dataPoints->size);
-    handleMemoryError(distances);
+    // Distance cache
+    double* dist2 = malloc(sizeof(double) * dataPoints->size);
+    handleMemoryError(dist2);
 
-    // Number of centroids chosen so far
-    size_t chosenCenters = 1;
-    
-    // 2) For the remaining centroids:
-    while (chosenCenters < numCentroids)
+    // Initialise the cache with distances to the first centroid
+    for (size_t i = 0; i < dataPoints->size; ++i) {
+        dist2[i] = calculateSquaredEuclideanDistance(&dataPoints->points[i], &centroids->points[0]);
+    }
+
+    size_t chosen = 1;
+
+    while (chosen < numCentroids)
     {
-        // For each data point, compute its distance squared to the nearest already chosen centroid
-        double distanceSum = 0.0;
+        // 2. Compute the normalising constant distSum
+        double distSum = 0.0;
         for (size_t i = 0; i < dataPoints->size; ++i)
         {
-            // Find the min distance to any of the chosen centroids
-            double minDist = calculateSquaredEuclideanDistance(&dataPoints->points[i], &centroids->points[0]);
-            for (size_t c = 1; c < chosenCenters; ++c)
-            {
-                double distC = calculateSquaredEuclideanDistance(&dataPoints->points[i], &centroids->points[c]);
-                if (distC < minDist)
-                {
-                    minDist = distC;
-                }
-            }
-            distances[i] = minDist;
-            distanceSum += minDist;
+            distSum += dist2[i];
         }
 
-        // 3) Pick the new centroid using weighted probability
-        //    with probability = (distances[i] / distanceSum)
-        double r = ((double)rand() / RAND_MAX) * distanceSum;
+        // 3. Select a new centroid with probability r
+        RANDOMIZE(randomValue);
+        double r = (double)randomValue / ((double)UINT_MAX + 1.0) * distSum;
         double cumulative = 0.0;
-        size_t chosenIndex = 0; // fallback
-        for (size_t i = 0; i < dataPoints->size; ++i)
-        {
-            cumulative += distances[i];
-            if (cumulative >= r)
-            {
-                chosenIndex = i;
+        size_t picked = dataPoints->size - 1;   /* fallback to last point */
+
+        for (size_t i = 0; i < dataPoints->size; ++i) {
+            cumulative += dist2[i];
+            if (cumulative >= r) {
+                picked = i;
                 break;
             }
         }
 
-        // Add this data point as the next centroid
-        deepCopyDataPoint(&centroids->points[chosenCenters], &dataPoints->points[chosenIndex]);
-        chosenCenters++;
+        // Debug: If the chosen point is already a centroid, skip and choose again
+        if (dist2[picked] == 0.0)
+            continue;
+
+        // 4. Add the selected point as the next centroid
+        deepCopyDataPoint(&centroids->points[chosen++], &dataPoints->points[picked]);
+
+        /* 5. Update the distance cache:
+         *    for every data point, keep the minimum distance to any
+         *    centroid selected so far.  Only values that improve
+         *    (i.e. become smaller) are updated. */
+        for (size_t i = 0; i < dataPoints->size; ++i) {
+            double d = calculateSquaredEuclideanDistance(&dataPoints->points[i], &centroids->points[chosen - 1]);
+            if (d < dist2[i])
+            {
+                dist2[i] = d;
+            }
+        }
     }
 
-    free(distances);
+    free(dist2);
 }
 
 /**
@@ -1605,7 +1629,7 @@ static void handleLoggingAndTracking(bool trackTime, clock_t start, double* time
 
 void localRepartitionForRS(DataPoints* dataPoints, Centroids* centroids, size_t removed)
 {
-    // removed -> existing
+    // from removed -> to existing
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
         if (dataPoints->points[i].partition == removed)
@@ -1616,7 +1640,7 @@ void localRepartitionForRS(DataPoints* dataPoints, Centroids* centroids, size_t 
         }
     }
 
-    // existing -> created
+    // from existing -> to created
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
         if (dataPoints->points[i].partition != removed)
@@ -1636,6 +1660,8 @@ void localRepartitionForRS(DataPoints* dataPoints, Centroids* centroids, size_t 
             }
         }
     }
+
+    centroidStep(centroids, dataPoints);
 }
 
 /**
@@ -1762,6 +1788,9 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps,
     double* backupAttributes = malloc(totalAttributes * sizeof(double));
     handleMemoryError(backupAttributes);
 
+    double* backupPartitions = malloc(dataPoints->size * sizeof(size_t));
+    handleMemoryError(backupPartitions);
+
     char csvFile[256];
     if (createCsv)
     {
@@ -1786,9 +1815,21 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps,
             offset += dimensions;
         }
 
+
+        for (size_t j = 0; j < dataPoints->size; ++j)
+         {
+            backupPartitions[j] = dataPoints->points[j].partition;
+        }
+
         //Swap
-        size_t randomCentroidId = rand() % centroids->size;
-        size_t randomDataPointId = rand() % dataPoints->size;
+        unsigned int randomValue;
+        
+        RANDOMIZE(randomValue);
+        size_t randomCentroidId = randomValue % centroids->size;
+
+        RANDOMIZE(randomValue);
+        size_t randomDataPointId = randomValue % dataPoints->size;
+
         memcpy(centroids->points[randomCentroidId].attributes, dataPoints->points[randomDataPointId].attributes, dimensions * sizeof(double));
         
 		localRepartitionForRS(dataPoints, centroids, randomCentroidId);
@@ -1818,6 +1859,11 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps,
             {
                 memcpy(centroids->points[j].attributes, &backupAttributes[offset], dimensions * sizeof(double));
                 offset += dimensions;
+            }
+
+            for (size_t j = 0; j < dataPoints->size; ++j)
+            {
+                dataPoints->points[j].partition = backupPartitions[j];
             }
         }
 
@@ -1873,11 +1919,14 @@ void splitClusterIntraCluster(DataPoints* dataPoints, Centroids* centroids, size
     }
 
     // Random centroids
-    size_t c1 = rand() % clusterSize;
+    unsigned int randomValue;
+    RANDOMIZE(randomValue);
+    size_t c1 = randomValue % clusterSize;
     size_t c2 = c1;
     while (c2 == c1)
     {
-        c2 = rand() % clusterSize;
+        RANDOMIZE(randomValue);
+        c2 = randomValue % clusterSize;
     }
     size_t datapoint1 = clusterIndices[c1];
     size_t datapoint2 = clusterIndices[c2];
@@ -1970,11 +2019,14 @@ double splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t c
     }
 
     // Select two random points from the cluster to be the new centroids
-    size_t c1 = rand() % clusterSize;
+    unsigned int randomValue;
+    RANDOMIZE(randomValue);
+    size_t c1 = randomValue % clusterSize;
     size_t c2 = c1;
     while (c2 == c1)
     {
-        c2 = rand() % clusterSize;
+        RANDOMIZE(randomValue);
+        c2 = randomValue % clusterSize;
     }
 
     // Get the indices of the randomly selected data points
@@ -2101,11 +2153,14 @@ double tentativeSseDrop(DataPoints* dataPoints, size_t clusterLabel, size_t loca
     }
 
     // Random centroids
-    size_t idx1 = rand() % clusterSize;
+    unsigned int randomValue;
+    RANDOMIZE(randomValue);
+    size_t idx1 = randomValue % clusterSize;
     size_t idx2 = idx1;
     while (idx2 == idx1)
     {
-        idx2 = rand() % clusterSize;
+        RANDOMIZE(randomValue);
+        idx2 = randomValue % clusterSize;
     }
 
     Centroids localCentroids = allocateCentroids(2,dataPoints->points[0].dimensions);
@@ -2167,11 +2222,14 @@ ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, size_t cl
     }
 
     // Random centroids
-    size_t idx1 = rand() % clusterSize;
+    unsigned int randomValue;
+    RANDOMIZE(randomValue);
+    size_t idx1 = randomValue % clusterSize;
     size_t idx2 = idx1;
     while (idx2 == idx1)
     {
-        idx2 = rand() % clusterSize;
+        RANDOMIZE(randomValue);
+        idx2 = randomValue % clusterSize;
     }
 
     Centroids localCentroids = allocateCentroids(2, dataPoints->points[0].dimensions);
@@ -2221,9 +2279,12 @@ double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCe
 
     size_t iterationCount = 1; //Helper for tracking progress
 
+    unsigned int randomValue;
+
     while(centroids->size < maxCentroids)
     {
-        size_t clusterToSplit = rand() % centroids->size;
+        RANDOMIZE(randomValue);
+        size_t clusterToSplit = randomValue % centroids->size;
 
         splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth);
 
@@ -2599,7 +2660,7 @@ void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundT
     clock_t start, end;
     double duration;
 
-    size_t totalIterations = loopCount * maxRepeats + 100;
+    size_t totalIterations = loopCount * maxRepeats * 5; //TODO: mietin parempi limit kuin *5
     double* timeList = malloc(totalIterations * sizeof(double)); //TODO: vois varmaan olla myös size_t koska millisekunteja
     handleMemoryError(timeList);
     size_t timeIndex = 0;
@@ -3251,11 +3312,8 @@ int generateGroundTruthCentroids(const char* dataFileName, const char* partition
  * This temporary function reads centroids from a debug file and compares them with
  * ground truth centroids to calculate the Centroid Index (CI).
  */
-void debugCalculateCI()
+void debugCalculateCI(const char* debugCentroidsFile, const char* groundTruthFile)
 {
-    const char* debugCentroidsFile = "debuggery/output_s3.txt";
-    const char* groundTruthFile = "gt/s3-cb.txt";
-
     printf("Debugging CI calculation between:\n");
     printf("  Debug file: %s\n", debugCentroidsFile);
     printf("  Ground truth: %s\n", groundTruthFile);
@@ -3276,6 +3334,49 @@ void debugCalculateCI()
     // Clean up
     freeCentroids(&debugCentroids);
     freeCentroids(&groundTruth);
+}
+
+/**
+ * @brief Debug function that calculates SSE between centroids and data points.
+ *
+ * This function reads centroids from a file and data points from another file,
+ * assigns each data point to the nearest centroid, and calculates the Sum of
+ * Squared Errors (SSE).
+ *
+ * @param centroidsFile The path to the file containing the centroids.
+ * @param dataFile The path to the file containing the data points.
+ */
+void debugCalculateSSE(const char* debugCentroidsFile, const char* dataFile)
+{
+    printf("Debugging SSE calculation:\n");
+    printf("  Centroids file: %s\n", debugCentroidsFile);
+    printf("  Data file: %s\n", dataFile);
+
+    // Read centroids and data points
+    Centroids centroids = readCentroids(debugCentroidsFile);
+    DataPoints dataPoints = readDataPoints(dataFile);
+
+    printf("Centroids: %zu with %zu dimensions\n",
+        centroids.size, centroids.points[0].dimensions);
+    printf("Data points: %zu with %zu dimensions\n",
+        dataPoints.size, dataPoints.points[0].dimensions);
+
+    // Assign each data point to the nearest centroid
+    partitionStep(&dataPoints, &centroids);
+
+    // Calculate SSE
+    double sse = calculateSSE(&dataPoints, &centroids);
+    printf("Sum of Squared Errors (SSE): %.2f\n\n", sse);
+
+    // Clean up
+    freeCentroids(&centroids);
+    freeDataPoints(&dataPoints);
+}
+
+void runDebuggery()
+{
+	debugCalculateCI("debuggery/output_worms_64d.txt", "gt/worms_64d-gt.txt");
+	debugCalculateSSE("debuggery/output_worms_64d.txt", "data/worms_64d.txt");
 }
 
 
@@ -3370,7 +3471,7 @@ static void initializeLists(char** datasetList, char** gtList, size_t* kNumList,
 
 int main()
 {
-    //debugCalculateCI();
+    //runDebuggery();
     //return 0;
     
     // Number of datasets
@@ -3388,14 +3489,14 @@ int main()
 
     //TODO: muista laittaa loopin rajat oikein
 	// Modify this loop to run the algorithms on the desired datasets
-    for (size_t i = 0; i < 19; ++i)
+    for (size_t i = 8; i < 9; ++i)
     {
         //Settings
         size_t loops = 1; // Number of loops to run the algorithms //todo lopulliseen 1000 vai 100? 1000 menee jumalattomasti aikaa
         size_t scaling = 1; // Scaling factor for the printed values
 		size_t maxIterations = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
 		size_t maxRepeats = 1000; // Maximum number of repeats for the repeated k-means algorithm //TODO lopulliseen 100(?)
-		size_t maxSwaps = 10000; // Maximum number of swaps for the random swap algorithm //TODO lopulliseen 1000(?) vai 5000? Vai datasetin koon verran?
+		size_t maxSwaps = 1000; // Maximum number of swaps for the random swap algorithm //TODO lopulliseen 1000(?) vai 5000? Vai datasetin koon verran?
 		size_t bisectingIterations = 5; // Number of tryouts for the bisecting k-means algorithm
 		bool trackProgress = true; // Track progress of the algorithms
 		bool trackTime = true; // Track time of the algorithms
@@ -3412,9 +3513,6 @@ int main()
         // Creates a subdirectory for each the dataset
         char datasetDirectory[256];
         createDatasetDirectory(outputDirectory, fileName, datasetDirectory, sizeof(datasetDirectory));
-
-        // Seeding the random number generator
-		srand((unsigned int)time(NULL));
 
         printf("Starting the process\n");
         printf("Dataset: %s\n", fileName);
@@ -3438,12 +3536,10 @@ int main()
 
             // Run K-means
             //runKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory);
-            loopCount = 3;
-			if (i == 8 || i == 9 || i == 10 || i == 17 || i == 18) loopCount = 1;
+            loopCount = 1;
             // Run Repeated K-means
-            runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
+           // runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
 
-            maxSwaps = dataPoints.size * 2;
             loopCount = 1;
             // Run Random Swap
             //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
@@ -3456,13 +3552,13 @@ int main()
             //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 0, trackProgress, trackTime);
 
             // Run SSE Split (Global)
-            //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 1, trackProgress, trackTime);
+            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 1, trackProgress, trackTime);
 
             // Run SSE Split (Local Repartition)
             //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 2, trackProgress, trackTime);
                         
             // Run Bisecting K-means
-            //runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime, bisectingIterations);
+            runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime, bisectingIterations);
             
             // Clean up
             freeDataPoints(&dataPoints);
