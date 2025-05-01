@@ -8,58 +8,11 @@
     #define _CRT_SECURE_NO_WARNINGS //TODO: tarkista tarvitaanko en‰‰
 #endif
 
-//TODO: lis‰‰ Unix compatibility alapuolelle
-// ja k‰y nykyiset l‰pi
+ // Platform-specific includes
+#include "platform.h"
 
-/**
- * @brief Platform-specific macro for creating directories.
- *
- * This macro defines a platform-independent way to create directories.
- * On Windows, it uses `_mkdir` from `<direct.h>`. On Unix-like systems,
- * it uses `mkdir` from `<sys/stat.h>` and `<sys/types.h>` with permissions set to 0755.
- *
- * Usage:
- * - Use `MAKE_DIR(path)` to create a directory at the specified path.
- *
- * Notes:
- * - Ensure the path provided is valid and accessible.
- * - On Unix-like systems, the permissions are set to 0755 by default.
- */
-#ifdef _WIN32
-    #include <direct.h>  // For _mkdir
-    #define MAKE_DIR(path) _mkdir(path)
-#else
-    #include <sys/stat.h> // For mkdir
-    #include <sys/types.h>
-    #define MAKE_DIR(path) mkdir(path, 0755)
-#endif
-
- /**
-  * @brief Platform-specific macro for secure random number generation.
-  *
-  * This macro provides a platform-independent way to generate random numbers.
-  * On Windows, it uses `rand_s` for secure random number generation.
-  * On Unix-like systems, it uses `arc4random`.
-  *
-  * Usage:
-  * - Use `RANDOMIZE(randomValue)` to generate a random number and store it in `randomValue`.
-  *
-  * Notes:
-  * - Ensure `randomValue` is an unsigned integer.
-  * - On failure (Windows), the program will exit with an error message.
-  */
-#ifdef _WIN32
-#include <stdlib.h> // For rand_s
-#define RANDOMIZE(randomValue) \
-        if (rand_s(&randomValue) != 0) { \
-            fprintf(stderr, "Error: rand_s failed\n"); \
-            exit(EXIT_FAILURE); \
-        }
-#else
-#include <stdlib.h> // For arc4random
-#define RANDOMIZE(randomValue) \
-        randomValue = arc4random();
-#endif
+// Language-specific includes
+#include "locale_utils.h"
 
 // General includes
 #include <stdio.h>
@@ -72,6 +25,10 @@
 #include <sys/types.h>
 #include <stddef.h>
 #include <locale.h>
+
+// Macros
+#define LINE_BUFSZ 512 /* tweak if needed */
+
 
 // Change logs
 // 29-04-2025: Initial 1.0v release by Niko Ruohonen
@@ -121,7 +78,7 @@
  * It is used to simplify time calculations when measuring durations
  * in milliseconds using `clock()`.
  */
-#define CLOCKS_PER_MS (CLOCKS_PER_SEC / 1000)
+#define CLOCKS_PER_MS ((double)CLOCKS_PER_SEC / 1000.0)
 
  /////////////
 // GLOBALS //
@@ -323,13 +280,10 @@ void freeClusteringResult(ClusteringResult* result, size_t numCentroids)
     char** list = malloc(size * sizeof(char*));
 	handleMemoryError(list);
 
-    const size_t stringSize = 256;
+    const size_t stringSize = PATH_MAX;
 
     for (size_t i = 0; i < size; ++i)
     {
-        // Suppress warning about potential NULL dereference
-		// We already check for NULL pointers in handleMemoryError
-        #pragma warning(suppress : 6011)
         list[i] = malloc(stringSize * sizeof(char));
 		handleMemoryError(list[i]);
     }
@@ -547,8 +501,8 @@ void freeClusteringResult(ClusteringResult* result, size_t numCentroids)
 */
 size_t getNumDimensions(const char* filename)
 {
-    FILE* file = fopen(filename, "r");
-    if (file == NULL)
+    FILE* file;
+    if (FOPEN(file, filename, "r") != 0)
     {
         handleFileError(filename);
     }
@@ -559,7 +513,7 @@ size_t getNumDimensions(const char* filename)
     _Analysis_assume_(file != NULL);
 
     //TODO: mieti, ett‰ tarvitseeko n‰it‰ buffereita yhdenmukaistaa, t‰ss‰ 512 muualla 256
-	char firstLine[512]; // Buffer size = 512, increase if needed
+	char firstLine[LINE_BUFSZ]; // Buffer size = 512, increase if needed
     if (fgets(firstLine, sizeof(firstLine), file) == NULL)
     {
         handleFileReadError(filename);
@@ -567,11 +521,11 @@ size_t getNumDimensions(const char* filename)
 
     size_t dimensions = 0;
     char* context = NULL;
-	char* token = strtok_s(firstLine, " \t\r\n", &context); //Delimiter = " ", tabs "\t", newlines "\n", carriage return "\r"
+	char* token = STRTOK(firstLine, " \t\r\n", &context); //Delimiter = " ", tabs "\t", newlines "\n", carriage return "\r"
     while (token != NULL)
     {
         dimensions++;
-        token = strtok_s(NULL, " \t\r\n", &context); //Delimiter = " ", tabs "\t", newlines "\n", carriage return "\r" 
+        token = STRTOK(NULL, " \t\r\n", &context); //Delimiter = " ", tabs "\t", newlines "\n", carriage return "\r" 
     }
 
     fclose(file);
@@ -591,8 +545,8 @@ size_t getNumDimensions(const char* filename)
  */
 DataPoints readDataPoints(const char* filename)
 {
-    FILE* file = fopen(filename, "r");
-    if (file == NULL)
+    FILE* file;
+    if (FOPEN(file, filename, "r") != 0)
     {
         handleFileError(filename);
     }
@@ -636,10 +590,10 @@ DataPoints readDataPoints(const char* filename)
         char lineCopy[1024];
         strcpy(lineCopy, line);
 
-        char* countToken = strtok_s(lineCopy, " \t\r\n", &countContext);
+        char* countToken = STRTOK(lineCopy, " \t\r\n", &countContext);
         while (countToken != NULL) {
             tokenCount++;
-            countToken = strtok_s(NULL, " \t\r\n", &countContext);
+            countToken = STRTOK(NULL, " \t\r\n", &countContext);
         }
 
         // Allocate memory for attributes
@@ -650,12 +604,12 @@ DataPoints readDataPoints(const char* filename)
 
         // Parse the actual values
         char* context = NULL;
-        char* token = strtok_s(line, " \t\r\n", &context);
+        char* token = STRTOK(line, " \t\r\n", &context);
 
         while (token != NULL && point->dimensions < tokenCount)
         {
             point->attributes[point->dimensions++] = strtod(token, NULL);
-            token = strtok_s(NULL, " \t\r\n", &context);
+            token = STRTOK(NULL, " \t\r\n", &context);
         }
 
         currentPoint++;
@@ -722,17 +676,14 @@ Centroids readCentroids(const char* filename)
  */
 void appendLogCsv(const char* filePath, size_t iteration, size_t ci, double sse)
 {
-    setlocale(LC_NUMERIC, "fi_FI");
-
-    FILE* file = fopen(filePath, "a");
-    if (file == NULL) {
+    FILE* file;
+    if (FOPEN(file, filePath, "a") != 0) {
         handleFileError(filePath);
         return;
     }
     // Write time, number of centroids, centroid index (CI) and sse
     fprintf(file, "%zu;%zu;%.0f\n", ci, iteration, sse);
     fclose(file);
-    setlocale(LC_NUMERIC, "C");
 }
 
 /**
@@ -760,11 +711,11 @@ bool fileExists(const char* filePath)
  */
 void writeCentroidsToFile(const char* filename, const Centroids* centroids, const char* outputDirectory)
 {
-    char outputFilePath[256];
-    snprintf(outputFilePath, sizeof(outputFilePath), "%s/%s", outputDirectory, filename);
+    char outputFilePath[PATH_MAX];
+    snprintf(outputFilePath, sizeof(outputFilePath), "%s%c%s", outputDirectory, PATHSEP, filename);
 
-    FILE* centroidFile = fopen(outputFilePath, "w");
-    if (centroidFile == NULL)
+    FILE* centroidFile;
+    if (FOPEN(centroidFile, outputFilePath, "w") != 0)
     {
         handleFileError(outputFilePath);
         return;
@@ -793,11 +744,11 @@ void writeCentroidsToFile(const char* filename, const Centroids* centroids, cons
  */
 void writeDataPointPartitionsToFile(const char* filename, const DataPoints* dataPoints, const char* outputDirectory)
 {
-    char outputFilePath[256];
-    snprintf(outputFilePath, sizeof(outputFilePath), "%s/%s", outputDirectory, filename);
+    char outputFilePath[PATH_MAX];
+    snprintf(outputFilePath, sizeof(outputFilePath), "%s%c%s", outputDirectory, PATHSEP, filename);
 
-    FILE* file = fopen(outputFilePath, "w");
-    if (file == NULL)
+    FILE* file;
+    if (FOPEN(file, outputFilePath, "w") != 0)
     {
         handleFileError(outputFilePath);
         return;
@@ -840,9 +791,6 @@ void deepCopyDataPoint(DataPoint* destination, const DataPoint* source)
     destination->attributes = malloc(source->dimensions * sizeof(double));
     handleMemoryError(destination->attributes);
     
-    // Suppress warning C6387 for this line
-	// The static analyzer is not able to detect that 'destination->attributes' is not NULL
-    #pragma warning(suppress : 6387)
     memcpy(destination->attributes, source->attributes, source->dimensions * sizeof(double));
 }
 
@@ -932,12 +880,16 @@ void resetPartitions(DataPoints* dataPoints)
  */
 void writeResultsToFile(const char* filename, Statistics stats, size_t numCentroids, const char* algorithm, size_t loopCount, size_t scaling, const char* outputDirectory, size_t dataPointsSize)
 {
-    char csvFileName[256];
+    char csvFileName[PATH_MAX];
     snprintf(csvFileName, sizeof(csvFileName), "%s.csv", filename);
-    char outputFilePath[256];
-    snprintf(outputFilePath, sizeof(outputFilePath), "%s/%s", outputDirectory, csvFileName);
+    char outputFilePath[PATH_MAX];
+    snprintf(outputFilePath, sizeof(outputFilePath), "%s%c%s", outputDirectory, PATHSEP, csvFileName);
 
-    FILE* file = fopen(outputFilePath, "a+");
+    FILE* file;
+    if (FOPEN(file, outputFilePath, "a+") != 0) {
+        handleFileError(outputFilePath);
+        return;
+    }
 
     // Headers
     fseek(file, 0, SEEK_END);
@@ -953,9 +905,7 @@ void writeResultsToFile(const char* filename, Statistics stats, size_t numCentro
     double avgTime = stats.timeSum / (double)loopCount;
     double succRate = (stats.successRate / (double)loopCount);
     
-    setlocale(LC_NUMERIC, "fi_FI");
     fprintf(file, "%s;%.2f;%.0f;%.2f;%.0f;%.2f\n", algorithm, avgCI, sse, relCI, avgTime, succRate);
-    setlocale(LC_NUMERIC, "C");
     
     fclose(file);
 }
@@ -974,15 +924,26 @@ void writeResultsToFile(const char* filename, Statistics stats, size_t numCentro
 void createUniqueDirectory(char* outputDirectory, size_t size)
 {
     time_t now = time(NULL);
-    struct tm* t = localtime(&now);
+    struct tm t;
+    LOCALTIME(&t, &now);
 
-    if (strftime(outputDirectory, size, "outputs/%Y-%m-%d_%H-%M-%S", t) == 0)
+    char datebuf[32];
+
+    if (strftime(datebuf, sizeof datebuf,
+        "%Y-%m-%d_%H-%M-%S", &t) == 0)
     {
-        fprintf(stderr, "Error: Buffer size is too small in createUniqueDirectory\n");
+        fprintf(stderr, "strftime failed\n");
         exit(EXIT_FAILURE);
     }
 
-    if (_mkdir(outputDirectory) != 0)
+    if (snprintf(outputDirectory, size,
+        "outputs%c%s", PATHSEP, datebuf) >= (int)size)
+    {
+        fprintf(stderr, "Buffer too small in createUniqueDirectory\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (MAKE_DIR(outputDirectory) != 0 && errno != EEXIST)
     {
         perror("Error: Unable to create directory");
 		exit(EXIT_FAILURE);
@@ -1002,9 +963,9 @@ void createUniqueDirectory(char* outputDirectory, size_t size)
  */
 void createDatasetDirectory(const char* baseDirectory, const char* datasetName, char* datasetDirectory, size_t size)
 {
-    snprintf(datasetDirectory, size, "%s/%s", baseDirectory, datasetName);
+    snprintf(datasetDirectory, size, "%s%c%s", baseDirectory, PATHSEP, datasetName);
 
-    if (_mkdir(datasetDirectory) != 0)
+    if (MAKE_DIR(datasetDirectory) != 0)
     {
         perror("Error: Unable to create dataset directory");
         exit(EXIT_FAILURE);
@@ -1075,7 +1036,7 @@ void printStatistics(const char* algorithmName, Statistics stats, size_t loopCou
  * @return The base filename without the extension.
  */
 char* removeExtension(const char* filename) {
-    static char baseFileName[256];
+    static char baseFileName[PATH_MAX];
 
     strncpy(baseFileName, filename, sizeof(baseFileName) - 1);
     baseFileName[sizeof(baseFileName) - 1] = '\0';
@@ -1102,12 +1063,12 @@ char* removeExtension(const char* filename) {
 void initializeCsvFile(size_t splitType, const char* outputDirectory, char* csvFilePath, size_t csvFilePathSize)
 {
     const char* algorithmName = getAlgorithmName(splitType);
-    snprintf(csvFilePath, csvFilePathSize, "%s/%s_log.csv", outputDirectory, algorithmName);
+    snprintf(csvFilePath, csvFilePathSize, "%s%c%s_log.csv", outputDirectory, PATHSEP, algorithmName);
 
     if (!fileExists(csvFilePath))
     {
-        FILE* csvFile = fopen(csvFilePath, "w");
-        if (csvFile == NULL) {
+        FILE* csvFile;
+        if (FOPEN(csvFile, csvFilePath, "w") != 0) {
             handleFileError(csvFilePath);
         }
         fprintf(csvFile, "%s\n", "ci;iteration;sse");
@@ -1133,12 +1094,11 @@ void writeTimeTrackingData(const char* outputDirectory, size_t splitType, const 
 
     const char* algorithmName = getAlgorithmName(splitType);
     
-    setlocale(LC_NUMERIC, "fi_FI");
-    char timesFile[256];
-    snprintf(timesFile, sizeof(timesFile), "%s/%s_times.txt", outputDirectory, algorithmName);
+    char timesFile[PATH_MAX];
+    snprintf(timesFile, sizeof(timesFile), "%s%c%s_times.txt", outputDirectory, PATHSEP, algorithmName);
 
-    FILE* timesFilePtr = fopen(timesFile, "w");
-    if (timesFilePtr == NULL) {
+    FILE* timesFilePtr;
+    if (FOPEN(timesFilePtr, timesFile, "w") != 0) {
         handleFileError(timesFile);
 		return; //TODO: t‰‰ on turha, koska handleFileError lopettaa ohjelman. Mutta t‰n avulla saa warningit pois koska timefileprt ei voikaan olla null alhaalla
     }
@@ -1148,7 +1108,6 @@ void writeTimeTrackingData(const char* outputDirectory, size_t splitType, const 
     }
 
     fclose(timesFilePtr);
-    setlocale(LC_NUMERIC, "C");
 }
 
 
@@ -1547,8 +1506,8 @@ size_t calculateCentroidIndex(const Centroids* centroids1, const Centroids* cent
 void saveIterationState(const DataPoints* dataPoints, const Centroids* centroids,
     size_t iteration, const char* outputDirectory, const char* algorithmName)
 {
-    char centroidsFileName[256];
-    char partitionsFileName[256];
+    char centroidsFileName[PATH_MAX];
+    char partitionsFileName[PATH_MAX];
 
     snprintf(centroidsFileName, sizeof(centroidsFileName), "%s_centroids_iter_%zu.txt", algorithmName, iteration);
     snprintf(partitionsFileName, sizeof(partitionsFileName), "%s_partitions_iter_%zu.txt", algorithmName, iteration);
@@ -1576,23 +1535,23 @@ void writeIterationStats(const DataPoints* dataPoints, const Centroids* centroid
     const Centroids* groundTruth, size_t iteration, double sse,
     size_t splitCluster, const char* outputDirectory, const char* algorithmName)
 {
-    char statsFileName[256];
+    char statsFileName[PATH_MAX];
     snprintf(statsFileName, sizeof(statsFileName), "%s_iteration_stats.txt", algorithmName);
 
-    char outputFilePath[256];
-    snprintf(outputFilePath, sizeof(outputFilePath), "%s/%s", outputDirectory, statsFileName);
+    char outputFilePath[PATH_MAX];
+    snprintf(outputFilePath, sizeof(outputFilePath), "%s%c%s", outputDirectory, PATHSEP, statsFileName);
 
     // Create the file with headers if it doesn't exist
     FILE* statsFile = NULL;
     if (iteration == 0) {
-        if (fopen_s(&statsFile, outputFilePath, "w") != 0) {
+        if (FOPEN(statsFile, outputFilePath, "w") != 0) {
             handleFileError(outputFilePath);
             return;
         }
         fprintf(statsFile, "Iteration;NumCentroids;SSE;CI;SplitCluster\n");
     }
     else {
-        if (fopen_s(&statsFile, outputFilePath, "a") != 0) {
+        if (FOPEN(statsFile, outputFilePath, "a") != 0) {
             handleFileError(outputFilePath);
             return;
         }
@@ -1879,7 +1838,7 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps,
     double* backupPartitions = malloc(dataPoints->size * sizeof(size_t));
     handleMemoryError(backupPartitions);
 
-    char csvFile[256];
+    char csvFile[PATH_MAX];
     if (createCsv)
     {
         initializeCsvFile(3, outputDirectory, csvFile, sizeof(csvFile));
@@ -2353,7 +2312,7 @@ ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, size_t cl
 double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, const Centroids* groundTruth, const char* outputDirectory,
     bool trackProgress, double* timeList, size_t* timeIndex, clock_t start, bool trackTime, bool createCsv)
 {
-    char csvFile[256];
+    char csvFile[PATH_MAX];
     if (createCsv)
     {
         initializeCsvFile(5, outputDirectory, csvFile, sizeof(csvFile));
@@ -2423,7 +2382,7 @@ double runSseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
     bool* clustersAffected = calloc(maxCentroids, sizeof(bool));
     handleMemoryError(clustersAffected);
 
-    char csvFile[256];    
+    char csvFile[PATH_MAX];
     if (createCsv)
     {
         initializeCsvFile(splitType, outputDirectory, csvFile, sizeof(csvFile));
@@ -2555,7 +2514,7 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
     DataPoint newCentroid1 = allocateDataPoint(dataPoints->points[0].dimensions);
     DataPoint newCentroid2 = allocateDataPoint(dataPoints->points[0].dimensions);
 
-    char csvFile[256];
+    char csvFile[PATH_MAX];
     if (createCsv)
     {
         initializeCsvFile(4, outputDirectory, csvFile, sizeof(csvFile));
@@ -2750,7 +2709,7 @@ void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundT
     handleMemoryError(timeList);
     size_t timeIndex = 0;
 
-    char csvFile[256];
+    char csvFile[PATH_MAX];
     if (trackProgress)
     {
         initializeCsvFile(7, outputDirectory, csvFile, sizeof(csvFile));
@@ -2898,10 +2857,10 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth
 
         if (centroidIndex != 0 && savedNonZeroResults == false)
         {
-            char centroidsFile[256];
-            char partitionsFile[256];
-            snprintf(centroidsFile, sizeof(centroidsFile), "%RandomSwap_centroids_failed.txt");
-            snprintf(partitionsFile, sizeof(partitionsFile), "%RandomSwap_partitions_failed.txt");
+            char centroidsFile[PATH_MAX];
+            char partitionsFile[PATH_MAX];
+            snprintf(centroidsFile, sizeof(centroidsFile), "RandomSwap_centroids_failed.txt");
+            snprintf(partitionsFile, sizeof(partitionsFile), "RandomSwap_partitions_failed.txt");
 
             writeCentroidsToFile(centroidsFile, &centroids, outputDirectory);
             writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
@@ -2909,10 +2868,10 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth
         }
         else if (centroidIndex == 0 && savedZeroResults == false)
         {
-            char centroidsFile[256];
-            char partitionsFile[256];
-            snprintf(centroidsFile, sizeof(centroidsFile), "%RandomSwap_centroids_perfect.txt");
-            snprintf(partitionsFile, sizeof(partitionsFile), "%RandomSwap_partitions_perfect.txt");
+            char centroidsFile[PATH_MAX];
+            char partitionsFile[PATH_MAX];
+            snprintf(centroidsFile, sizeof(centroidsFile), "RandomSwap_centroids_perfect.txt");
+            snprintf(partitionsFile, sizeof(partitionsFile), "RandomSwap_partitions_perfect.txt");
 
             writeCentroidsToFile(centroidsFile, &centroids, outputDirectory);
             writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
@@ -2995,10 +2954,10 @@ void runRandomSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTrut
 
         if (centroidIndex != 0 && savedNonZeroResults == false)
         {
-            char centroidsFile[256];
-            char partitionsFile[256];
-            snprintf(centroidsFile, sizeof(centroidsFile), "%RandomSplit_centroids_failed.txt");
-            snprintf(partitionsFile, sizeof(partitionsFile), "%RandomSplit_partitions_failed.txt");
+            char centroidsFile[PATH_MAX];
+            char partitionsFile[PATH_MAX];
+            snprintf(centroidsFile, sizeof(centroidsFile), "RandomSplit_centroids_failed.txt");
+            snprintf(partitionsFile, sizeof(partitionsFile), "RandomSplit_partitions_failed.txt");
 
             writeCentroidsToFile(centroidsFile, &centroids, outputDirectory);
             writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
@@ -3006,10 +2965,10 @@ void runRandomSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTrut
         }
         else if (centroidIndex == 0 && savedZeroResults == false)
         {
-            char centroidsFile[256];
-            char partitionsFile[256];
-            snprintf(centroidsFile, sizeof(centroidsFile), "%RandomSplit_centroids_perfect.txt");
-            snprintf(partitionsFile, sizeof(partitionsFile), "%RandomSplit_partitions_perfect.txt");
+            char centroidsFile[PATH_MAX];
+            char partitionsFile[PATH_MAX];
+            snprintf(centroidsFile, sizeof(centroidsFile), "RandomSplit_centroids_perfect.txt");
+            snprintf(partitionsFile, sizeof(partitionsFile), "RandomSplit_partitions_perfect.txt");
 
             writeCentroidsToFile(centroidsFile, &centroids, outputDirectory);
             writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
@@ -3094,8 +3053,8 @@ void runSseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, 
 
         if (centroidIndex != 0 && savedNonZeroResults == false)
         {
-            char centroidsFile[256];
-            char partitionsFile[256];
+            char centroidsFile[PATH_MAX];
+            char partitionsFile[PATH_MAX];
             snprintf(centroidsFile, sizeof(centroidsFile), "%s_centroids_failed.txt", splitTypeName);
             snprintf(partitionsFile, sizeof(partitionsFile), "%s_partitions_failed.txt", splitTypeName);
             
@@ -3105,8 +3064,8 @@ void runSseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, 
         }
         else if (centroidIndex == 0 && savedZeroResults == false)
         {
-            char centroidsFile[256];
-            char partitionsFile[256];
+            char centroidsFile[PATH_MAX];
+            char partitionsFile[PATH_MAX];
             snprintf(centroidsFile, sizeof(centroidsFile), "%s_centroids_perfect.txt", splitTypeName);
             snprintf(partitionsFile, sizeof(partitionsFile), "%s_partitions_perfect.txt", splitTypeName);
 
@@ -3190,10 +3149,10 @@ void runBisectingKMeansAlgorithm(DataPoints* dataPoints, const Centroids* ground
 
         if (centroidIndex != 0 && savedNonZeroResults == false)
         {
-            char centroidsFile[256];
-            char partitionsFile[256];
-            snprintf(centroidsFile, sizeof(centroidsFile), "%Bisecting_centroids_failed.txt");
-            snprintf(partitionsFile, sizeof(partitionsFile), "%Bisecting_partitions_failed.txt");
+            char centroidsFile[PATH_MAX];
+            char partitionsFile[PATH_MAX];
+            snprintf(centroidsFile, sizeof(centroidsFile), "Bisecting_centroids_failed.txt");
+            snprintf(partitionsFile, sizeof(partitionsFile), "Bisecting_partitions_failed.txt");
 
             writeCentroidsToFile(centroidsFile, &centroids, outputDirectory);
             writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
@@ -3201,10 +3160,10 @@ void runBisectingKMeansAlgorithm(DataPoints* dataPoints, const Centroids* ground
         }
         else if (centroidIndex == 0 && savedZeroResults == false)
         {
-            char centroidsFile[256];
-            char partitionsFile[256];
-            snprintf(centroidsFile, sizeof(centroidsFile), "%Bisecting_centroids_perfect.txt");
-            snprintf(partitionsFile, sizeof(partitionsFile), "%Bisecting_partitions_perfect.txt");
+            char centroidsFile[PATH_MAX];
+            char partitionsFile[PATH_MAX];
+            snprintf(centroidsFile, sizeof(centroidsFile), "Bisecting_centroids_perfect.txt");
+            snprintf(partitionsFile, sizeof(partitionsFile), "Bisecting_partitions_perfect.txt");
 
             writeCentroidsToFile(centroidsFile, &centroids, outputDirectory);
             writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
@@ -3252,8 +3211,9 @@ int generateGroundTruthCentroids(const char* dataFileName, const char* partition
     printf("Read %zu data points from %s\n", dataPoints.size, dataFileName);
 
     // Read the partition indices
-    FILE* partitionFile = fopen(partitionFileName, "r");
-    if (partitionFile == NULL) {
+    FILE* partitionFile;
+
+    if (FOPEN(partitionFile, partitionFileName, "r") != 0) {
         fprintf(stderr, "Error: Unable to open partition file '%s'\n", partitionFileName);
         freeDataPoints(&dataPoints);
         return 1;
@@ -3363,8 +3323,8 @@ int generateGroundTruthCentroids(const char* dataFileName, const char* partition
     }
 
     // Write the centroids to the output file
-    FILE* outputFile = fopen(outputFileName, "w");
-    if (outputFile == NULL) {
+    FILE* outputFile;
+    if (FOPEN(outputFile, outputFileName, "w") != 0) {
         fprintf(stderr, "Error: Unable to open output file '%s'\n", outputFileName);
         free(clusterCounts);
         freeCentroids(&centroids);
@@ -3482,45 +3442,45 @@ void runDebuggery()
  */
 static void initializeLists(char** datasetList, char** gtList, size_t* kNumList, size_t datasetCount)
 {
-    strcpy_s(datasetList[0], 20, "a1.txt");
-    strcpy_s(datasetList[1], 20, "a2.txt");
-    strcpy_s(datasetList[2], 20, "a3.txt");
-    strcpy_s(datasetList[3], 20, "s1.txt");
-    strcpy_s(datasetList[4], 20, "s2.txt");
-    strcpy_s(datasetList[5], 20, "s3.txt");
-    strcpy_s(datasetList[6], 20, "s4.txt");
-    strcpy_s(datasetList[7], 20, "unbalance.txt");
-    strcpy_s(datasetList[8], 20, "birch1.txt");
-    strcpy_s(datasetList[9], 20, "birch2.txt");
-    strcpy_s(datasetList[10], 20, "birch3.txt");
-    strcpy_s(datasetList[11], 20, "dim032.txt");
-    strcpy_s(datasetList[12], 20, "dim064.txt");
-    strcpy_s(datasetList[13], 20, "g2-1-10.txt");
-    strcpy_s(datasetList[14], 20, "g2-1-20.txt");
-    strcpy_s(datasetList[15], 20, "n1.txt");
-    strcpy_s(datasetList[16], 20, "n2.txt");
-    strcpy_s(datasetList[17], 20, "worms_2d.txt");
-    strcpy_s(datasetList[18], 20, "worms_64d.txt");
+    STRCPY(datasetList[0], 20, "a1.txt");
+    STRCPY(datasetList[1], 20, "a2.txt");
+    STRCPY(datasetList[2], 20, "a3.txt");
+    STRCPY(datasetList[3], 20, "s1.txt");
+    STRCPY(datasetList[4], 20, "s2.txt");
+    STRCPY(datasetList[5], 20, "s3.txt");
+    STRCPY(datasetList[6], 20, "s4.txt");
+    STRCPY(datasetList[7], 20, "unbalance.txt");
+    STRCPY(datasetList[8], 20, "birch1.txt");
+    STRCPY(datasetList[9], 20, "birch2.txt");
+    STRCPY(datasetList[10], 20, "birch3.txt");
+    STRCPY(datasetList[11], 20, "dim032.txt");
+    STRCPY(datasetList[12], 20, "dim064.txt");
+    STRCPY(datasetList[13], 20, "g2-1-10.txt");
+    STRCPY(datasetList[14], 20, "g2-1-20.txt");
+    STRCPY(datasetList[15], 20, "n1.txt");
+    STRCPY(datasetList[16], 20, "n2.txt");
+    STRCPY(datasetList[17], 20, "worms_2d.txt");
+    STRCPY(datasetList[18], 20, "worms_64d.txt");
 
-    strcpy_s(gtList[0], 20, "a1-ga-cb.txt");
-    strcpy_s(gtList[1], 20, "a2-ga-cb.txt");
-    strcpy_s(gtList[2], 20, "a3-ga-cb.txt");
-    strcpy_s(gtList[3], 20, "s1-cb.txt");
-    strcpy_s(gtList[4], 20, "s2-cb.txt");
-    strcpy_s(gtList[5], 20, "s3-cb.txt");
-    strcpy_s(gtList[6], 20, "s4-cb.txt");
-    strcpy_s(gtList[7], 20, "unbalance-gt.txt");
-    strcpy_s(gtList[8], 20, "b1-gt.txt");
-    strcpy_s(gtList[9], 20, "b2-gt.txt");
-    strcpy_s(gtList[10], 20, "b3-gt.txt");
-    strcpy_s(gtList[11], 20, "dim032.txt");
-    strcpy_s(gtList[12], 20, "dim064.txt");
-    strcpy_s(gtList[13], 20, "g2-1-10-gt.txt");
-    strcpy_s(gtList[14], 20, "g2-1-20-gt.txt");
-    strcpy_s(gtList[15], 20, "n1-gt.txt");
-    strcpy_s(gtList[16], 20, "n2-gt.txt");
-    strcpy_s(gtList[17], 20, "worms_2d-gt.txt");
-    strcpy_s(gtList[18], 20, "worms_64d-gt.txt");
+    STRCPY(gtList[0], 20, "a1-ga-cb.txt");
+    STRCPY(gtList[1], 20, "a2-ga-cb.txt");
+    STRCPY(gtList[2], 20, "a3-ga-cb.txt");
+    STRCPY(gtList[3], 20, "s1-cb.txt");
+    STRCPY(gtList[4], 20, "s2-cb.txt");
+    STRCPY(gtList[5], 20, "s3-cb.txt");
+    STRCPY(gtList[6], 20, "s4-cb.txt");
+    STRCPY(gtList[7], 20, "unbalance-gt.txt");
+    STRCPY(gtList[8], 20, "b1-gt.txt");
+    STRCPY(gtList[9], 20, "b2-gt.txt");
+    STRCPY(gtList[10], 20, "b3-gt.txt");
+    STRCPY(gtList[11], 20, "dim032.txt");
+    STRCPY(gtList[12], 20, "dim064.txt");
+    STRCPY(gtList[13], 20, "g2-1-10-gt.txt");
+    STRCPY(gtList[14], 20, "g2-1-20-gt.txt");
+    STRCPY(gtList[15], 20, "n1-gt.txt");
+    STRCPY(gtList[16], 20, "n2-gt.txt");
+    STRCPY(gtList[17], 20, "worms_2d-gt.txt");
+    STRCPY(gtList[18], 20, "worms_64d-gt.txt");
 
     kNumList[0] = 20;   // A1
     kNumList[1] = 35;   // A2
@@ -3559,6 +3519,8 @@ int main()
     //runDebuggery();
     //return 0;
     
+    set_numeric_locale_finnish();
+
     // Number of datasets
     size_t datasetCount = 19; //TODO: "halutaan softa jonka voi vaan ajaa", eli t‰m‰ pit‰‰ pohtia uudestaan
 
@@ -3569,7 +3531,7 @@ int main()
     handleMemoryError(kNumList);	
     initializeLists(datasetList, gtList, kNumList, datasetCount);
 
-    char outputDirectory[256]; // Buffer size = 256, increase if needed 
+    char outputDirectory[PATH_MAX]; // Buffer size = 256, increase if needed 
     createUniqueDirectory(outputDirectory, sizeof(outputDirectory));
 
     //TODO: muista laittaa loopin rajat oikein
@@ -3577,26 +3539,26 @@ int main()
     for (size_t i = 0; i < 19; ++i)
     {
         //Settings
-        size_t loops = 100; // Number of loops to run the algorithms //todo lopulliseen 100(?)
+        size_t loops = 1; // Number of loops to run the algorithms //todo lopulliseen 100(?)
         size_t scaling = 1; // Scaling factor for the printed values //TODO: Ei k‰ytˆss‰
 		size_t maxIterations = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
 		size_t maxRepeats = 1000; // Number of "repeats" for the repeated k-means algorithm //TODO lopulliseen 1000(?)
-		size_t maxSwaps = 5000; // Number of trial swaps for the random swap algorithm //TODO lopulliseen 5000(?)
+		size_t maxSwaps = 1000; // Number of trial swaps for the random swap algorithm //TODO lopulliseen 5000(?)
 		size_t bisectingIterations = 5; // Number of tryouts for the bisecting k-means algorithm
 		bool trackProgress = true; // Track progress of the algorithms
 		bool trackTime = true; // Track time of the algorithms
 
         size_t numCentroids = kNumList[i];
         const char* fileName = datasetList[i];
-        char dataFile[256]; // Buffer size = 256, increase if needed
-        snprintf(dataFile, sizeof(dataFile), "data/%s", fileName);
+        char dataFile[PATH_MAX]; // Buffer size = 256, increase if needed
+        snprintf(dataFile, sizeof(dataFile), "data%c%s", PATHSEP, fileName);
         fileName = removeExtension(fileName);
 		const char* gtName = gtList[i];
-        char gtFile[256];
-        snprintf(gtFile, sizeof(gtFile), "gt/%s", gtName);
+        char gtFile[PATH_MAX];
+        snprintf(gtFile, sizeof(gtFile), "gt%c%s", PATHSEP, gtName);
 
         // Creates a subdirectory for each the dataset
-        char datasetDirectory[256];
+        char datasetDirectory[PATH_MAX];
         createDatasetDirectory(outputDirectory, fileName, datasetDirectory, sizeof(datasetDirectory));
 
         printf("Starting the process\n");
@@ -3607,6 +3569,7 @@ int main()
         if (numDimensions > 0)
         {
 			size_t loopCount = loops;
+			size_t swaps = maxSwaps;
 
             printf("Number of dimensions in the data: %zu\n", numDimensions);
 
@@ -3620,16 +3583,17 @@ int main()
             printf("Number of loops: %zu\n\n", loopCount);
 
             // Run K-means
-            runKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory);
-            
+            //runKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory);
+
             loopCount = 5;
             // Run Repeated K-means
-            runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
+            //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
 
             loopCount = 1;
+            //if (i == 10 || i == 18) swaps = maxSwaps * 5;
             // Run Random Swap
-            runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, maxSwaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
-
+            runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, swaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
+            continue;
             loopCount = loops;
             // Run Random Split
             runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
