@@ -44,6 +44,12 @@ jobs:
         $CC -std=c11 -Wall -Wextra -pedantic -O2 -pthread \
             $SRC_FILES -o ../clustering -lm
     # ───────────────────────────────────────────────────────────────────
+    - name: Prepare mini dataset
+      run: |
+        mkdir -p data gt
+        cp -R ci-fixtures/data/* ./data/
+        cp -R ci-fixtures/gt/*   ./gt/
+    # ───────────────────────────────────────────────────────────────────
     - name: Smoke‑test binary
       run: |
         ./clustering || (echo "program exited with non‑zero status"; exit 1)
