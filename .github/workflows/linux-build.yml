@@ -7,41 +7,43 @@ on:
 
 jobs:
   build:
-    name: ${{ matrix.compiler }} on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
         compiler: [gcc, clang]
 
     steps:
-    # 1 – Get your repository
-    - uses: actions/checkout@v4
-
-    # 2 – Install the requested toolchain
-    - name: Install compiler
+    # ───────────────────────────────────────────────────────────────────
+    - name: Checkout code
+      uses: actions/checkout@v4
+    # ───────────────────────────────────────────────────────────────────
+    - name: Install ${{ matrix.compiler }}
       run: |
+        sudo apt-get update
         if [[ "${{ matrix.compiler }}" == "clang" ]]; then
-          sudo apt-get update
           sudo apt-get install -y clang
         else
-          sudo apt-get update
           sudo apt-get install -y build-essential   # gcc / g++
         fi
-
-    # 3 – Build
+    # ───────────────────────────────────────────────────────────────────
+    - name: List C sources (debug aid)
+      run: |
+        echo "C files found under Split_kMeans/:"
+        find Split_kMeans -maxdepth 1 -name '*.c' -print
+    # ───────────────────────────────────────────────────────────────────
     - name: Build with ${{ matrix.compiler }}
       env:
         CC: ${{ matrix.compiler }}
       run: |
+        set -e
+        cd Split_kMeans               # <-- enter source directory
         $CC --version
-        $CC -std=c11 -Wall -Wextra -pedantic -O2 \
-            -pthread clustering_with_.c -o clustering
-
-    # 4 – (Optional) run a tiny smoke‑test
-    #     Remove or expand this to run your real test‑suite
-    - name: Run smoke‑test
+        SRC_FILES=$(ls *.c)           # all C files in this folder
+        $CC -std=c11 -Wall -Wextra -pedantic -O2 -pthread \
+            $SRC_FILES -o ../clustering
+    # ───────────────────────────────────────────────────────────────────
+    - name: Smoke‑test binary
       run: |
         ./clustering || (echo "program exited with non‑zero status"; exit 1)
