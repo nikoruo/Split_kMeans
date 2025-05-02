@@ -128,7 +128,7 @@ static inline unsigned int _rand32_random_r(void)
     return (unsigned int)out;
 }
 #   define RANDOMIZE(rv)   (rv) = _rand32_random_r()
-# endif  /* random source selection */
+# endif  /*random source selection */
 
 /* path separator */
 # define PATHSEP '/'
