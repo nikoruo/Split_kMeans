@@ -664,6 +664,30 @@ Centroids readCentroids(const char* filename)
 }
 
 /**
+ * @brief Reads the value of K from a file.
+ *
+ * This function reads the value of K from the specified file. It expects the file to contain
+ * a single line with a positive integer representing the number of clusters (K).
+ *
+ * @param path The path to the file containing the value of K.
+ * @return The value of K as a size_t.
+ */
+static size_t read_k_from_file(const char* path)
+{
+    FILE* fp;
+    if (FOPEN(fp, path, "r") != 0) {
+        handleFileError(path);
+    }
+    long k = 0;
+    if (fscanf(fp, "%ld", &k) != 1 || k <= 0) {
+        fprintf(stderr, "Bad K in %s\n", path);
+        exit(EXIT_FAILURE);
+    }
+    fclose(fp);
+    return (size_t)k;
+}
+
+/**
  * @brief Appends a log entry to a CSV file.
  *
  * This function appends a log entry to the specified CSV file with the given parameters.
@@ -1856,7 +1880,7 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps,
 
     for (size_t i = 0; i < maxSwaps; ++i)
     {
-        printf("Swap %zu\n", i + 1);
+        //printf("Swap %zu\n", i + 1);
 
         //Backup
         size_t offset = 0;
@@ -3525,103 +3549,114 @@ int main()
     
     set_numeric_locale_finnish();
 
-    // Number of datasets
-    size_t datasetCount = 19; //TODO: "halutaan softa jonka voi vaan ajaa", eli tämä pitää pohtia uudestaan
-
-    // List of dataset file names, ground truth file names, and number of clusters
-    char** datasetList = createStringList(datasetCount);
-    char** gtList = createStringList(datasetCount);
-    size_t* kNumList = malloc(datasetCount * sizeof(size_t));
-    handleMemoryError(kNumList);	
-    initializeLists(datasetList, gtList, kNumList, datasetCount);
-
     char outputDirectory[PATH_MAX]; // Buffer size = 256, increase if needed 
     createUniqueDirectory(outputDirectory, sizeof(outputDirectory));
 
+    char** dataNames = NULL, ** gtNames = NULL, ** kNames = NULL;
+    size_t dataCount = list_files("data", &dataNames);
+    size_t gtCount = list_files("gt", &gtNames);
+    size_t kCount = list_files("centroids", &kNames);
+
+    if (dataCount == 0 || dataCount != gtCount || dataCount != kCount) {
+        fprintf(stderr,
+            "Directory mismatch: data=%zu, gt=%zu, centroids=%zu\n",
+            dataCount, gtCount, kCount);
+        exit(EXIT_FAILURE);
+    }
+
     //TODO: muista laittaa loopin rajat oikein
 	// Modify this loop to run the algorithms on the desired datasets
-    for (size_t i = 0; i < 19; ++i)
+    for (size_t i = 0; i < dataCount; ++i)
     {
-        //Settings
-        size_t loops = 100; // Number of loops to run the algorithms //todo lopulliseen 100(?)
-        size_t scaling = 1; // Scaling factor for the printed values //TODO: Ei käytössä
-		size_t maxIterations = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
-		size_t maxRepeats = 1000; // Number of "repeats" for the repeated k-means algorithm //TODO lopulliseen 1000(?)
-		size_t maxSwaps = 5000; // Number of trial swaps for the random swap algorithm //TODO lopulliseen 5000(?)
-		size_t bisectingIterations = 5; // Number of tryouts for the bisecting k-means algorithm
-		bool trackProgress = true; // Track progress of the algorithms
-		bool trackTime = true; // Track time of the algorithms
-
-        size_t numCentroids = kNumList[i];
-        const char* fileName = datasetList[i];
-        char dataFile[PATH_MAX]; // Buffer size = 256, increase if needed
-        snprintf(dataFile, sizeof(dataFile), "data%c%s", PATHSEP, fileName);
-        fileName = removeExtension(fileName);
-		const char* gtName = gtList[i];
+        //Data
+        char dataFile[PATH_MAX];
         char gtFile[PATH_MAX];
-        snprintf(gtFile, sizeof(gtFile), "gt%c%s", PATHSEP, gtName);
+        char kFile[PATH_MAX];
+
+        snprintf(dataFile, sizeof dataFile, "data%c%s", PATHSEP, dataNames[i]);
+        snprintf(gtFile, sizeof gtFile, "gt%c%s", PATHSEP, gtNames[i]);
+        snprintf(kFile, sizeof kFile, "centroids%c%s", PATHSEP, kNames[i]);
+
+        /* Read K for this dataset */
+        size_t numCentroids = read_k_from_file(kFile);
+
+        /* Remove extension just like before */
+        char* baseName = removeExtension(dataNames[i]);
 
         // Creates a subdirectory for each the dataset
         char datasetDirectory[PATH_MAX];
-        createDatasetDirectory(outputDirectory, fileName, datasetDirectory, sizeof(datasetDirectory));
+        createDatasetDirectory(outputDirectory, baseName, datasetDirectory, sizeof(datasetDirectory));
 
-        printf("Starting the process\n");
-        printf("Dataset: %s\n", fileName);
+        //Settings
+        size_t loops                = 1;        // Number of loops to run the algorithms //todo lopulliseen 100(?)
+        size_t scaling              = 1;        // Scaling factor for the printed values //TODO: Ei käytössä
+		size_t maxIterations        = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
+		size_t maxRepeats           = 1000;     // Number of "repeats" for the repeated k-means algorithm //TODO lopulliseen 1000(?)
+		size_t maxSwaps             = 1000;     // Number of trial swaps for the random swap algorithm //TODO lopulliseen 5000(?)
+		size_t bisectingIterations  = 5;        // Number of tryouts for the bisecting k-means algorithm
+		bool trackProgress          = true;     // Track progress of the algorithms
+		bool trackTime              = true;     // Track time of the algorithms
 
+        DataPoints dataPoints = readDataPoints(dataFile);
+        Centroids  groundTruth = readCentroids(gtFile);
+        size_t loopCount = loops;
+        size_t swaps = maxSwaps;
         size_t numDimensions = getNumDimensions(dataFile);
 
-        if (numDimensions > 0)
-        {
-			size_t loopCount = loops;
-			size_t swaps = maxSwaps;
+        printf("Starting the process\n");
+        printf("Dataset: %s\n", baseName);
 
-            printf("Number of dimensions in the data: %zu\n", numDimensions);
-
-            DataPoints dataPoints = readDataPoints(dataFile);
-            printf("Dataset size: %zu\n", dataPoints.size);
-
-            printf("Number of clusters in the data: %zu\n", numCentroids);
-
-            Centroids groundTruth = readCentroids(gtFile);
-
-            printf("Number of loops: %zu\n\n", loopCount);
-
-            // Run K-means
-            //runKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory);
-
-            loopCount = 5;
-            // Run Repeated K-means
-            runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
-
-            loopCount = 1;
-            if (i == 10 || i == 18) swaps = maxSwaps * 5;
-            // Run Random Swap
-            runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, swaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
-
-            loopCount = loops;
-            // Run Random Split
-            runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
-
-            // Run SSE Split (Intra-cluster)
-            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 0, trackProgress, trackTime);
-
-            // Run SSE Split (Global)
-            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 1, trackProgress, trackTime);
-
-            // Run SSE Split (Local Repartition)
-            runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, 2, trackProgress, trackTime);
-                        
-            // Run Bisecting K-means
-            runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime, bisectingIterations);
-            
-            // Clean up
-            freeDataPoints(&dataPoints);
-            freeCentroids(&groundTruth);
+        if (numDimensions == 0) {
+            fprintf(stderr, "--> Skipping (couldn’t read dimensions)\n");
+            continue;
         }
+        printf("Number of dimensions in the data: %zu\n", numDimensions);
+        printf("Dataset size: %zu\n", dataPoints.size);
+        printf("Number of clusters in the data: %zu\n", numCentroids);
+        printf("Number of loops: %zu\n\n", loopCount);
+
+        // Run K-means
+        runKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory);
+        continue;
+
+        loopCount = 5;
+        // Run Repeated K-means
+        runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
+
+        loopCount = 1;
+        if (i == 10 || i == 18) swaps = maxSwaps * 5;
+        // Run Random Swap
+        runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, swaps, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
+        loopCount = loops;
+        // Run Random Split
+        runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
+
+        // Run SSE Split (Intra-cluster)
+        runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 0, trackProgress, trackTime);
+
+        // Run SSE Split (Global)
+        runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 1, trackProgress, trackTime);
+
+        // Run SSE Split (Local Repartition)
+        runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 2, trackProgress, trackTime);
+                        
+        // Run Bisecting K-means
+        runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime, bisectingIterations);
+            
+        // Clean up
+        freeDataPoints(&dataPoints);
+        freeCentroids(&groundTruth);
     }
 
-    freeStringList(datasetList, datasetCount);
-    freeStringList(gtList, datasetCount);
+    for (size_t i = 0; i < dataCount; ++i) {
+        free(dataNames[i]);
+        free(gtNames[i]);
+        free(kNames[i]);
+    }
+
+    free(dataNames);
+    free(gtNames);
+    free(kNames);
 
     return 0;
 }

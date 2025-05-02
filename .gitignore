@@ -451,9 +451,12 @@ FodyWeavers.xsd
 */outputs/
 */gt/
 */debuggery/
+*/centroids/
 
 # --- keep CI fixture files -------------------------------
 !ci-fixtures/data/
 !ci-fixtures/data/**
 !ci-fixtures/gt/
 !ci-fixtures/gt/**
+!ci-fixtures/centroids/
+!ci-fixtures/centroids/**

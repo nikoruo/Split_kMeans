@@ -5,6 +5,9 @@
  *   • BSD / macOS               arc4random()
  *   • Older POSIX               random_r()
  * ---------------------------------------------------------------------- */
+
+#include <string.h>
+
 #ifndef PLATFORM_H
 #define PLATFORM_H
 #pragma once
@@ -17,6 +20,20 @@
 #  endif
 #endif
 /* --------------------------------------------------------------------- */
+
+/* ------------------------------------------------------------------ */
+/*  COMMON helper: qsort comparator for char*                         */
+/* ------------------------------------------------------------------ */
+static int cmp_charptr(const void* a, const void* b)
+{
+    const char* sa = *(const char* const*)a;
+    const char* sb = *(const char* const*)b;
+#if defined(_MSC_VER)
+    return _stricmp(sa, sb); // WIN
+#else
+    return strcmp(sa, sb); // POSIX
+#endif
+}
 
 /* ==========================  WINDOWS / MSVC  ========================= */
 #ifdef _MSC_VER
@@ -53,7 +70,7 @@
 #else   /* gcc / clang -------------------------------------------------- */
 
 # include <string.h>
-#include <stdio.h>
+# include <stdio.h>
 # include <errno.h>
 # include <pthread.h>
 # include <sys/stat.h>
@@ -140,3 +157,57 @@ static inline unsigned int _rand32_random_r(void)
 #endif /* _MSC_VER */
 
 #endif /* PLATFORM_H */
+
+
+/* ------------------------------------------------------------------ */
+/* Simple directory listing – POSIX dirent or Windows FindFirstFile   */
+/* Returns number of regular files; allocates *out with strdup’ed     */
+/* basenames in lexicographic order (caller must free).               */
+
+#ifdef _MSC_VER           /* ----------  Windows  ------------------ */
+#include <windows.h>
+static size_t list_files(const char *dir, char ***out)
+{
+    char pattern[PATH_MAX];
+    snprintf(pattern, sizeof pattern, "%s\\*", dir);
+
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pattern, &fd);
+    if (h == INVALID_HANDLE_VALUE) return 0;
+
+    char **v = NULL;
+    size_t n = 0;
+    do {
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        v = realloc(v, (n + 1) * sizeof *v);
+        v[n++] = _strdup(fd.cFileName);
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+
+    qsort(v, n, sizeof * v, cmp_charptr);
+    *out = v;
+    return n;
+}
+
+#else                       /* --------- POSIX / dirent ------------ */
+#include <dirent.h>
+static size_t list_files(const char *dir, char ***out)
+{
+    DIR *d = opendir(dir);
+    if (!d) return 0;
+
+    struct dirent *e;
+    char **v = NULL;
+    size_t n = 0;
+    while ((e = readdir(d))) {
+        if (e->d_type == DT_DIR) continue;
+        v = realloc(v, (n + 1) * sizeof *v);
+        v[n++] = strdup(e->d_name);
+    }
+    closedir(d);
+
+    qsort(v, n, sizeof * v, cmp_charptr);
+    *out = v;
+    return n;
+}
+#endif
