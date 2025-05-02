@@ -46,9 +46,10 @@ jobs:
     # ───────────────────────────────────────────────────────────────────
     - name: Prepare mini dataset
       run: |
-        mkdir -p data gt
+        mkdir -p data gt centroids
         cp -R ci-fixtures/data/* ./data/
         cp -R ci-fixtures/gt/*   ./gt/
+        cp -R ci-fixtures/centroids/*   ./centroids/
     # ───────────────────────────────────────────────────────────────────
     - name: Smoke‑test binary
       run: |
