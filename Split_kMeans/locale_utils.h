@@ -5,10 +5,11 @@
 
 static void set_numeric_locale_finnish(void)
 {
-    /* Candidates in priority order.                        *
+    /* Candidates in priority order
      *  • Linux / BSD:     fi_FI.UTF-8 (generated via locale-gen)
      *  • Generic POSIX:   fi_FI
-     *  • Windows / MSVC:  Finnish_Finland.1252             */
+     *  • Windows / MSVC:  Finnish_Finland.1252
+     */
     static const char* candidates[] = {
         "fi_FI.UTF-8",
         "fi_FI",

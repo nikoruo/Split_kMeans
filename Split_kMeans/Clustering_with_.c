@@ -3457,83 +3457,6 @@ void runDebuggery()
 // Main //
 /////////
 
-/**
- * @brief Initializes the dataset, ground truth lists, and number of clusters.
- *
- * This function initializes the dataset and ground truth lists with the file names,
- * and initializes the number of clusters for each dataset.
- *
- * @param datasetList A pointer to the list of dataset file names.
- * @param gtList A pointer to the list of ground truth file names.
- * @param kNumList A pointer to the array of number of clusters for each dataset.
- * @param datasetCount The number of datasets.
- */
-static void initializeLists(char** datasetList, char** gtList, size_t* kNumList, size_t datasetCount)
-{
-    STRCPY(datasetList[0], 20, "a1.txt");
-    STRCPY(datasetList[1], 20, "a2.txt");
-    STRCPY(datasetList[2], 20, "a3.txt");
-    STRCPY(datasetList[3], 20, "s1.txt");
-    STRCPY(datasetList[4], 20, "s2.txt");
-    STRCPY(datasetList[5], 20, "s3.txt");
-    STRCPY(datasetList[6], 20, "s4.txt");
-    STRCPY(datasetList[7], 20, "unbalance.txt");
-    STRCPY(datasetList[8], 20, "birch1.txt");
-    STRCPY(datasetList[9], 20, "birch2.txt");
-    STRCPY(datasetList[10], 20, "birch3.txt");
-    STRCPY(datasetList[11], 20, "dim032.txt");
-    STRCPY(datasetList[12], 20, "dim064.txt");
-    STRCPY(datasetList[13], 20, "g2-1-10.txt");
-    STRCPY(datasetList[14], 20, "g2-1-20.txt");
-    STRCPY(datasetList[15], 20, "n1.txt");
-    STRCPY(datasetList[16], 20, "n2.txt");
-    STRCPY(datasetList[17], 20, "worms_2d.txt");
-    STRCPY(datasetList[18], 20, "worms_64d.txt");
-
-    STRCPY(gtList[0], 20, "a1-ga-cb.txt");
-    STRCPY(gtList[1], 20, "a2-ga-cb.txt");
-    STRCPY(gtList[2], 20, "a3-ga-cb.txt");
-    STRCPY(gtList[3], 20, "s1-cb.txt");
-    STRCPY(gtList[4], 20, "s2-cb.txt");
-    STRCPY(gtList[5], 20, "s3-cb.txt");
-    STRCPY(gtList[6], 20, "s4-cb.txt");
-    STRCPY(gtList[7], 20, "unbalance-gt.txt");
-    STRCPY(gtList[8], 20, "b1-gt.txt");
-    STRCPY(gtList[9], 20, "b2-gt.txt");
-    STRCPY(gtList[10], 20, "b3-gt.txt");
-    STRCPY(gtList[11], 20, "dim032.txt");
-    STRCPY(gtList[12], 20, "dim064.txt");
-    STRCPY(gtList[13], 20, "g2-1-10-gt.txt");
-    STRCPY(gtList[14], 20, "g2-1-20-gt.txt");
-    STRCPY(gtList[15], 20, "n1-gt.txt");
-    STRCPY(gtList[16], 20, "n2-gt.txt");
-    STRCPY(gtList[17], 20, "worms_2d-gt.txt");
-    STRCPY(gtList[18], 20, "worms_64d-gt.txt");
-
-    kNumList[0] = 20;   // A1
-    kNumList[1] = 35;   // A2
-    kNumList[2] = 50;   // A3
-    kNumList[3] = 15;   // S1
-    kNumList[4] = 15;   // S2
-    kNumList[5] = 15;   // S3
-    kNumList[6] = 15;   // S4
-    kNumList[7] = 8;    // Unbalance    
-    kNumList[8] = 100;  // Birch1
-    kNumList[9] = 100;  // Birch2
-    kNumList[10] = 100; // Birch3
-    kNumList[11] = 16;  // Dim (high)
-    kNumList[12] = 16;  // Dim (high)
-    kNumList[13] = 2;   // G2
-    kNumList[14] = 2;   // G2
-    kNumList[15] = 3;   // N3 (n1)
-    kNumList[16] = 6;   // N6 (n2)
-    kNumList[17] = 35;  // Worms 2d
-	kNumList[18] = 25;  // Worms 64d
-
-}
-
-//END: disabloi false positive varoitukset kommenttien kera
-//     Vai poistetaanko suppressit ja antaa varoitusten olla?
 //END: kommentoi kaikki muistintarkastukset ja iffit pois lopullisesta versiosta <-tehokkuus
 //END: credits ja alkupuhe koodin alkuun
 //     edellisen alle voisi lisätä lokin, että kuka on päivittänyt ja milloin
@@ -3549,7 +3472,7 @@ int main()
     
     set_numeric_locale_finnish();
 
-    char outputDirectory[PATH_MAX]; // Buffer size = 256, increase if needed 
+    char outputDirectory[PATH_MAX];
     createUniqueDirectory(outputDirectory, sizeof(outputDirectory));
 
     char** dataNames = NULL, ** gtNames = NULL, ** kNames = NULL;
@@ -3565,22 +3488,15 @@ int main()
     }
 
     //TODO: muista laittaa loopin rajat oikein
-	// Modify this loop to run the algorithms on the desired datasets
     for (size_t i = 0; i < dataCount; ++i)
     {
-        //Data
+        //Data files
         char dataFile[PATH_MAX];
         char gtFile[PATH_MAX];
         char kFile[PATH_MAX];
-
         snprintf(dataFile, sizeof dataFile, "data%c%s", PATHSEP, dataNames[i]);
         snprintf(gtFile, sizeof gtFile, "gt%c%s", PATHSEP, gtNames[i]);
         snprintf(kFile, sizeof kFile, "centroids%c%s", PATHSEP, kNames[i]);
-
-        /* Read K for this dataset */
-        size_t numCentroids = read_k_from_file(kFile);
-
-        /* Remove extension just like before */
         char* baseName = removeExtension(dataNames[i]);
 
         // Creates a subdirectory for each the dataset
@@ -3588,11 +3504,11 @@ int main()
         createDatasetDirectory(outputDirectory, baseName, datasetDirectory, sizeof(datasetDirectory));
 
         //Settings
-        size_t loops                = 1;        // Number of loops to run the algorithms //todo lopulliseen 100(?)
+        size_t loops                = 100;        // Number of loops to run the algorithms //todo lopulliseen 100(?)
         size_t scaling              = 1;        // Scaling factor for the printed values //TODO: Ei käytössä
 		size_t maxIterations        = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
 		size_t maxRepeats           = 1000;     // Number of "repeats" for the repeated k-means algorithm //TODO lopulliseen 1000(?)
-		size_t maxSwaps             = 1000;     // Number of trial swaps for the random swap algorithm //TODO lopulliseen 5000(?)
+		size_t maxSwaps             = 5000;     // Number of trial swaps for the random swap algorithm //TODO lopulliseen 5000(?)
 		size_t bisectingIterations  = 5;        // Number of tryouts for the bisecting k-means algorithm
 		bool trackProgress          = true;     // Track progress of the algorithms
 		bool trackTime              = true;     // Track time of the algorithms
@@ -3602,6 +3518,7 @@ int main()
         size_t loopCount = loops;
         size_t swaps = maxSwaps;
         size_t numDimensions = getNumDimensions(dataFile);
+        size_t numCentroids = read_k_from_file(kFile);
 
         printf("Starting the process\n");
         printf("Dataset: %s\n", baseName);
@@ -3616,8 +3533,7 @@ int main()
         printf("Number of loops: %zu\n\n", loopCount);
 
         // Run K-means
-        runKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory);
-        continue;
+        //runKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory);
 
         loopCount = 5;
         // Run Repeated K-means
@@ -3627,6 +3543,7 @@ int main()
         if (i == 10 || i == 18) swaps = maxSwaps * 5;
         // Run Random Swap
         runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, swaps, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
+        
         loopCount = loops;
         // Run Random Split
         runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
