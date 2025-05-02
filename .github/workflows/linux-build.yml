@@ -42,7 +42,7 @@ jobs:
         $CC --version
         SRC_FILES=$(ls *.c)           # all C files in this folder
         $CC -std=c11 -Wall -Wextra -pedantic -O2 -pthread \
-            $SRC_FILES -o ../clustering
+            $SRC_FILES -o ../clustering -lm
     # ───────────────────────────────────────────────────────────────────
     - name: Smoke‑test binary
       run: |

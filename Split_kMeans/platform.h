@@ -68,7 +68,6 @@
 #define PATH_MAX 4096
 #endif
 # include <stdlib.h>
-# include <libm.so>
 
 
 /* safe tokeniser / copy / fopen */
