@@ -1,0 +1,47 @@
+name: Linux CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  build:
+    name: ${{ matrix.compiler }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        compiler: [gcc, clang]
+
+    steps:
+    # 1 – Get your repository
+    - uses: actions/checkout@v4
+
+    # 2 – Install the requested toolchain
+    - name: Install compiler
+      run: |
+        if [[ "${{ matrix.compiler }}" == "clang" ]]; then
+          sudo apt-get update
+          sudo apt-get install -y clang
+        else
+          sudo apt-get update
+          sudo apt-get install -y build-essential   # gcc / g++
+        fi
+
+    # 3 – Build
+    - name: Build with ${{ matrix.compiler }}
+      env:
+        CC: ${{ matrix.compiler }}
+      run: |
+        $CC --version
+        $CC -std=c11 -Wall -Wextra -pedantic -O2 \
+            -pthread main.c -o clustering
+
+    # 4 – (Optional) run a tiny smoke‑test
+    #     Remove or expand this to run your real test‑suite
+    - name: Run smoke‑test
+      run: |
+        ./clustering || (echo "program exited with non‑zero status"; exit 1)

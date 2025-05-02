@@ -23,7 +23,7 @@
   /* secure CRT wrappers */
 # define STRTOK(str,delim,ctx)   strtok_s((str),(delim),(ctx))
 # define STRCPY(dest,dstsz,src)  strcpy_s((dest),(dstsz),(src))
-# define FOPEN(fp,name,mode)     fopen_s(&(fp),(name),(mode))
+# define FOPEN(fp,name,mode) ((((fp)=fopen((name),(mode)))==NULL) ? errno : 0 )
 
   /* stat / mkdir */
 # include <direct.h>
@@ -61,6 +61,13 @@
 # include <time.h>
 # include <unistd.h>
 # include <limits.h>
+#ifndef PATH_MAX
+/* Fallback if the platform does not define a hard upper bound.
+   4096 is the historical Linux maximum for most filesystems.  */
+#define PATH_MAX 4096
+#endif
+# include <stdlib.h>
+
 
 /* safe tokeniser / copy / fopen */
 # define STRTOK(str,delim,ctx)  strtok_r((str),(delim),(ctx))
@@ -69,8 +76,7 @@
          strncpy((dest),(src),(dstsz));                                     \
          (dest)[(dstsz) > 0 ? (dstsz)-1 : 0] = '\0';                        \
      } while(0)
-# define FOPEN(fp,name,mode)   ( ((*(fp)=fopen((name),(mode)))==NULL) \
-                                 ? errno : 0 )
+# define FOPEN(fp,name,mode) ( (((fp)=fopen((name),(mode)))==NULL) ? errno : 0 )
 
 /* stat / mkdir */
 # define STAT(path,buf)     stat((path),(buf))
@@ -111,7 +117,7 @@ static inline unsigned int _rand32_random_r(void)
     static __thread char statebuf[64];
     static __thread int ready = 0;
     if (!ready) {
-        initstate_r((unsigned)time(NULL) ^ (unsigned)pthread_self(),
+        initstate_r((unsigned)time(NULL) ^ (unsigned)getpid(),
             statebuf, sizeof statebuf, &rd);
         ready = 1;
     }

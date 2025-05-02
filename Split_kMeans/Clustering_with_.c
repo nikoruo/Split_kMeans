@@ -3525,8 +3525,8 @@ int main()
     size_t datasetCount = 19; //TODO: "halutaan softa jonka voi vaan ajaa", eli t‰m‰ pit‰‰ pohtia uudestaan
 
     // List of dataset file names, ground truth file names, and number of clusters
-    const char** datasetList = createStringList(datasetCount);
-    const char** gtList = createStringList(datasetCount);
+    char** datasetList = createStringList(datasetCount);
+    char** gtList = createStringList(datasetCount);
     size_t* kNumList = malloc(datasetCount * sizeof(size_t));
     handleMemoryError(kNumList);	
     initializeLists(datasetList, gtList, kNumList, datasetCount);
@@ -3539,11 +3539,11 @@ int main()
     for (size_t i = 0; i < 19; ++i)
     {
         //Settings
-        size_t loops = 1; // Number of loops to run the algorithms //todo lopulliseen 100(?)
+        size_t loops = 100; // Number of loops to run the algorithms //todo lopulliseen 100(?)
         size_t scaling = 1; // Scaling factor for the printed values //TODO: Ei k‰ytˆss‰
 		size_t maxIterations = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
 		size_t maxRepeats = 1000; // Number of "repeats" for the repeated k-means algorithm //TODO lopulliseen 1000(?)
-		size_t maxSwaps = 1000; // Number of trial swaps for the random swap algorithm //TODO lopulliseen 5000(?)
+		size_t maxSwaps = 5000; // Number of trial swaps for the random swap algorithm //TODO lopulliseen 5000(?)
 		size_t bisectingIterations = 5; // Number of tryouts for the bisecting k-means algorithm
 		bool trackProgress = true; // Track progress of the algorithms
 		bool trackTime = true; // Track time of the algorithms
@@ -3587,13 +3587,13 @@ int main()
 
             loopCount = 5;
             // Run Repeated K-means
-            //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
+            runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
 
             loopCount = 1;
-            //if (i == 10 || i == 18) swaps = maxSwaps * 5;
+            if (i == 10 || i == 18) swaps = maxSwaps * 5;
             // Run Random Swap
             runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, swaps, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
-            continue;
+
             loopCount = loops;
             // Run Random Split
             runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, fileName, datasetDirectory, trackProgress, trackTime);
