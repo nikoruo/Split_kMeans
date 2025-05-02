@@ -128,7 +128,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Clustering_with_.c" />
+    <ClCompile Include="clustering_with_.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="locale_utils.h" />
