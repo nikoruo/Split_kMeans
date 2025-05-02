@@ -53,6 +53,7 @@
 #else   /* gcc / clang -------------------------------------------------- */
 
 # include <string.h>
+#include <stdio.h>
 # include <errno.h>
 # include <pthread.h>
 # include <sys/stat.h>
@@ -67,6 +68,7 @@
 #define PATH_MAX 4096
 #endif
 # include <stdlib.h>
+# include <libm.so>
 
 
 /* safe tokeniser / copy / fopen */
