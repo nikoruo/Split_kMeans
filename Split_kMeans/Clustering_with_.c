@@ -512,8 +512,7 @@ size_t getNumDimensions(const char* filename)
     // Safe to use as we actually check for NULL earlier
     _Analysis_assume_(file != NULL);
 
-    //TODO: mieti, että tarvitseeko näitä buffereita yhdenmukaistaa, tässä 512 muualla 256
-	char firstLine[LINE_BUFSZ]; // Buffer size = 512, increase if needed
+	char firstLine[LINE_BUFSZ];
     if (fgets(firstLine, sizeof(firstLine), file) == NULL)
     {
         handleFileReadError(filename);
@@ -1870,7 +1869,6 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps,
     if (createCsv)
     {
         initializeCsvFile(3, outputDirectory, csvFile, sizeof(csvFile));
-
     }
 
     handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
@@ -1880,7 +1878,7 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps,
 
     for (size_t i = 0; i < maxSwaps; ++i)
     {
-        //printf("Swap %zu\n", i + 1);
+        printf("Swap %zu\n", i + 1);
 
         //Backup
         size_t offset = 0;
@@ -3463,7 +3461,6 @@ void runDebuggery()
 
 //TODO: "static " sellaisten funktioiden eteen jotka eivät muuta mitään ja joita kutsutaan vain samasta tiedostosta?
 //TODO: koodin palastelu eri tiedostoihin
-//TODO: Osa tulostuksista käyttää lokalea FI jolloin tiedostoon tulee pilkku, osa käyttää lokalea C (eli kaikki missä ei erikseen määritelty) jolloin tulee piste
 
 int main()
 {
@@ -3487,10 +3484,8 @@ int main()
         exit(EXIT_FAILURE);
     }
 
-    //TODO: muista laittaa loopin rajat oikein
     for (size_t i = 0; i < dataCount; ++i)
     {
-        //Data files
         char dataFile[PATH_MAX];
         char gtFile[PATH_MAX];
         char kFile[PATH_MAX];
@@ -3504,11 +3499,11 @@ int main()
         createDatasetDirectory(outputDirectory, baseName, datasetDirectory, sizeof(datasetDirectory));
 
         //Settings
-        size_t loops                = 100;        // Number of loops to run the algorithms //todo lopulliseen 100(?)
+        size_t loops                = 100;        // Number of loops to run the algorithms //todo lopulliseen 100
         size_t scaling              = 1;        // Scaling factor for the printed values //TODO: Ei käytössä
 		size_t maxIterations        = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
-		size_t maxRepeats           = 1000;     // Number of "repeats" for the repeated k-means algorithm //TODO lopulliseen 1000(?)
-		size_t maxSwaps             = 5000;     // Number of trial swaps for the random swap algorithm //TODO lopulliseen 5000(?)
+		size_t maxRepeats           = 1000;     // Number of "repeats" for the repeated k-means algorithm //TODO lopulliseen 1000
+		size_t maxSwaps             = 5000;     // Number of trial swaps for the random swap algorithm //TODO lopulliseen 5000
 		size_t bisectingIterations  = 5;        // Number of tryouts for the bisecting k-means algorithm
 		bool trackProgress          = true;     // Track progress of the algorithms
 		bool trackTime              = true;     // Track time of the algorithms
