@@ -936,6 +936,10 @@ void createUniqueDirectory(char* outputDirectory, size_t size)
         exit(EXIT_FAILURE);
     }
 
+    if (MAKE_DIR("outputs") != 0 && errno != EEXIST) {
+        perror("mkdir outputs"); exit(EXIT_FAILURE);
+    }
+
     if (snprintf(outputDirectory, size,
         "outputs%c%s", PATHSEP, datebuf) >= (int)size)
     {
