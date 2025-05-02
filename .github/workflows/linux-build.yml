@@ -38,7 +38,7 @@ jobs:
       run: |
         $CC --version
         $CC -std=c11 -Wall -Wextra -pedantic -O2 \
-            -pthread main.c -o clustering
+            -pthread Clustering_with_.c -o clustering
 
     # 4 – (Optional) run a tiny smoke‑test
     #     Remove or expand this to run your real test‑suite
