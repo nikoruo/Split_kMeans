@@ -1,4 +1,21 @@
-/* locale_utils.h ------------------------------------------------------ */
+/* locale_utils.h ------------------------------------------------------
+ * Utility functions for managing locale settings, particularly for
+ * numeric formatting. Provides a function to set the numeric locale
+ * to Finnish or fallback to "C" if unavailable.
+ * --------------------------------------------------------------------
+ */
+
+/* Update log
+* --------------------------------------------------------------------
+* Version 1.0 - 2025-05-02 by Niko Ruohonen
+* -Initial release.
+* -Added `set_numeric_locale_finnish` function to set the numeric
+* locale to Finnish(fi_FI) with fallback to "C".
+* --------------------------------------------------------------------
+* Update 1.1...
+*/
+
+
 #pragma once
 #include <locale.h>
 #include <stdio.h>

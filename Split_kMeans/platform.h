@@ -5,6 +5,24 @@
  *   - BSD / macOS           arc4random()
  *   - Older POSIX           random_r()
  * -------------------------------------------------------------------- */
+
+ /* Update log
+  * --------------------------------------------------------------------
+  * Version 1.0 - 2025-05-02 by Niko Ruohonen
+  * - Initial release.
+  * - Added support for platform-specific random number generation:
+  *   - Windows: rand_s
+  *   - Linux: getrandom(2)
+  *   - BSD/macOS: arc4random
+  *   - Older POSIX: random_r
+  * - Added macros for safe string operations (e.g., STRTOK, STRCPY).
+  * - Added directory creation macros (MAKE_DIR).
+  * - Added cross-platform file listing (list_files).
+  * --------------------------------------------------------------------
+  * Update 1.1...
+  */
+
+
 #ifndef PLATFORM_H
 #define PLATFORM_H
 #pragma once
