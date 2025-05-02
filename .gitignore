@@ -451,3 +451,9 @@ FodyWeavers.xsd
 */outputs/
 */gt/
 */debuggery/
+
+# --- keep CI fixture files -------------------------------
+!ci-fixtures/data/
+!ci-fixtures/data/**
+!ci-fixtures/gt/
+!ci-fixtures/gt/**
