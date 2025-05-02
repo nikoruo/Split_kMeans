@@ -5,9 +5,6 @@
  *   • BSD / macOS               arc4random()
  *   • Older POSIX               random_r()
  * ---------------------------------------------------------------------- */
-
-#include <string.h>
-
 #ifndef PLATFORM_H
 #define PLATFORM_H
 #pragma once
@@ -34,6 +31,12 @@ static int cmp_charptr(const void* a, const void* b)
     return strcmp(sa, sb); // POSIX
 #endif
 }
+
+/* ------------------------------------------------------------------ */
+/* COMMON includes*/
+/* ------------------------------------------------------------------ */ 
+
+#include <string.h>/
 
 /* ==========================  WINDOWS / MSVC  ========================= */
 #ifdef _MSC_VER
