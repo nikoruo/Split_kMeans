@@ -2048,6 +2048,91 @@ void splitClusterIntraCluster(DataPoints* dataPoints, Centroids* centroids, size
 	freeCentroids(&localCentroids);
 }
 
+double splitClusterGlobalV2(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t localMaxIterations, const Centroids* groundTruth)
+{
+    size_t clusterSize = 0;
+    for (size_t i = 0; i < dataPoints->size; ++i)
+    {
+        if (dataPoints->points[i].partition == clusterToSplit)
+        {
+            clusterSize++;
+        }
+    }
+
+    // Collect indices of points in the cluster
+    size_t* clusterIndices = malloc(clusterSize * sizeof(size_t));
+    handleMemoryError(clusterIndices);
+
+    size_t index = 0;
+    for (size_t i = 0; i < dataPoints->size; ++i)
+    {
+        if (dataPoints->points[i].partition == clusterToSplit)
+        {
+            clusterIndices[index++] = i;
+        }
+    }
+
+    // Random centroids
+    unsigned int randomValue;
+    RANDOMIZE(randomValue);
+    size_t c1 = randomValue % clusterSize;
+    size_t c2 = c1;
+    while (c2 == c1)
+    {
+        RANDOMIZE(randomValue);
+        c2 = randomValue % clusterSize;
+    }
+    size_t datapoint1 = clusterIndices[c1];
+    size_t datapoint2 = clusterIndices[c2];
+
+    // Initialize local centroids
+    Centroids localCentroids = allocateCentroids(2, dataPoints->points[0].dimensions);
+
+    deepCopyDataPoint(&localCentroids.points[0], &dataPoints->points[datapoint1]);
+    deepCopyDataPoint(&localCentroids.points[1], &dataPoints->points[datapoint2]);
+
+    // Prepare data points in the cluster
+    DataPoints pointsInCluster;
+    pointsInCluster.size = clusterSize;
+    pointsInCluster.points = malloc(clusterSize * sizeof(DataPoint));
+    handleMemoryError(pointsInCluster.points);
+    for (size_t i = 0; i < clusterSize; ++i)
+    {
+        pointsInCluster.points[i] = dataPoints->points[clusterIndices[i]];
+    }
+
+    // Run local k-means
+    runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, groundTruth);
+
+    // Update partitions
+    for (size_t i = 0; i < clusterSize; ++i)
+    {
+        size_t originalIndex = clusterIndices[i];
+        dataPoints->points[originalIndex].partition = (pointsInCluster.points[i].partition == 0) ? clusterToSplit : centroids->size;
+    }
+
+    // Update centroids
+    //#1
+    deepCopyDataPoint(&centroids->points[clusterToSplit], &localCentroids.points[0]);
+
+    //#2
+    centroids->size++;
+    centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint)); //TODO: periaatteessa aina tiedetään lopullinen koko, niin pitäisikö reallocoinnit poistaa ja lisätä jonnekin aikaisemmin se oikea koko näille
+    handleMemoryError(centroids->points);
+    centroids->points[centroids->size - 1] = allocateDataPoint(dataPoints->points[0].dimensions);
+    deepCopyDataPoint(&centroids->points[centroids->size - 1], &localCentroids.points[1]);
+
+	double sse = runKMeans(dataPoints, localMaxIterations, centroids, groundTruth);
+
+
+    // Cleanup
+    free(clusterIndices);
+    free(pointsInCluster.points);
+    freeCentroids(&localCentroids);
+
+    return sse;
+}
+
 /**
  * @brief Splits a cluster into two sub-clusters using global k-means.
  *
@@ -2448,7 +2533,7 @@ double runSseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentr
         }
 
         if(splitType == 0) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth);
-		else if (splitType == 1) finalResultSse = splitClusterGlobal(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth);
+		else if (splitType == 1) finalResultSse = splitClusterGlobalV2(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth);
 		else if (splitType == 2) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth);
 
         if(centroids->size < maxCentroids){
@@ -2730,7 +2815,7 @@ void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundT
     clock_t start, end;
     double duration;
 
-    size_t totalIterations = loopCount * maxRepeats * 5; //TODO: mietin parempi limit kuin *5
+    size_t totalIterations = loopCount * maxRepeats * 5 + 100; //TODO: mietin parempi limit kuin *5
     double* timeList = malloc(totalIterations * sizeof(double)); //TODO: vois varmaan olla myös size_t koska millisekunteja
     handleMemoryError(timeList);
     size_t timeIndex = 0;
@@ -2762,8 +2847,8 @@ void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundT
         {
 			printf("Repeat %zu\n", j + 1);
             Centroids centroids = allocateCentroids(numCentroids, dataPoints->points[0].dimensions);
-            //generateRandomCentroids(numCentroids, dataPoints, &centroids);
-			generateKMeansPlusPlusCentroids(numCentroids, dataPoints, &centroids);
+            generateRandomCentroids(numCentroids, dataPoints, &centroids);
+			//generateKMeansPlusPlusCentroids(numCentroids, dataPoints, &centroids);
             double resultSse = runKMeansWithTracking(dataPoints, maxIterations, &centroids, groundTruth, outputDirectory, (i == 0 && trackProgress), timeList, &timeIndex, start, trackTime, trackProgress, &iterationCount, firstRun, csvFile);
 
             if (resultSse < bestSse)
@@ -2865,8 +2950,8 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth
 
         start = clock();
 
-        //generateRandomCentroids(numCentroids, dataPoints, &centroids);
-		generateKMeansPlusPlusCentroids(numCentroids, dataPoints, &centroids);
+        generateRandomCentroids(numCentroids, dataPoints, &centroids);
+		//generateKMeansPlusPlusCentroids(numCentroids, dataPoints, &centroids);
         if (trackProgress) partitionStep(dataPoints, &centroids);
 
         double resultSse = randomSwap(dataPoints, &centroids, maxSwaps, groundTruth, outputDirectory, (i == 0 && trackProgress), timeList, &timeIndex, start, trackTime, trackProgress);
@@ -3484,6 +3569,12 @@ int main()
         exit(EXIT_FAILURE);
     }
 
+    if (LOGGING == 3) {
+        for (size_t i = 0; i < dataCount; ++i) {
+            printf("Dataset %zu: %s\n", i + 1, dataNames[i]);
+        }
+    }
+
     for (size_t i = 0; i < dataCount; ++i)
     {
         char dataFile[PATH_MAX];
@@ -3532,28 +3623,28 @@ int main()
 
         loopCount = 5;
         // Run Repeated K-means
-        runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
+        //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);        
 
         loopCount = 1;
-        if (i == 10 || i == 18) swaps = maxSwaps * 5;
+        swaps = maxSwaps;
         // Run Random Swap
-        runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, swaps, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
+        //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, swaps, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);               
         
         loopCount = loops;
         // Run Random Split
-        runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
+        //runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
 
         // Run SSE Split (Intra-cluster)
-        runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 0, trackProgress, trackTime);
+        //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 0, trackProgress, trackTime);
 
         // Run SSE Split (Global)
-        runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 1, trackProgress, trackTime);
+        //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 1, trackProgress, trackTime);
 
         // Run SSE Split (Local Repartition)
         runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 2, trackProgress, trackTime);
                         
         // Run Bisecting K-means
-        runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime, bisectingIterations);
+        //runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime, bisectingIterations);
             
         // Clean up
         freeDataPoints(&dataPoints);
