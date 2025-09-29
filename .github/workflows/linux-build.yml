@@ -1,4 +1,4 @@
-name: Linux CI (bare minimum)
+name: Linux CI
 
 on:
   push:
@@ -8,32 +8,70 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      - name: Install gcc
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential
+    - name: Install toolchains and locales
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential clang locales
+        # Ensure Finnish locale exists (your code sets one)
+        sudo locale-gen fi_FI.UTF-8
+        echo "LC_ALL=fi_FI.UTF-8" >> $GITHUB_ENV
+        echo "LANG=fi_FI.UTF-8"   >> $GITHUB_ENV
 
-      - name: Build
-        run: |
-          set -e
-          cd Split_kMeans
-          gcc --version
-          SRC_FILES=$(ls *.c)
-          gcc -std=c11 -O2 -pthread $SRC_FILES -o ../clustering -lm
+    - name: List C sources (debug aid)
+      run: |
+        echo "C files in Split_kMeans:"
+        find Split_kMeans -maxdepth 1 -name '*.c' -print
 
-      - name: Quick start check
-        env:
-          LC_ALL: C.UTF-8
-          LANG: C.UTF-8
-        run: |
-          set -e
-          file ./clustering            # confirm it's a Linux ELF binary
-          ldd ./clustering || true     # show dynamic deps (don't fail CI)
-          # Prefer a non-interactive flag if you have one:
-          ./clustering --help >/dev/null 2>&1 || \
-          timeout 5s ./clustering >/dev/null 2>&1 || \
-          (echo "binary built but no quick-run option; consider providing --help"; exit 0)
+    - name: Build with ${{ matrix.compiler }}
+      env:
+        CC: ${{ matrix.compiler }}
+      run: |
+        set -euo pipefail
+        cd Split_kMeans
+        $CC --version
+        SRC_FILES=$(printf "%s " *.c)
+        # Add POSIX feature macro just in case platform code needs it.
+        $CC -std=c11 -Wall -Wextra -pedantic -O2 -pthread \
+            -D_POSIX_C_SOURCE=200809L \
+            $SRC_FILES -o ../clustering -lm
+
+    - name: Prepare dataset
+      run: |
+        set -e
+        mkdir -p data gt centroids
+        if [ -d ci-fixtures ]; then
+          cp -R ci-fixtures/data/*       ./data/ || true
+          cp -R ci-fixtures/gt/*         ./gt/ || true
+          cp -R ci-fixtures/centroids/*  ./centroids/ || true
+        else
+          echo "ci-fixtures missing; creating a tiny fallback dataset"
+          # 2D points: two clusters around (0,0) and (10,10)
+          cat > data/sample.txt <<EOF
+          0 0
+          0 1
+          1 0
+          10 10
+          10 11
+          11 10
+          EOF
+          # ground truth centroids (approx)
+          cat > gt/sample-gt.txt <<EOF
+          0.333333 0.333333
+          10.333333 10.333333
+          EOF
+          # K file containing just '2'
+          echo 2 > centroids/sample.k
+        fi
+
+    - name: Smoke-test
+      run: |
+        ./clustering
