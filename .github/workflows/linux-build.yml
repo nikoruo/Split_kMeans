@@ -45,17 +45,10 @@ jobs:
           echo "C files found under Split_kMeans/:"
           find Split_kMeans -maxdepth 1 -name '*.c' -print
       # ───────────────────────────────────────────────────────────────────
-      - name: Build with ${{ matrix.compiler }}
-        env:
-          CC: ${{ matrix.compiler }}
+      - name: Build (via Makefile)
         run: |
-          set -euo pipefail
           cd Split_kMeans
-          $CC --version
-          # Compile all C files in this folder; avoid ls/glob pitfalls
-          SRC_FILES=$(find . -maxdepth 1 -name '*.c' -print0 | xargs -0 echo)
-          ccache $CC -std=c11 -Wall -Wextra -pedantic -O2 -pthread \
-            $SRC_FILES -o ../clustering -lm
+          make CC=${{ matrix.compiler }}
       # ───────────────────────────────────────────────────────────────────
       - name: Prepare mini dataset
         run: |
