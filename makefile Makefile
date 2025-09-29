@@ -1,21 +1,20 @@
 # Makefile for compiling and running the Split_kMeans program
 
-# Allow CC/CFLAGS to be overridden by environment (e.g., CI matrix)
 CC      ?= gcc
 CFLAGS  ?= -O3 -std=c11 -Wall -Wextra -Wpedantic
-CPPFLAGS?= -ISplit_kMeans
-LDFLAGS ?=
-LDLIBS  ?= -lm -pthread
-
-SRC     := Split_kMeans/Clustering_with_.c
+INCLUDES:= -ISplit_kMeans
+SRC     := $(wildcard Split_kMeans/*.c)
 OUT     := split_kmeans
+LDLIBS  := -lm
+# Uncomment if threads are used
+# LDLIBS += -pthread
 
 .PHONY: all clean run
 
 all: $(OUT)
 
 $(OUT): $(SRC)
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+	$(CC) $(CFLAGS) $(INCLUDES) $^ -o $@ $(LDLIBS)
 
 run: $(OUT)
 	./$(OUT)

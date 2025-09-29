@@ -11,79 +11,30 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        compiler: [ gcc, clang ]
+        cc: [gcc, clang]
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install ${{ matrix.compiler }}
+      - name: Install toolchain
         run: |
           sudo apt-get update
-          if [ "${{ matrix.compiler }}" = "clang" ]; then
-            sudo apt-get install -y clang
-          else
-            sudo apt-get install -y build-essential
-          fi
+          sudo apt-get install -y build-essential clang make
 
-      - name: Build (Makefile) with ${{ matrix.compiler }}
-        env:
-          CC: ${{ matrix.compiler }}
+      - name: Build with ${{ matrix.cc }}
         run: |
-          set -e
-          $CC --version
           make clean
-          make -j
+          make CC=${{ matrix.cc }} CFLAGS="-O3 -std=c11 -Wall -Wextra -Wpedantic -Werror"
 
-      - name: Prepare dataset (fixtures if available, else fallback)
+      - name: Prepare mini dataset (optional)
+        if: ${{ hashFiles('ci-fixtures/**') != '' }}
         run: |
-          set -e
           mkdir -p data gt centroids
+          cp -R ci-fixtures/data/* ./data/ || true
+          cp -R ci-fixtures/gt/*   ./gt/   || true
+          cp -R ci-fixtures/centroids/* ./centroids/ || true
 
-          if [ -d ci-fixtures/data ] && [ -d ci-fixtures/gt ] && [ -d ci-fixtures/centroids ]; then
-            echo "Using ci-fixtures/*"
-            cp -R ci-fixtures/data/*      data/      || true
-            cp -R ci-fixtures/gt/*        gt/        || true
-            cp -R ci-fixtures/centroids/* centroids/ || true
-          fi
-
-          # If any directory ended up empty, create a minimal self-contained set
-          need_fallback=0
-          [ -z "$(ls -A data 2>/dev/null)" ] && need_fallback=1
-          [ -z "$(ls -A gt 2>/dev/null)" ] && need_fallback=1
-          [ -z "$(ls -A centroids 2>/dev/null)" ] && need_fallback=1
-
-          if [ "$need_fallback" = "1" ]; then
-            echo "Fixtures missing or incomplete; creating fallback dataset"
-            rm -rf data gt centroids
-            mkdir -p data gt centroids
-
-            # One simple 2D dataset
-            cat > data/toy.txt << 'EOF'
-            0 0
-            1 1
-            0 1
-            1 0
-            EOF
-
-            # Ground-truth centroids (2 clusters, 2D)
-            cat > gt/toy.txt << 'EOF'
-            0.0 0.5
-            1.0 0.5
-            EOF
-
-            # K value (numeric in a file)
-            echo 2 > centroids/toy.k
-          fi
-
-          echo "Data:"; ls -l data
-          echo "GT:"; ls -l gt
-          echo "K:"; ls -l centroids
-
-      - name: Smoke-test
-        env:
-          LC_ALL: C
-          LANG: C
+      - name: Smoke-test binary
         run: |
-          set -e
-          ./split_kmeans
+          ./split_kmeans || (echo "program exited with non-zero status"; exit 1)
