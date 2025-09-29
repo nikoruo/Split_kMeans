@@ -59,17 +59,16 @@ jobs:
 
       - name: Compute build flags
         id: cfg
-        shell: bash
         run: |
           set -e
+          CFLAGS="${BASE_CFLAGS} -O2"
           if [ "${{ matrix.sanitizer }}" = "asan-ubsan" ]; then
-            # Lower optimization, keep frames for better reports
-            echo "CFLAGS=${BASE_CFLAGS} -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined" >> $GITHUB_OUTPUT
-            echo "SAN=1" >> $GITHUB_OUTPUT
-          else
-            echo "CFLAGS=${BASE_CFLAGS} -O2" >> $GITHUB_OUTPUT
-            echo "SAN=0" >> $GITHUB_OUTPUT
+            CFLAGS="${BASE_CFLAGS} -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined"
           fi
+          if ${{ matrix.compiler == 'clang' }}; then
+            CFLAGS="$CFLAGS -Wno-invalid-utf8 -Wno-newline-eof"
+          fi
+          echo "CFLAGS=$CFLAGS" >> "$GITHUB_OUTPUT"
 
       - name: List C sources (debug)
         run: |
