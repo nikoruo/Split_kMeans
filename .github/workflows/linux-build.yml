@@ -26,14 +26,12 @@ jobs:
         run: |
           pwd
           ls -la
-          find . -maxdepth 3 -type f -iname 'makefile' -o -iname 'gnumakefile' -o -iname 'GNUmakefile'
+          find . -maxdepth 3 -iname 'makefile' -type f -print
 
       - name: Build with ${{ matrix.cc }}
-        env:
-          CC: ${{ matrix.cc }}
         run: |
-          make -f Makefile -C "${GITHUB_WORKSPACE}" clean
-          make -f Makefile -C "${GITHUB_WORKSPACE}" CC="${CC}" CFLAGS="-O3 -std=c11 -Wall -Wextra -Wpedantic -Werror"
+          make -C Split_kMeans clean
+          make -C Split_kMeans CC=${{ matrix.cc }} CFLAGS="-O3 -std=c11 -Wall -Wextra -Wpedantic -Werror"
 
       - name: Prepare mini dataset (optional)
         if: ${{ hashFiles('ci-fixtures/**') != '' }}
@@ -45,4 +43,4 @@ jobs:
 
       - name: Smoke-test binary
         run: |
-          ./split_kmeans || (echo "program exited with non-zero status"; exit 1)
+          ./Split_kMeans/split_kmeans || (echo "program exited with non-zero status"; exit 1)
