@@ -72,18 +72,11 @@ jobs:
           command -v timeout >/dev/null || sudo apt-get install -y coreutils
           timeout 10s ./Split_kMeans/split_kmeans || (echo "program exited with non-zero status"; exit 1)
 
-      - name: Verify build output
-        run: |
-          set -euo pipefail
-          echo "Current directory:"; pwd
-          echo "Files in repo root:"; ls -l
-          echo "Files in Split_kMeans:"; ls -l Split_kMeans || true
-
-
+      # ───────────────────────────────────────────────────────────────────
       - name: Upload binary (artifact)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: split_kmeans-${{ matrix.compiler }}
-          path: Split_kMeans/split_kMeans
+          path: Split_kMeans/split_kmeans   # <-- lowercase "m"
           if-no-files-found: warn
