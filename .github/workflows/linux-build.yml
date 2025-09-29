@@ -21,10 +21,10 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential clang locales
-        # Ensure Finnish locale exists (your code sets one)
+        # Optional: ensure Finnish locale exists since code sets it
         sudo locale-gen fi_FI.UTF-8
-        echo "LC_ALL=fi_FI.UTF-8" >> $GITHUB_ENV
-        echo "LANG=fi_FI.UTF-8"   >> $GITHUB_ENV
+        echo "LC_ALL=fi_FI.UTF-8" >> "$GITHUB_ENV"
+        echo "LANG=fi_FI.UTF-8"   >> "$GITHUB_ENV"
 
     - name: List C sources (debug aid)
       run: |
@@ -38,37 +38,34 @@ jobs:
         set -euo pipefail
         cd Split_kMeans
         $CC --version
-        SRC_FILES=$(printf "%s " *.c)
-        # Add POSIX feature macro just in case platform code needs it.
+        # Robust glob expansion even if filenames contain spaces
+        SRC_FILES=( *.c )
         $CC -std=c11 -Wall -Wextra -pedantic -O2 -pthread \
             -D_POSIX_C_SOURCE=200809L \
-            $SRC_FILES -o ../clustering -lm
+            "${SRC_FILES[@]}" -o ../clustering -lm
 
     - name: Prepare dataset
       run: |
-        set -e
+        set -euo pipefail
         mkdir -p data gt centroids
         if [ -d ci-fixtures ]; then
           cp -R ci-fixtures/data/*       ./data/ || true
-          cp -R ci-fixtures/gt/*         ./gt/ || true
+          cp -R ci-fixtures/gt/*         ./gt/   || true
           cp -R ci-fixtures/centroids/*  ./centroids/ || true
         else
-          echo "ci-fixtures missing; creating a tiny fallback dataset"
-          # 2D points: two clusters around (0,0) and (10,10)
-          cat > data/sample.txt <<EOF
-          0 0
-          0 1
-          1 0
-          10 10
-          10 11
-          11 10
-          EOF
-          # ground truth centroids (approx)
-          cat > gt/sample-gt.txt <<EOF
-          0.333333 0.333333
-          10.333333 10.333333
-          EOF
-          # K file containing just '2'
+          echo "ci-fixtures missing; creating fallback dataset"
+cat > data/sample.txt <<'EOF'
+0 0
+0 1
+1 0
+10 10
+10 11
+11 10
+EOF
+cat > gt/sample-gt.txt <<'EOF'
+0.333333 0.333333
+10.333333 10.333333
+EOF
           echo 2 > centroids/sample.k
         fi
 
