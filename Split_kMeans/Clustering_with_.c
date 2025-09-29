@@ -5,7 +5,7 @@
  * when using the Microsoft C compiler. It is ignored by other compilers.
  */
 #ifdef _MSC_VER
-    #define _CRT_SECURE_NO_WARNINGS //TODO: tarkista tarvitaanko en‰‰
+    #define _CRT_SECURE_NO_WARNINGS //TODO: tarkista tarvitaanko enaa
 #endif
 
  // Platform-specific includes
@@ -1156,7 +1156,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       if (FOPEN(timesFilePtr, timesFile, "w") != 0)
       {
           handleFileError(timesFile);
-          return; //TODO: t‰‰ on turha, koska handleFileError lopettaa ohjelman. Mutta t‰n avulla saa warningit pois koska timefileprt ei voikaan olla null alhaalla
+          return; //TODO: taa on turha, koska handleFileError lopettaa ohjelman. Mutta tan avulla saa warningit pois koska timefileprt ei voikaan olla null alhaalla
       }
 
       for (size_t i = 0; i < timeIndex; ++i)
@@ -1717,7 +1717,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           updateTimeTracking(trackTime, start, timeList, timeIndex);
       }
 
-      //TODO: t‰m‰ tehd‰‰n nyt vain iteraatiolle 0. Halutaanko tehd‰ esim niin monta kertaa ett‰ CI=0 tmv? Tai kommentoida kokonaan pois?
+      //TODO: tama tehdaan nyt vain iteraatiolle 0. Halutaanko tehda esim niin monta kertaa etta CI=0 tmv? Tai kommentoida kokonaan pois?
       if (trackProgress)
       {
           trackProgressState(dataPoints, centroids, groundTruth, iterationCount, clusterToSplit, splitType, outputDirectory);
@@ -2091,7 +2091,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       //#2
       centroids->size++;
-      centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint)); //TODO: periaatteessa aina tiedet‰‰n lopullinen koko, niin pit‰isikˆ reallocoinnit poistaa ja lis‰t‰ jonnekin aikaisemmin se oikea koko n‰ille
+      centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint)); //TODO: periaatteessa aina tiedetaan lopullinen koko, niin pitaisikˆ reallocoinnit poistaa ja lisata jonnekin aikaisemmin se oikea koko naille
       handleMemoryError(centroids->points);
       centroids->points[centroids->size - 1] = allocateDataPoint(dataPoints->points[0].dimensions);
       deepCopyDataPoint(&centroids->points[centroids->size - 1], &localCentroids.points[1]);
@@ -2174,7 +2174,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       //#2
       centroids->size++;
-      centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint)); //TODO: periaatteessa aina tiedet‰‰n lopullinen koko, niin pit‰isikˆ reallocoinnit poistaa ja lis‰t‰ jonnekin aikaisemmin se oikea koko n‰ille
+      centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint)); //TODO: periaatteessa aina tiedetaan lopullinen koko, niin pitaisikˆ reallocoinnit poistaa ja lisata jonnekin aikaisemmin se oikea koko naille
       handleMemoryError(centroids->points);
       centroids->points[centroids->size - 1] = allocateDataPoint(dataPoints->points[0].dimensions);
       deepCopyDataPoint(&centroids->points[centroids->size - 1], &localCentroids.points[1]);
@@ -2285,7 +2285,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
   {
       size_t newClusterIndex = centroids->size - 1;
 
-      // TODO: Selvit‰, ett‰ tarvitaanko t‰t‰? Oma oletus on, ett‰ ei tarvita
+      // TODO: Selvita, etta tarvitaanko tata? Oma oletus on, etta ei tarvita
       // new clusters -> old clusters
       /*for (size_t i = 0; i < dataPoints->size; ++i)
       {
@@ -2755,7 +2755,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           deepCopyDataPoint(&centroids->points[centroids->size], &newCentroid2);
           centroids->size++;
 
-          partitionStep(dataPoints, centroids); //partition step, vai pit‰isikˆ tallentaa ne loopissa ja tehd‰ t‰ss‰ sitten muutokset? (esim kaikki 0->clusterToSplit, 1->centroids->size-1)
+          partitionStep(dataPoints, centroids); //partition step, vai pitaisikˆ tallentaa ne loopissa ja tehda tassa sitten muutokset? (esim kaikki 0->clusterToSplit, 1->centroids->size-1)
 
           //Step 3: Update the SSE list
           SseList[clusterToSplit] = calculateClusterSSE(dataPoints, centroids, clusterToSplit);
@@ -2770,7 +2770,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       //Step 4: Run the final k-means
-      double finalResultSse = runKMeans(dataPoints, maxIterations, centroids, groundTruth); //TODO: Pit‰isikˆ poistaa? Final K-means ei taida olla algoritmia
+      double finalResultSse = runKMeans(dataPoints, maxIterations, centroids, groundTruth); //TODO: Pitaisikˆ poistaa? Final K-means ei taida olla algoritmia
 
       handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
           dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, 4);
@@ -3092,7 +3092,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       double duration;
 
       //Tracker helpers
-      size_t failSafety = 0.5 * loopCount; //TODO: ei k‰ytˆss‰ // Note: It may randomly choose a cluster with just 1 data point -> No split. I started with 0.1 multiplier, but 0.5 seems to be a good balance
+      size_t failSafety = 0.5 * loopCount; //TODO: ei kaytˆssa // Note: It may randomly choose a cluster with just 1 data point -> No split. I started with 0.1 multiplier, but 0.5 seems to be a good balance
       size_t totalIterations = loopCount * numCentroids * 2 + loopCount;
       double* timeList = malloc(totalIterations * sizeof(double));
       handleMemoryError(timeList);
@@ -3626,9 +3626,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
   //END: kommentoi kaikki muistintarkastukset ja iffit pois lopullisesta versiosta <-tehokkuus
   //END: credits ja alkupuhe koodin alkuun
-  //     edellisen alle voisi lis‰t‰ lokin, ett‰ kuka on p‰ivitt‰nyt ja milloin
+  //     edellisen alle voisi lisata lokin, etta kuka on paivittanyt ja milloin
 
-  //TODO: "static " sellaisten funktioiden eteen jotka eiv‰t muuta mit‰‰n ja joita kutsutaan vain samasta tiedostosta?
+  //TODO: "static " sellaisten funktioiden eteen jotka eivat muuta mitaan ja joita kutsutaan vain samasta tiedostosta?
   //TODO: koodin palastelu eri tiedostoihin
 
   int main()
@@ -3678,7 +3678,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
           //Settings
           size_t loops = 1;        // Number of loops to run the algorithms //todo lopulliseen 100
-          size_t scaling = 1;        // Scaling factor for the printed values //TODO: Ei k‰ytˆss‰
+          size_t scaling = 1;        // Scaling factor for the printed values //TODO: Ei kaytˆssa
           size_t maxIterations = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
           size_t maxRepeats = 1000;     // Number of "repeats" for the repeated k-means algorithm //TODO lopulliseen 1000
           size_t maxSwaps = 1000;     // Number of trial swaps for the random swap algorithm //TODO lopulliseen 5000
