@@ -22,10 +22,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential clang make
 
-      - name: Build with ${{ matrix.cc }}
+      - name: Debug workspace layout
         run: |
-          make clean
-          make CC=${{ matrix.cc }} CFLAGS="-O3 -std=c11 -Wall -Wextra -Wpedantic -Werror"
+          pwd
+          ls -la
+          find . -maxdepth 3 -type f -iname 'makefile' -o -iname 'gnumakefile' -o -iname 'GNUmakefile'
+
+      - name: Build with ${{ matrix.cc }}
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          make -f Makefile -C "${GITHUB_WORKSPACE}" clean
+          make -f Makefile -C "${GITHUB_WORKSPACE}" CC="${CC}" CFLAGS="-O3 -std=c11 -Wall -Wextra -Wpedantic -Werror"
 
       - name: Prepare mini dataset (optional)
         if: ${{ hashFiles('ci-fixtures/**') != '' }}
