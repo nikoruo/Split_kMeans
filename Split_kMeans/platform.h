@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2025 Niko Ruohonen and contributors
+ */
+
 /* platform.h ------------------------------------------------------------
  * Minimal portability layer for building the same C source on
  *   - Windows / MSVC        (Annex-K *_s, rand_s, _mkdir)

@@ -1,3 +1,90 @@
+﻿/* SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2025 Niko Ruohonen and contributors
+ */
+
+// Change logs
+// 29-09-2025: Initial 1.0v release by Niko Ruohonen
+
+// Introduction
+/**
+ * Project Name: Clustering_with_c
+ *
+ * Description:
+ * This project focuses on the development and implementation of various clustering algorithms.
+ * The primary goal was to create a novel clustering algorithm, the SSE Split Algorithm,
+ * and also to implement existing algorithms. All algorithms were designed and optimized
+ * to ensure maximum efficiency and effectiveness when applied to multi-dimensional data points.
+  *
+ * Author: Niko Ruohonen
+ * Date: September 29, 2025
+ * Version: 1.0.0
+ *
+ * Details:
+ * - Implements multiple clustering algorithms:
+        K-means
+        Repeated K-means
+        Random Swap
+        Random Split
+        SSE Split (Intra-cluster, Global, Local Repartition)
+        Bisecting K-means.
+ * - Provides detailed logging options for debugging and performance analysis. <- commented off by default for performance
+ * - Includes memory management functions to handle dynamic allocation and deallocation of data structures.
+ * - Supports reading and writing data points and centroids from/to files.
+ * - Calculates various metrics such as Mean Squared Error (SSE) and Centroid Index (CI) to evaluate clustering performance.
+ *
+ * Usage:
+ * The project can be run by executing the main function, which initializes datasets, ground truth files, and clustering parameters.
+ * It then runs different clustering algorithms on each dataset and writes the results to output files.
+ *
+ * Structure of the project directory:
+ *  ProjectRoot/
+    ├─ data/
+    │  ├─ datasetA.txt               # points: one data point per line; space-separated doubles; all rows same dimensionality
+    │  └─ datasetB.txt
+    ├─ gt/
+    │  ├─ datasetA-gt.txt            # ground truth centroids: one centroid per line; dimensions must match the corresponding data file
+    │  └─ datasetB-gt.txt
+    └─ centroids/
+       ├─ datasetA.k                 # contains ONLY a single positive integer: the number of clusters K (no extra text/BOM)
+       └─ datasetB.k
+ *
+ * Pairing and file counts:
+ * - Input files are discovered at runtime via directory enumeration (list_files) from "data/", "gt/", and "centroids/".
+ * - The number of files in these three folders must match; otherwise the program exits with an error.
+ * - Files are paired by sorted filename order. To avoid mismatches, keep base names aligned across folders,
+ *   e.g., "datasetA.txt" <-> "datasetA-gt.txt" <-> "datasetA.k".
+ *
+ * Results:
+ *  ProjectRoot/
+    └─ outputs/
+       └─ 2025-09-29_14-32-10/       # created automatically
+          ├─ datasetA/
+          │  ├─ RKM_log.csv
+          │  ├─ RKM_times.txt
+          │  ├─ RKM_iteration_stats.txt
+          │  ├─ repeatedKMeans_centroids.txt
+          │  ├─ repeatedKMeans_partitions.txt
+          │  ├─ KMeans_centroids_perfect.txt
+          │  ├─ KMeans_partitions_perfect.txt
+          │  ├─ RandomSwap_centroids_failed.txt
+          │  ├─ RandomSwap_partitions_failed.txt
+          │  └─ ... (depends on which algorithms you run)
+          └─ datasetB/
+             └─ ...
+ *
+ * Notes:
+ * - Ensure that the "data/", "gt/", and "centroids/" folders contain the same number of files, with matching base names,
+ *   so files pair correctly across folders.
+ * - Each data file must be space-separated doubles; all rows must have the same number of dimensions (columns).
+ * - Each ground-truth file (gt/*.txt) must use the same dimensionality as its corresponding data file.
+ * - Each .k file (centroids/*.k) must contain a single positive integer K and nothing else.
+ * - Outputs are written under outputs/<timestamp>/<dataset-base-name>/.
+ * - Remember to set the "Settings" to desired levels before running the project.
+ * - Future plans include adding more clustering algorithms and improving the performance of existing ones.
+ * - Some of the functions write to files using locale "fi_FI" to format numbers with commas and some with "C" to format numbers with dots.
+ *   This was used to ensure compatibility with different systems (e.g., Excel and existing MATLAB).
+ */
+
 /**
  * @brief Suppresses warnings about unsafe functions in Visual Studio.
  *
@@ -5,7 +92,7 @@
  * when using the Microsoft C compiler. It is ignored by other compilers.
  */
 #ifdef _MSC_VER
-    #define _CRT_SECURE_NO_WARNINGS //TODO: tarkista tarvitaanko enaa
+    #define _CRT_SECURE_NO_WARNINGS
 #endif
 
  // Platform-specific includes
@@ -29,43 +116,6 @@
 
 // Macros
 #define LINE_BUFSZ 512 /* tweak if needed */
-
-
-// Change logs
-// 29-09-2025: Initial 1.0v release by Niko Ruohonen
-
-// Introduction
-/**
- * Project Name: Clustering_with_c
- *
- * Description:
- * This project focuses on the development and implementation of various clustering algorithms.
- * The primary goal was to create a novel clustering algorithm, the SSE Split Algorithm,
- * and also to implement existing algorithms. All algorithms were designed and optimized
- * to ensure maximum efficiency and effectiveness when applied to multi-dimensional data points.
-  *
- * Author: Niko Ruohonen
- * Date: September 29, 2025
- * Version: 1.0.0
- *
- * Details:
- * - Implements multiple clustering algorithms: K-means, Repeated K-means, Random Swap, Random Split, SSE Split (Intra-cluster, Global, Local Repartition), and Bisecting K-means.
- * - Provides detailed logging options for debugging and performance analysis.
- * - Includes memory management functions to handle dynamic allocation and deallocation of data structures.
- * - Supports reading and writing data points and centroids from/to files.
- * - Calculates various metrics such as Mean Squared Error (SSE) and Centroid Index (CI) to evaluate clustering performance.
- *
- * Usage:
- * The project can be run by executing the main function, which initializes datasets, ground truth files, and clustering parameters.
- * It then runs different clustering algorithms on each dataset and writes the results to output files.
- *
- * Notes:
- * - Ensure that the data files and ground truth files are placed in the appropriate directories before running the project.
- * - Remember to update gtList, dataFiles and kNumList arrays with the correct information.
- * - Remember to set the "Settings" to desired levels before running the project.
- * - Future plans include adding more clustering algorithms and improving the performance of existing ones.
- * - Some of the functions write to files using locale "fi_FI" to format numbers with commas and some with "C" to format numbers with dots. This was used to ensure compatibility with different systems (e.g., Excel and existing MATLAB).
- */
 
  //////////////
  // DEFINES //
@@ -3698,7 +3748,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
           if (numDimensions == 0)
           {
-              fprintf(stderr, "--> Skipping (couldn�t read dimensions)\n");
+              fprintf(stderr, "--> Skipping (couldn’t read dimensions)\n");
               continue;
           }
           printf("Number of dimensions in the data: %zu\n", numDimensions);

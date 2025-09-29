@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2025 Niko Ruohonen and contributors
+ */
+
 /* locale_utils.h ------------------------------------------------------
  * Utility functions for managing locale settings, particularly for
  * numeric formatting. Provides a function to set the numeric locale
