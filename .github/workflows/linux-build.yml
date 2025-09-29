@@ -1,56 +1,140 @@
-name: Linux CI
+name: Linux CI
 
 on:
   push:
     branches: [ main, master ]
   pull_request:
 
+concurrency:
+  group: linux-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
-
     strategy:
       fail-fast: false
       matrix:
         compiler: [gcc, clang]
+        sanitizer: [none, asan-ubsan]
+
+    env:
+      # Common compile flags (tighten warnings; treat warnings as errors)
+      BASE_CFLAGS: "-std=c11 -Wall -Wextra -Werror -pedantic -pthread -Wshadow -Wpointer-arith -Wcast-qual -Wvla"
+      LDFLAGS: "-lm"
 
     steps:
-    # ───────────────────────────────────────────────────────────────────
-    - name: Checkout code
-      uses: actions/checkout@v4
-    # ───────────────────────────────────────────────────────────────────
-    - name: Install ${{ matrix.compiler }}
-      run: |
-        sudo apt-get update
-        if [[ "${{ matrix.compiler }}" == "clang" ]]; then
-          sudo apt-get install -y clang
-        else
-          sudo apt-get install -y build-essential   # gcc / g++
-        fi
-    # ───────────────────────────────────────────────────────────────────
-    - name: List C sources (debug aid)
-      run: |
-        echo "C files found under Split_kMeans/:"
-        find Split_kMeans -maxdepth 1 -name '*.c' -print
-    # ───────────────────────────────────────────────────────────────────
-    - name: Build with ${{ matrix.compiler }}
-      env:
-        CC: ${{ matrix.compiler }}
-      run: |
-        set -e
-        cd Split_kMeans               # <-- enter source directory
-        $CC --version
-        SRC_FILES=$(ls *.c)           # all C files in this folder
-        $CC -std=c11 -Wall -Wextra -pedantic -O2 -pthread \
-            $SRC_FILES -o ../clustering -lm
-    # ───────────────────────────────────────────────────────────────────
-    - name: Prepare mini dataset
-      run: |
-        mkdir -p data gt centroids
-        cp -R ci-fixtures/data/* ./data/
-        cp -R ci-fixtures/gt/*   ./gt/
-        cp -R ci-fixtures/centroids/*   ./centroids/
-    # ───────────────────────────────────────────────────────────────────
-    - name: Smoke‑test binary
-      run: |
-        ./clustering || (echo "program exited with non‑zero status"; exit 1)
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install toolchain and tools
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          # Install selected compiler + helpers
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            sudo apt-get install -y clang
+          else
+            sudo apt-get install -y build-essential
+          fi
+          # Useful for speed and diagnostics
+          sudo apt-get install -y ccache valgrind
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ runner.os }}-${{ matrix.compiler }}-${{ matrix.sanitizer }}-${{ hashFiles('Split_kMeans/**/*.c','Split_kMeans/**/*.h') }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ matrix.compiler }}-${{ matrix.sanitizer }}-
+
+      - name: Show compiler version
+        run: |
+          set -e
+          ${{ matrix.compiler }} --version
+          ccache --version || true
+
+      - name: Compute build flags
+        id: cfg
+        shell: bash
+        run: |
+          set -e
+          if [ "${{ matrix.sanitizer }}" = "asan-ubsan" ]; then
+            # Lower optimization, keep frames for better reports
+            echo "CFLAGS=${BASE_CFLAGS} -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined" >> $GITHUB_OUTPUT
+            echo "SAN=1" >> $GITHUB_OUTPUT
+          else
+            echo "CFLAGS=${BASE_CFLAGS} -O2" >> $GITHUB_OUTPUT
+            echo "SAN=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: List C sources (debug)
+        run: |
+          echo "C files found under Split_kMeans/:"
+          find Split_kMeans -maxdepth 1 -name '*.c' -print
+
+      - name: Build
+        env:
+          CC: ${{ matrix.compiler }}
+          CFLAGS: ${{ steps.cfg.outputs.CFLAGS }}
+          LDFLAGS: ${{ env.LDFLAGS }}
+        run: |
+          set -euxo pipefail
+          cd Split_kMeans
+          # Prefer Makefile if present, otherwise compile all .c files
+          if [ -f Makefile ] || [ -f makefile ]; then
+            ccache -z || true
+            make -j"$(nproc)" CC="ccache $CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+            # Expect binary one directory up named 'clustering' if Makefile does that; otherwise copy
+            if [ ! -f ../clustering ]; then
+              # Try to find a produced binary
+              BIN="$(find . -maxdepth 1 -type f -perm -111 -printf '%f\n' | head -n1 || true)"
+              if [ -n "$BIN" ]; then cp "$BIN" ../clustering; fi
+            fi
+            ccache -s || true
+          else
+            ccache -z || true
+            SRC_FILES=$(ls *.c)
+            ccache $CC $CFLAGS $SRC_FILES -o ../clustering $LDFLAGS
+            ccache -s || true
+          fi
+          cd ..
+          file ./clustering
+          ./clustering --version >/dev/null 2>&1 || true || true
+
+      - name: Prepare mini dataset
+        run: |
+          set -euxo pipefail
+          mkdir -p data gt centroids
+          cp -R ci-fixtures/data/*       ./data/
+          cp -R ci-fixtures/gt/*         ./gt/
+          cp -R ci-fixtures/centroids/*  ./centroids/
+
+      - name: Smoke-test
+        env:
+          ASAN_OPTIONS: "detect_leaks=1:check_initialization_order=1:strict_string_checks=1:abort_on_error=1:verify_asan_link_order=0"
+          UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
+        run: |
+          set -euxo pipefail
+          ./clustering
+
+      - name: Valgrind (only on non-sanitized GCC)
+        if: matrix.compiler == 'gcc' && matrix.sanitizer == 'none'
+        run: |
+          set -euxo pipefail
+          valgrind --leak-check=full --errors-for-leak-kinds=definite,possible \
+                   --show-leak-kinds=all --error-exitcode=1 \
+                   ./clustering
+
+      - name: Upload artifacts (binary + outputs)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clustering-${{ matrix.compiler }}-${{ matrix.sanitizer }}
+          path: |
+            clustering
+            outputs/**
+          if-no-files-found: ignore

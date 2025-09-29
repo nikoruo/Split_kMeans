@@ -40,6 +40,7 @@
    * Common includes
    * -------------------------------------------------------------------- */
 #include <string.h>
+#include <stdio.h>   /* needed for snprintf/fprintf used in this header */
 
    /* --------------------------------------------------------------------
     * Helper: qsort comparator for (const char *) arrays.
@@ -68,11 +69,14 @@ static int cmp_charptr(const void* a, const void* b)
 
 /* Filesystem */
 # include <direct.h>
+# include <sys/stat.h>  /* _stat used via STAT() */
 # define STAT(path, buf)          _stat((path), (buf))
 # define MAKE_DIR(path)           _mkdir(path)
 
 /* Random */
 # include <stdlib.h>
+# include <errno.h>     /* errno used in FOPEN() */
+# include <time.h>      /* localtime_s used via LOCALTIME() */
 # define RANDOMIZE(rv)                                                  \
     do { if (rand_s(&(rv)) != 0) {                                       \
              fprintf(stderr, "rand_s failed\n");                        \

@@ -1,0 +1,18 @@
+CC      := gcc
+CFLAGS  := -O3 -std=c11 -Wall -Wextra -Wpedantic
+INCLUDES:= -ISplit_kMeans
+SRC     := Split_kMeans/Clustering_with_.c
+OUT     := split_kmeans
+
+.PHONY: all clean run
+
+all: $(OUT)
+
+$(OUT): $(SRC)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ -lm
+
+run: $(OUT)
+	./$(OUT)
+
+clean:
+	$(RM) $(OUT)

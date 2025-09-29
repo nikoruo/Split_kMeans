@@ -25,6 +25,7 @@
 #include <sys/types.h>
 #include <stddef.h>
 #include <locale.h>
+#include <errno.h>
 
 // Macros
 #define LINE_BUFSZ 512 /* tweak if needed */
@@ -624,7 +625,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       if (currentPoint != lineCount)
       {
           fprintf(stderr, "Error: Expected to read %zu points but only read %zu points\n", lineCount, currentPoint);
-          free(dataPoints.points); // Free allocated memory
+          freeDataPointArray(dataPoints.points, currentPoint);
           exit(EXIT_FAILURE);
       }
 
@@ -861,18 +862,32 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @param destination A pointer to the destination Centroids structure.
    * @param numCentroids The number of centroids to copy.
    */
-  void deepCopyCentroids(const Centroids* source, Centroids* destination, size_t numCentroids)
+  void deepCopyCentroids(const Centroids* source, Centroids* destination)
   {
-      destination->size = source->size;
-
       if (destination->points != NULL)
       {
+          // Free the current allocation using the existing size
           freeDataPointArray(destination->points, destination->size);
+          destination->points = NULL;
+          destination->size = 0;
       }
 
-      destination->points = allocateDataPoints(numCentroids, source->points[0].dimensions).points;
+      // Nothing to copy
+      /*if (source->size == 0)
+      {
+          destination->points = NULL;
+          destination->size = 0;
+          return;
+      }*/
 
-      for (size_t i = 0; i < numCentroids; ++i)
+      // Set the new size to match the source
+      destination->size = source->size;
+
+      // Allocate and copy
+      size_t dimensions = source->points[0].dimensions;
+      destination->points = allocateDataPoints(destination->size, dimensions).points;
+
+      for (size_t i = 0; i < destination->size; ++i)
       {
           deepCopyDataPoint(&destination->points[i], &source->points[i]);
       }
@@ -1694,7 +1709,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @param csvFile The name of the CSV file to log the data.
    */
   static void handleLoggingAndTracking(bool trackTime, clock_t start, double* timeList, size_t* timeIndex, bool trackProgress, const DataPoints* dataPoints,
-      const Centroids* centroids, const Centroids* groundTruth, size_t iterationCount, const char* outputDirectory, bool createCsv, FILE* csvFile,
+      const Centroids* centroids, const Centroids* groundTruth, size_t iterationCount, const char* outputDirectory, bool createCsv, const char* csvFile,
       size_t clusterToSplit, size_t splitType)
   {
       if (trackTime)
@@ -1758,7 +1773,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           }
       }
 
-      centroidStep(centroids, dataPoints);
+      //centroidStep(centroids, dataPoints);
   }
 
   /**
@@ -1819,7 +1834,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @return The best mean squared error (SSE) obtained during the iterations.
    */
   double runKMeansWithTracking(DataPoints* dataPoints, size_t iterations, Centroids* centroids, const Centroids* groundTruth, const char* outputDirectory,
-      bool trackProgress, double* timeList, size_t* timeIndex, clock_t start, bool trackTime, bool createCsv, size_t* iterationCount, bool firstRun, FILE* csvFile)
+      bool trackProgress, double* timeList, size_t* timeIndex, clock_t start, bool trackTime, bool createCsv, size_t* iterationCount, bool firstRun, const char* csvFile)
   {
       double bestSse = DBL_MAX;
       double sse = DBL_MAX;
@@ -1887,7 +1902,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       double* backupAttributes = malloc(totalAttributes * sizeof(double));
       handleMemoryError(backupAttributes);
 
-      double* backupPartitions = malloc(dataPoints->size * sizeof(size_t));
+      size_t* backupPartitions = malloc(dataPoints->size * sizeof(size_t));
       handleMemoryError(backupPartitions);
 
       char csvFile[PATH_MAX];
@@ -1950,8 +1965,11 @@ void freeDataPointArray(DataPoint* points, size_t size)
               size_t currentCi = calculateCentroidIndex(centroids, groundTruth);
               bestCI = currentCi;
 
-              appendLogCsv(csvFile, iterationCount, currentCi, resultSse);
-              updateTimeTracking(trackTime, start, timeList, timeIndex);
+              //appendLogCsv(csvFile, iterationCount, currentCi, resultSse);
+              //updateTimeTracking(trackTime, start, timeList, timeIndex);
+
+              handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
+                  dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, 3);
           }
           else
           {
@@ -1967,14 +1985,15 @@ void freeDataPointArray(DataPoint* points, size_t size)
                   dataPoints->points[j].partition = backupPartitions[j];
               }
 
-              appendLogCsv(csvFile, iterationCount, bestCI, bestSse);
-              updateTimeTracking(trackTime, start, timeList, timeIndex);
+              //appendLogCsv(csvFile, iterationCount, bestCI, bestSse);
+              //updateTimeTracking(trackTime, start, timeList, timeIndex);
           }
 
           iterationCount++;
       }
 
       free(backupAttributes);
+      free(backupPartitions);
 
       return bestSse;
   }
@@ -2160,7 +2179,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       centroids->points[centroids->size - 1] = allocateDataPoint(dataPoints->points[0].dimensions);
       deepCopyDataPoint(&centroids->points[centroids->size - 1], &localCentroids.points[1]);
 
-      saveIterationState(dataPoints, centroids, iteration, outputDirectory, "Global_test");
+      //saveIterationState(dataPoints, centroids, iteration, outputDirectory, "Global_test");
 
       double sse = runKMeans(dataPoints, localMaxIterations, centroids, groundTruth);
 
@@ -2820,11 +2839,11 @@ void freeDataPointArray(DataPoint* points, size_t size)
               writeDataPointPartitionsToFile("kMeans_partitions_failed.txt", dataPoints, outputDirectory);
               savedNonZeroResults = true;
           }
-          else if (centroidIndex == 0 && savedNonZeroResults == false)
+          else if (centroidIndex == 0 && savedZeroResults == false)
           {
               writeCentroidsToFile("kMeans_centroids_perfect.txt", &centroids, outputDirectory);
               writeDataPointPartitionsToFile("kMeans_partitions_perfect.txt", dataPoints, outputDirectory);
-              savedNonZeroResults = true;
+              savedZeroResults = true;
           }
 
           freeCentroids(&centroids);
@@ -2898,7 +2917,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
               if (resultSse < bestSse)
               {
                   bestSse = resultSse;
-                  deepCopyCentroids(&centroids, &bestCentroids, numCentroids);
+                  deepCopyCentroids(&centroids, &bestCentroids);
 
                   if (!firstRun)
                   {
@@ -2997,7 +3016,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
           generateRandomCentroids(numCentroids, dataPoints, &centroids);
           //generateKMeansPlusPlusCentroids(numCentroids, dataPoints, &centroids);
-          if (trackProgress) partitionStep(dataPoints, &centroids);
+          partitionStep(dataPoints, &centroids); //Local repartition requires this
 
           double resultSse = randomSwap(dataPoints, &centroids, maxSwaps, groundTruth, outputDirectory, (i == 0 && trackProgress), timeList, &timeIndex, start, trackTime, trackProgress);
 
@@ -3643,7 +3662,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           }
       }
 
-      for (size_t i = 0; i < dataCount; ++i)
+      for (size_t i = 1; i < dataCount; ++i)
       {
           char dataFile[PATH_MAX];
           char gtFile[PATH_MAX];
@@ -3662,7 +3681,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           size_t scaling = 1;        // Scaling factor for the printed values //TODO: Ei käytössä
           size_t maxIterations = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
           size_t maxRepeats = 1000;     // Number of "repeats" for the repeated k-means algorithm //TODO lopulliseen 1000
-          size_t maxSwaps = 5000;     // Number of trial swaps for the random swap algorithm //TODO lopulliseen 5000
+          size_t maxSwaps = 1000;     // Number of trial swaps for the random swap algorithm //TODO lopulliseen 5000
           size_t bisectingIterations = 5;        // Number of tryouts for the bisecting k-means algorithm
           bool trackProgress = true;     // Track progress of the algorithms
           bool trackTime = true;     // Track time of the algorithms
@@ -3692,8 +3711,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
           loopCount = 1;
           // Run Repeated K-means
-          //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
-          //continue;
+          runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
+
           loopCount = 1;
           if (i == 10 || i == 18)
           {
@@ -3703,7 +3722,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           // Run Random Swap
           //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, swaps, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
 
-          loopCount = loops;
+          //loopCount = loops;
           // Run Random Split
           //runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
 
@@ -3711,10 +3730,10 @@ void freeDataPointArray(DataPoint* points, size_t size)
           //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 0, trackProgress, trackTime);
 
           // Run SSE Split (Global)
-          runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 1, trackProgress, trackTime);
+          //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 1, trackProgress, trackTime);
 
           // Run SSE Split (Local Repartition)
-          runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 2, trackProgress, trackTime);
+          //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 2, trackProgress, trackTime);
 
           // Run Bisecting K-means
           //runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime, bisectingIterations);
