@@ -11,64 +11,79 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        compiler: [gcc, clang]
+        compiler: [ gcc, clang ]
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Install toolchains and locales
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential clang locales
-        # Optional: ensure Finnish locale exists since code sets it
-        sudo locale-gen fi_FI.UTF-8
-        echo "LC_ALL=fi_FI.UTF-8" >> "$GITHUB_ENV"
-        echo "LANG=fi_FI.UTF-8"   >> "$GITHUB_ENV"
+      - name: Install ${{ matrix.compiler }}
+        run: |
+          sudo apt-get update
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            sudo apt-get install -y clang
+          else
+            sudo apt-get install -y build-essential
+          fi
 
-    - name: List C sources (debug aid)
-      run: |
-        echo "C files in Split_kMeans:"
-        find Split_kMeans -maxdepth 1 -name '*.c' -print
+      - name: Build (Makefile) with ${{ matrix.compiler }}
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          set -e
+          $CC --version
+          make clean
+          make -j
 
-    - name: Build with ${{ matrix.compiler }}
-      env:
-        CC: ${{ matrix.compiler }}
-      run: |
-        set -euo pipefail
-        cd Split_kMeans
-        $CC --version
-        # Robust glob expansion even if filenames contain spaces
-        SRC_FILES=( *.c )
-        $CC -std=c11 -Wall -Wextra -pedantic -O2 -pthread \
-            -D_POSIX_C_SOURCE=200809L \
-            "${SRC_FILES[@]}" -o ../clustering -lm
+      - name: Prepare dataset (fixtures if available, else fallback)
+        run: |
+          set -e
+          mkdir -p data gt centroids
 
-    - name: Prepare dataset
-      run: |
-        set -euo pipefail
-        mkdir -p data gt centroids
-        if [ -d ci-fixtures ]; then
-          cp -R ci-fixtures/data/*       ./data/ || true
-          cp -R ci-fixtures/gt/*         ./gt/   || true
-          cp -R ci-fixtures/centroids/*  ./centroids/ || true
-        else
-          echo "ci-fixtures missing; creating fallback dataset"
-cat > data/sample.txt <<'EOF'
-0 0
-0 1
-1 0
-10 10
-10 11
-11 10
-EOF
-cat > gt/sample-gt.txt <<'EOF'
-0.333333 0.333333
-10.333333 10.333333
-EOF
-          echo 2 > centroids/sample.k
-        fi
+          if [ -d ci-fixtures/data ] && [ -d ci-fixtures/gt ] && [ -d ci-fixtures/centroids ]; then
+            echo "Using ci-fixtures/*"
+            cp -R ci-fixtures/data/*      data/      || true
+            cp -R ci-fixtures/gt/*        gt/        || true
+            cp -R ci-fixtures/centroids/* centroids/ || true
+          fi
 
-    - name: Smoke-test
-      run: |
-        ./clustering
+          # If any directory ended up empty, create a minimal self-contained set
+          need_fallback=0
+          [ -z "$(ls -A data 2>/dev/null)" ] && need_fallback=1
+          [ -z "$(ls -A gt 2>/dev/null)" ] && need_fallback=1
+          [ -z "$(ls -A centroids 2>/dev/null)" ] && need_fallback=1
+
+          if [ "$need_fallback" = "1" ]; then
+            echo "Fixtures missing or incomplete; creating fallback dataset"
+            rm -rf data gt centroids
+            mkdir -p data gt centroids
+
+            # One simple 2D dataset
+            cat > data/toy.txt << 'EOF'
+            0 0
+            1 1
+            0 1
+            1 0
+            EOF
+
+            # Ground-truth centroids (2 clusters, 2D)
+            cat > gt/toy.txt << 'EOF'
+            0.0 0.5
+            1.0 0.5
+            EOF
+
+            # K value (numeric in a file)
+            echo 2 > centroids/toy.k
+          fi
+
+          echo "Data:"; ls -l data
+          echo "GT:"; ls -l gt
+          echo "K:"; ls -l centroids
+
+      - name: Smoke-test
+        env:
+          LC_ALL: C
+          LANG: C
+        run: |
+          set -e
+          ./split_kmeans

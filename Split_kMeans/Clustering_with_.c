@@ -2091,7 +2091,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       //#2
       centroids->size++;
-      centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint)); //TODO: periaatteessa aina tiedetaan lopullinen koko, niin pitaisikö reallocoinnit poistaa ja lisata jonnekin aikaisemmin se oikea koko naille
+      centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint)); //TODO: periaatteessa aina tiedetaan lopullinen koko, niin pitaisiko reallocoinnit poistaa ja lisata jonnekin aikaisemmin se oikea koko naille
       handleMemoryError(centroids->points);
       centroids->points[centroids->size - 1] = allocateDataPoint(dataPoints->points[0].dimensions);
       deepCopyDataPoint(&centroids->points[centroids->size - 1], &localCentroids.points[1]);
@@ -2174,7 +2174,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       //#2
       centroids->size++;
-      centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint)); //TODO: periaatteessa aina tiedetaan lopullinen koko, niin pitaisikö reallocoinnit poistaa ja lisata jonnekin aikaisemmin se oikea koko naille
+      centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint)); //TODO: periaatteessa aina tiedetaan lopullinen koko, niin pitaisiko reallocoinnit poistaa ja lisata jonnekin aikaisemmin se oikea koko naille
       handleMemoryError(centroids->points);
       centroids->points[centroids->size - 1] = allocateDataPoint(dataPoints->points[0].dimensions);
       deepCopyDataPoint(&centroids->points[centroids->size - 1], &localCentroids.points[1]);
@@ -2755,7 +2755,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           deepCopyDataPoint(&centroids->points[centroids->size], &newCentroid2);
           centroids->size++;
 
-          partitionStep(dataPoints, centroids); //partition step, vai pitaisikö tallentaa ne loopissa ja tehda tassa sitten muutokset? (esim kaikki 0->clusterToSplit, 1->centroids->size-1)
+          partitionStep(dataPoints, centroids); //partition step, vai pitaisiko tallentaa ne loopissa ja tehda tassa sitten muutokset? (esim kaikki 0->clusterToSplit, 1->centroids->size-1)
 
           //Step 3: Update the SSE list
           SseList[clusterToSplit] = calculateClusterSSE(dataPoints, centroids, clusterToSplit);
@@ -2770,7 +2770,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       //Step 4: Run the final k-means
-      double finalResultSse = runKMeans(dataPoints, maxIterations, centroids, groundTruth); //TODO: Pitaisikö poistaa? Final K-means ei taida olla algoritmia
+      double finalResultSse = runKMeans(dataPoints, maxIterations, centroids, groundTruth); //TODO: Pitaisiko poistaa? Final K-means ei taida olla algoritmia
 
       handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
           dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, 4);
@@ -2879,7 +2879,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       double duration;
 
       size_t totalIterations = loopCount * maxRepeats * 5 + 100; //TODO: mietin parempi limit kuin *5
-      double* timeList = malloc(totalIterations * sizeof(double)); //TODO: vois varmaan olla myös size_t koska millisekunteja
+      double* timeList = malloc(totalIterations * sizeof(double)); //TODO: vois varmaan olla myos size_t koska millisekunteja
       handleMemoryError(timeList);
       size_t timeIndex = 0;
 
@@ -3092,7 +3092,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       double duration;
 
       //Tracker helpers
-      size_t failSafety = 0.5 * loopCount; //TODO: ei kaytössa // Note: It may randomly choose a cluster with just 1 data point -> No split. I started with 0.1 multiplier, but 0.5 seems to be a good balance
+      size_t failSafety = 0.5 * loopCount; //TODO: ei kaytossa // Note: It may randomly choose a cluster with just 1 data point -> No split. I started with 0.1 multiplier, but 0.5 seems to be a good balance
       size_t totalIterations = loopCount * numCentroids * 2 + loopCount;
       double* timeList = malloc(totalIterations * sizeof(double));
       handleMemoryError(timeList);
@@ -3662,7 +3662,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           }
       }
 
-      for (size_t i = 1; i < dataCount; ++i)
+      for (size_t i = 0; i < dataCount; ++i)
       {
           char dataFile[PATH_MAX];
           char gtFile[PATH_MAX];
@@ -3678,7 +3678,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
           //Settings
           size_t loops = 1;        // Number of loops to run the algorithms //todo lopulliseen 100
-          size_t scaling = 1;        // Scaling factor for the printed values //TODO: Ei kaytössa
+          size_t scaling = 1;        // Scaling factor for the printed values //TODO: Ei kaytossa
           size_t maxIterations = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
           size_t maxRepeats = 1000;     // Number of "repeats" for the repeated k-means algorithm //TODO lopulliseen 1000
           size_t maxSwaps = 1000;     // Number of trial swaps for the random swap algorithm //TODO lopulliseen 5000
