@@ -32,7 +32,7 @@
 
 
 // Change logs
-// 29-04-2025: Initial 1.0v release by Niko Ruohonen
+// 29-09-2025: Initial 1.0v release by Niko Ruohonen
 
 // Introduction
 /**
@@ -45,7 +45,7 @@
  * to ensure maximum efficiency and effectiveness when applied to multi-dimensional data points.
   *
  * Author: Niko Ruohonen
- * Date: April 29, 2025
+ * Date: September 29, 2025
  * Version: 1.0.0
  *
  * Details:

@@ -8,7 +8,7 @@
 
  /* Update log
   * --------------------------------------------------------------------
-  * Version 1.0 - 2025-05-02 by Niko Ruohonen
+  * Version 1.0 - 2025-09-24 by Niko Ruohonen
   * - Initial release.
   * - Added support for platform-specific random number generation:
   *   - Windows: rand_s
