@@ -1892,7 +1892,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       bool trackProgress, double* timeList, size_t* timeIndex, clock_t start, bool trackTime, bool createCsv)
   {
       double bestSse = DBL_MAX;
-      size_t bestCI = SIZE_MAX;
+      //size_t bestCI = SIZE_MAX;
       size_t kMeansIterations = 2;
       size_t numCentroids = centroids->size;
       size_t dimensions = centroids->points[0].dimensions;
@@ -1962,8 +1962,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
               bestSse = resultSse;
 
-              size_t currentCi = calculateCentroidIndex(centroids, groundTruth);
-              bestCI = currentCi;
+              //size_t currentCi = calculateCentroidIndex(centroids, groundTruth);
+              //bestCI = currentCi;
 
               //appendLogCsv(csvFile, iterationCount, currentCi, resultSse);
               //updateTimeTracking(trackTime, start, timeList, timeIndex);
@@ -3092,7 +3092,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       double duration;
 
       //Tracker helpers
-      size_t failSafety = 0.5 * loopCount; //TODO: ei kaytossa // Note: It may randomly choose a cluster with just 1 data point -> No split. I started with 0.1 multiplier, but 0.5 seems to be a good balance
+      //size_t failSafety = 0.5 * loopCount; //TODO: ei kaytossa // Note: It may randomly choose a cluster with just 1 data point -> No split. I started with 0.1 multiplier, but 0.5 seems to be a good balance
       size_t totalIterations = loopCount * numCentroids * 2 + loopCount;
       double* timeList = malloc(totalIterations * sizeof(double));
       handleMemoryError(timeList);

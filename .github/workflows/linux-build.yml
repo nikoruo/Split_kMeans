@@ -31,7 +31,7 @@ jobs:
       - name: Build with ${{ matrix.cc }}
         run: |
           make -C Split_kMeans clean
-          make -C Split_kMeans CC=${{ matrix.cc }} CFLAGS="-O3 -std=c11 -Wall -Wextra -Wpedantic -Werror"
+          make -C Split_kMeans CC=${{ matrix.cc }} WERROR=-Werror"
 
       - name: Prepare mini dataset (optional)
         if: ${{ hashFiles('ci-fixtures/**') != '' }}
