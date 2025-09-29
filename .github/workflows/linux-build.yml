@@ -5,42 +5,76 @@ on:
     branches: [ main, master ]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
     strategy:
       fail-fast: false
       matrix:
-        cc: [gcc, clang]
+        compiler: [gcc, clang]
 
     steps:
+      # ───────────────────────────────────────────────────────────────────
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Install toolchain
+        with:
+          submodules: recursive
+      # ───────────────────────────────────────────────────────────────────
+      - name: Install ${{ matrix.compiler }}
         run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y build-essential clang make
-
-      - name: Debug workspace layout
+          if [[ "${{ matrix.compiler }}" == "clang" ]]; then
+            sudo apt-get install -y clang ccache
+          else
+            sudo apt-get install -y build-essential ccache   # gcc / g++
+          fi
+      # ───────────────────────────────────────────────────────────────────
+      - name: List C sources (debug aid)
         run: |
-          pwd
-          ls -la
-          find . -maxdepth 3 -iname 'makefile' -type f -print
-
-      - name: Build with ${{ matrix.cc }}
+          set -euo pipefail
+          echo "C files found under Split_kMeans/:"
+          find Split_kMeans -maxdepth 1 -name '*.c' -print
+      # ───────────────────────────────────────────────────────────────────
+      - name: Build with ${{ matrix.compiler }}
+        env:
+          CC: ${{ matrix.compiler }}
         run: |
-          make -C Split_kMeans clean
-          make -C Split_kMeans CC=${{ matrix.cc }} WERROR=-Werror"
-
-      - name: Prepare mini dataset (optional)
-        if: ${{ hashFiles('ci-fixtures/**') != '' }}
+          set -euo pipefail
+          cd Split_kMeans
+          $CC --version
+          # Compile all C files in this folder; avoid ls/glob pitfalls
+          SRC_FILES=$(find . -maxdepth 1 -name '*.c' -print0 | xargs -0 echo)
+          ccache $CC -std=c11 -Wall -Wextra -pedantic -O2 -pthread \
+            $SRC_FILES -o ../clustering -lm
+      # ───────────────────────────────────────────────────────────────────
+      - name: Prepare mini dataset
         run: |
+          set -euo pipefail
           mkdir -p data gt centroids
-          cp -R ci-fixtures/data/* ./data/ || true
-          cp -R ci-fixtures/gt/*   ./gt/   || true
-          cp -R ci-fixtures/centroids/* ./centroids/ || true
-
+          cp -R ci-fixtures/data/*       ./data/
+          cp -R ci-fixtures/gt/*         ./gt/
+          cp -R ci-fixtures/centroids/*  ./centroids/
+      # ───────────────────────────────────────────────────────────────────
       - name: Smoke-test binary
         run: |
-          ./Split_kMeans/split_kmeans || (echo "program exited with non-zero status"; exit 1)
+          set -euo pipefail
+          command -v timeout >/dev/null || sudo apt-get install -y coreutils
+          timeout 10s ./clustering || (echo "program exited with non-zero status"; exit 1)
+      # ───────────────────────────────────────────────────────────────────
+      - name: Upload binary (artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clustering-${{ matrix.compiler }}
+          path: clustering
+          if-no-files-found: warn
