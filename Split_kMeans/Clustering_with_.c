@@ -1,45 +1,51 @@
 ﻿/* SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2025 Niko Ruohonen and contributors
- */
+*/
 
-// Change logs
-// 29-09-2025: Initial 1.0v release by Niko Ruohonen
+/* Update log
+* --------------------------------------------------------------------
+* Version 1.0.0 - 2025-09-29 by Niko Ruohonen TODO
+* - Initial release
+* --------------------------------------------------------------------
+* Update 1.1...
+* - ...
+*/
 
 // Introduction
 /**
- * Project Name: Clustering_with_c
- *
- * Description:
- * This project focuses on the development and implementation of various clustering algorithms.
- * The primary goal was to create a novel clustering algorithm, the SSE Split Algorithm,
- * and also to implement existing algorithms. All algorithms were designed and optimized
- * to ensure maximum efficiency and effectiveness when applied to multi-dimensional data points.
-  *
- * Author: Niko Ruohonen
- * Date: September 29, 2025
- * Version: 1.0.0
- *
- * Details:
- * - Implements multiple clustering algorithms:
+* Project Name: Split_kMeans
+*
+* Description:
+* This project focuses on the development and implementation of various clustering algorithms.
+* The primary goal was to create a novel clustering algorithm, the SSE Split Algorithm,
+* and also to implement existing algorithms. All algorithms were designed and optimized
+* to ensure maximum efficiency and effectiveness when applied to multi-dimensional data points.
+*
+* Author: Niko Ruohonen
+* Date: 2025-09-29
+* Version: 1.0.0
+*
+* Details:
+* - Implements multiple clustering algorithms:
         K-means
         Repeated K-means
         Random Swap
         Random Split
         SSE Split (Intra-cluster, Global, Local Repartition)
         Bisecting K-means.
- * - Provides detailed logging options for debugging and performance analysis. <- commented off by default for performance
- * - Includes memory management functions to handle dynamic allocation and deallocation of data structures.
- * - Supports reading and writing data points and centroids from/to files.
- * - Calculates various metrics such as Mean Squared Error (SSE) and Centroid Index (CI) to evaluate clustering performance.
- *
- * Usage:
- * The project can be run by executing the main function, which initializes datasets, ground truth files, and clustering parameters.
- * It then runs different clustering algorithms on each dataset and writes the results to output files.
- *
- * Structure of the project directory:
- *  ProjectRoot/
+* - Provides detailed logging options for debugging and performance analysis. (<- commented off by default for performance)
+* - Includes memory management functions to handle dynamic allocation and deallocation of data structures.
+* - Supports reading and writing data points and centroids from/to files.
+* - Calculates various metrics such as Sum of Squared Errors (SSE) and Centroid Index (CI) to evaluate clustering performance.
+*
+* Usage:
+* The project can be run by executing the main function, which initializes datasets, ground truth files, and clustering parameters.
+* It then runs different clustering algorithms on each dataset and writes the results to output files.
+*
+* Structure of the project directory:
+*  ProjectRoot/
     ├─ data/
-    │  ├─ datasetA.txt               # points: one data point per line; space-separated doubles; all rows same dimensionality
+    │  ├─ datasetA.txt               # points: one data point per line; all rows same dimensionality
     │  └─ datasetB.txt
     ├─ gt/
     │  ├─ datasetA-gt.txt            # ground truth centroids: one centroid per line; dimensions must match the corresponding data file
@@ -47,50 +53,50 @@
     └─ centroids/
        ├─ datasetA.k                 # contains ONLY a single positive integer: the number of clusters K (no extra text/BOM)
        └─ datasetB.k
- *
- * Pairing and file counts:
- * - Input files are discovered at runtime via directory enumeration (list_files) from "data/", "gt/", and "centroids/".
- * - The number of files in these three folders must match; otherwise the program exits with an error.
- * - Files are paired by sorted filename order. To avoid mismatches, keep base names aligned across folders,
- *   e.g., "datasetA.txt" <-> "datasetA-gt.txt" <-> "datasetA.k".
- *
- * Results:
- *  ProjectRoot/
+*
+* Pairing and file counts:
+* - Input files are discovered at runtime via directory enumeration (list_files) from "data/", "gt/", and "centroids/".
+* - The number of files in these three folders must match; otherwise the program exits with an error.
+* - Files are paired by sorted filename order. To avoid mismatches, keep base names aligned across folders,
+*   e.g., "datasetA.txt" <-> "datasetA-gt.txt" <-> "datasetA.k".
+*
+* Results:
+*  ProjectRoot/
     └─ outputs/
-       └─ 2025-09-29_14-32-10/       # created automatically
-          ├─ datasetA/
-          │  ├─ RKM_log.csv
-          │  ├─ RKM_times.txt
-          │  ├─ RKM_iteration_stats.txt
-          │  ├─ repeatedKMeans_centroids.txt
-          │  ├─ repeatedKMeans_partitions.txt
-          │  ├─ KMeans_centroids_perfect.txt
-          │  ├─ KMeans_partitions_perfect.txt
-          │  ├─ RandomSwap_centroids_failed.txt
-          │  ├─ RandomSwap_partitions_failed.txt
-          │  └─ ... (depends on which algorithms you run)
-          └─ datasetB/
-             └─ ...
- *
- * Notes:
- * - Ensure that the "data/", "gt/", and "centroids/" folders contain the same number of files, with matching base names,
- *   so files pair correctly across folders.
- * - Each data file must be space-separated doubles; all rows must have the same number of dimensions (columns).
- * - Each ground-truth file (gt/*.txt) must use the same dimensionality as its corresponding data file.
- * - Each .k file (centroids/*.k) must contain a single positive integer K and nothing else.
- * - Outputs are written under outputs/<timestamp>/<dataset-base-name>/.
- * - Remember to set the "Settings" to desired levels before running the project.
- * - Future plans include adding more clustering algorithms and improving the performance of existing ones.
- * - Some of the functions write to files using locale "fi_FI" to format numbers with commas and some with "C" to format numbers with dots.
- *   This was used to ensure compatibility with different systems (e.g., Excel and existing MATLAB).
- */
+    └─ 2025-09-29_14-32-10/       # created automatically
+        ├─ datasetA/
+        │  ├─ RKM_log.csv
+        │  ├─ RKM_times.txt
+        │  ├─ RKM_iteration_stats.txt
+        │  ├─ repeatedKMeans_centroids.txt
+        │  ├─ repeatedKMeans_partitions.txt
+        │  ├─ kMeans_centroids_perfect.txt
+        │  ├─ kMeans_partitions_perfect.txt
+        │  ├─ RandomSwap_centroids_failed.txt
+        │  ├─ RandomSwap_partitions_failed.txt
+        │  └─ ... (depends on which algorithms you run)
+        └─ datasetB/
+            └─ ...
+*
+* Notes:
+* - Ensure that the "data/", "gt/", and "centroids/" folders contain the same number of files, with matching base names,
+*   so files pair correctly across folders.
+* - Each data file must be space-separated doubles; all rows must have the same number of dimensions (columns).
+* - Each ground-truth file (gt/*.txt) must use the same dimensionality as its corresponding data file.
+* - Each .k file (centroids/*.k) must contain a single positive integer K and nothing else.
+* - Outputs are written under outputs/<timestamp>/<dataset-base-name>/.
+* - CSV files use semicolons (;) as separators.
+* - Numeric formatting in some outputs depends on the current C locale. The program sets fi_FI at startup for Excel compatibility on Finnish systems, (<- commented off by default for compatibility)
+*   and some files are intentionally written using the "C" locale for dot decimal separators.
+* - Future plans include adding more clustering algorithms and improving the performance of existing ones.
+*/
 
 /**
- * @brief Suppresses warnings about unsafe functions in Visual Studio.
- *
- * This macro disables warnings for functions like `strcpy` and `sprintf`
- * when using the Microsoft C compiler. It is ignored by other compilers.
- */
+* @brief Suppresses warnings about unsafe functions in Visual Studio.
+*
+* This macro disables warnings for functions like `strcpy` and `sprintf`
+* when using the Microsoft C compiler. It is ignored by other compilers.
+*/
 #ifdef _MSC_VER
     #define _CRT_SECURE_NO_WARNINGS
 #endif
@@ -111,34 +117,30 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <stddef.h>
-#include <locale.h>
 #include <errno.h>
+#include <ctype.h>
 
-// Macros
+/////////////
+// Macros //
+///////////
+
 #define LINE_BUFSZ 512 /* tweak if needed */
 
- //////////////
- // DEFINES //
- ////////////
-
- /**
-  * @brief Converts clock ticks to milliseconds.
-  *
-  * This macro defines the number of clock ticks per millisecond
-  * based on the platform-specific `CLOCKS_PER_SEC` constant.
-  * It is used to simplify time calculations when measuring durations
-  * in milliseconds using `clock()`.
-  */
+/**
+* @brief Converts clock ticks to milliseconds.
+*
+* Divide the result of (end - start) by this value to get milliseconds.
+*/
 #define CLOCKS_PER_MS ((double)CLOCKS_PER_SEC / 1000.0)
 
-  /////////////
- // GLOBALS //
- ////////////
+//////////////
+// GLOBALS //
+////////////
 
- // For logging level
- // 1 = none, 2 = debug, 3 = everything
- // Currently most of the LOGGING lines are commented out for maximum performance
-const size_t LOGGING = 1;
+// For logging level
+// 1 = none, 2 = debug, 3 = everything
+// Most LOGGING lines are commented out for performance
+static const size_t LOGGING = 1;
 
 //////////////
 // Structs //
@@ -147,67 +149,72 @@ const size_t LOGGING = 1;
 /**
  * @brief Represents a single data point in a multi-dimensional space.
  *
- * This struct contains an array of attributes representing the coordinates of the data point
- * in a multi-dimensional space, the number of dimensions, and the partition index indicating
- * which cluster the data point belongs to.
+ * The point owns its `attributes` array. `partition` is a zero-based cluster label;
+ * `SIZE_MAX` indicates "unassigned".
  */
 typedef struct
 {
-    double* attributes;  /**< Array of attributes representing the coordinates of the data point. */
+    double* attributes;  /**< Coordinates of the data point; length == dimensions. */
     size_t dimensions;   /**< Number of dimensions (length of the attributes array). */
-    size_t partition;    /**< Partition index indicating the cluster to which the data point belongs. */
+    size_t partition;    /**< Zero-based cluster label; SIZE_MAX means unassigned. */
 } DataPoint;
 
 /**
- * @brief Represents a collection of data points.
+ * @brief A contiguous collection of data points.
  *
- * This struct contains an array of DataPoint structures and the number of data points in the array.
+ * Ownership: the container owns the array and each element's `attributes`.
+ * Use `freeDataPoints` to release.
  */
 typedef struct
 {
-    DataPoint* points;   /**< Array of DataPoint structures. */
-    size_t size;         /**< Number of data points in the array. */
+    DataPoint* points;   /**< Array of DataPoint structures (size elements). */
+    size_t size;         /**< Number of data points. */
 } DataPoints;
 
 /**
- * @brief Represents a collection of centroids used in clustering algorithms.
+ * @brief A collection of centroids (cluster representatives).
  *
- * This struct contains an array of DataPoint structures representing the centroids
- * and the number of centroids in the array.
+ * Ownership: the container owns the array and each element's `attributes`.
+ * Use `freeCentroids` to release.
  */
 typedef struct
 {
-    DataPoint* points;   /**< Array of DataPoint structures representing the centroids. */
-    size_t size;         /**< Number of centroids in the array. */
+    DataPoint* points;   /**< Array of centroid points (size elements). */
+    size_t size;         /**< Number of centroids (K). */
 } Centroids;
 
 /**
- * @brief Represents the result of a clustering algorithm.
+ * @brief Aggregates a single clustering outcome.
  *
- * This struct contains the mean squared error (SSE) of the clustering result,
- * an array of partition indices indicating the cluster assignment for each data point,
- * an array of centroids representing the cluster centers, and the Centroid Index (CI) value.
+ * - sse: Sum of Squared Errors over all points (not mean).
+ * - partition: length-N array of zero-based cluster labels.
+ * - centroids: array of K centroid points.
+ * - centroidIndex: CI metric for comparing to a reference (optional).
+ *
+ * Ownership: `partition` and `centroids` are owned; free via `freeClusteringResult`.
  */
 typedef struct
 {
-    double sse;           /**< Mean squared error (SSE) of the clustering result. */
-    size_t* partition;    /**< Array of partition indices indicating the cluster assignment for each data point. */
-    DataPoint* centroids; /**< Array of DataPoint structures representing the centroids. */
-    size_t centroidIndex; /**< Centroid Index value. */
+    double sse;           /**< Sum of Squared Errors (SSE) for the clustering result. */
+    size_t* partition;    /**< Array of length N with zero-based cluster labels. */
+    DataPoint* centroids; /**< Array of K centroid points. */
+    size_t centroidIndex; /**< Centroid Index (CI) value (optional). */
 } ClusteringResult;
 
 /**
- * @brief Represents statistical data collected during the execution of clustering algorithms.
+ * @brief Aggregate statistics across runs.
  *
- * This struct contains the sum of mean squared errors (SSE), the sum of Centroid Index (CI) values,
- * the total time taken for the clustering process, and the success rate of the clustering algorithm.
+ * - sseSum: Sum of per-run SSE values.
+ * - ciSum: Sum of per-run CI values.
+ * - timeSum: Sum of durations across runs in milliseconds.
+ * - successRate: Count of runs meeting success criteria (e.g., CI==0).
  */
 typedef struct
 {
-    double sseSum;       /**< Sum of mean squared errors (SSE) values. */
-    size_t ciSum;        /**< Sum of Centroid Index (CI) values. */
-    double timeSum;      /**< Total time taken for the clustering process. */
-    double successRate;  /**< Success rate of the clustering algorithm. */
+    double sseSum;       /**< Sum of SSE values across runs. */
+    size_t ciSum;        /**< Sum of Centroid Index (CI) values across runs. */
+    double timeSum;      /**< Total time across runs in milliseconds. */
+    double successRate;  /**< Success count across runs (used as count, averaged later). */
 } Statistics;
 
 
@@ -216,14 +223,13 @@ typedef struct
 /////////////
 
 /**
- * @brief Handles memory allocation errors.
+ * @brief Aborts the process if an allocation returned NULL.
  *
- * Function checks if the given pointer is NULL, indicating a memory allocation failure.
- * If the pointer is NULL, it prints an error message to stderr and exits the program with a failure status.
- *
- * @param ptr A pointer to the allocated memory. If this pointer is NULL, the function will handle the error.
+ * Centralizes out-of-memory handling so callers remain branchless.
+ * Only use after allocating a non-zero number of bytes; for size 0,
+ * malloc/calloc/realloc may legally return NULL.
  */
-void handleMemoryError(void* ptr)
+void handleMemoryError(const void* ptr)
 {
     if (ptr == NULL)
     {
@@ -233,79 +239,72 @@ void handleMemoryError(void* ptr)
 }
 
 /**
- * @brief Frees the memory allocated for a single DataPoint structure.
- *
- * This function frees the memory allocated for the attributes of the DataPoint
- * and then sets the pointer to the attributes to NULL.
- *
- * @param point A pointer to the DataPoint structure to be freed.
+ * @brief Deinitializes a data point: frees its attributes and resets fields.
  */
-void freeDataPoint(DataPoint* point)
+void deinitDataPoint(DataPoint* point)
 {
+    //if (point == NULL) return;
+
     if (point->attributes != NULL)
     {
         free(point->attributes);
         point->attributes = NULL;
     }
+    point->dimensions = 0;
+    point->partition = SIZE_MAX;
 }
 
 /**
- * @brief Frees the memory allocated for an array of DataPoint structures.
- *
- * This function iterates through an array of DataPoint structures, freeing the memory
- * allocated for the attributes of each DataPoint. It then frees the memory allocated for
- * the array of DataPoint structures itself.
- *
- * @param points A pointer to the array of DataPoint structures to be freed.
- * @param size The number of DataPoint structures in the array.
+ * @brief Frees an array of DataPoint elements and the array itself.
  */
 void freeDataPointArray(DataPoint* points, size_t size)
 {
+    //if (points == NULL) return;
+
     for (size_t i = 0; i < size; ++i)
     {
-        freeDataPoint(&points[i]);
+        deinitDataPoint(&points[i]);
     }
     free(points);
 }
 
 /**
- * @brief Frees the memory allocated for a DataPoints structure.
- *
- * This function frees the memory allocated for the array of DataPoint structures
- * within the DataPoints structure and then sets the pointer to the array to NULL.
- *
- * @param dataPoints A pointer to the DataPoints structure to be freed.
- */void freeDataPoints(DataPoints* dataPoints)
+ * @brief Releases owned `points` array (and its elements) and resets the container.
+ */
+ void freeDataPoints(DataPoints* dataPoints)
  {
-     freeDataPointArray(dataPoints->points, dataPoints->size);
-     dataPoints->points = NULL;
+    //if (dataPoints == NULL) return;
+    //if (dataPoints->points == NULL) return;
+
+    freeDataPointArray(dataPoints->points, dataPoints->size);
+    dataPoints->points = NULL;
+    dataPoints->size = 0;
  }
 
  /**
-  * @brief Frees the memory allocated for a Centroids structure.
-  *
-  * This function frees the memory allocated for the array of DataPoint structures
-  * within the Centroids structure and then sets the pointer to the array to NULL.
-  *
-  * @param centroids A pointer to the Centroids structure to be freed.
+  * @brief Releases owned centroid array (and its elements) and resets the container.
   */
  void freeCentroids(Centroids* centroids)
  {
+     //if (centroids == NULL) return;
+     //if (centroids->points == NULL) return;
+
      freeDataPointArray(centroids->points, centroids->size);
      centroids->points = NULL;
+     centroids->size = 0;
  }
 
  /**
-  * @brief Frees the memory allocated for a ClusteringResult structure.
+  * @brief Releases owned arrays of a clustering outcome and resets pointers.
   *
-  * This function frees the memory allocated for the partition array and the array of DataPoint structures
-  * representing the centroids within the ClusteringResult structure. It then sets the pointers to NULL.
-  *
-  * @param result A pointer to the ClusteringResult structure to be freed.
-  * @param numCentroids The number of centroids in the ClusteringResult structure.
+  * Frees the `partition` array and the centroid array (including each centroid’s attributes).
+  * Does not free the `ClusteringResult` object itself. The caller must pass the number of
+  * centroids contained in `result->centroids`.
   */
  void freeClusteringResult(ClusteringResult* result, size_t numCentroids)
  {
+     //if (result == NULL) return;
+
      if (result->partition != NULL)
      {
          free(result->partition);
@@ -320,38 +319,33 @@ void freeDataPointArray(DataPoint* points, size_t size)
  }
 
  /**
-  * @brief Creates a list of strings.
-  *
-  * This function allocates memory for a list of strings, each with a fixed size of 256 characters.
-  *
-  * @param size The number of strings in the list.
-  * @return A pointer to the list of strings.
-  */char** createStringList(size_t size)
+  * @brief Allocates an array of `size` writable PATH_MAX strings, zero-initialized.
+  */
+ char** createStringList(size_t size)
   {
-      char** list = malloc(size * sizeof(char*));
-      handleMemoryError(list);
+     // if (size == 0) return NULL;
 
-      const size_t stringSize = PATH_MAX;
+     char** list = calloc(size, sizeof(char*));
+     handleMemoryError(list);
 
-      for (size_t i = 0; i < size; ++i)
-      {
-          list[i] = malloc(stringSize * sizeof(char));
-          handleMemoryError(list[i]);
-      }
+     const size_t stringSize = PATH_MAX;
 
-      return list;
+     for (size_t i = 0; i < size; ++i)
+     {
+         list[i] = calloc(stringSize, sizeof(char));
+         handleMemoryError(list[i]);
+     }
+     
+     return list;
   }
 
-  /**
-   * @brief Frees the memory allocated for a list of strings.
-   *
-   * This function frees the memory allocated for each string in the list and then frees the list itself.
-   *
-   * @param list A pointer to the list of strings to be freed.
-   * @param size The number of strings in the list.
-   */
+ /**
+  * @brief Frees each string then the list container.
+  */
   void freeStringList(char** list, size_t size)
   {
+      //if (list == NULL) return;
+
       for (size_t i = 0; i < size; ++i)
       {
           free(list[i]);
@@ -360,17 +354,18 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-  * @brief Allocates and initializes a DataPoint structure.
-  *
-  * This function allocates memory for the attributes of a DataPoint structure and initializes its dimensions and partition.
-  *
-  * @param dimensions The number of dimensions for the DataPoint.
-  * @return A DataPoint structure with allocated memory for its attributes.
-  */
+   * @brief Creates a point with `dimensions` doubles, zero-initialized.
+   */
   DataPoint allocateDataPoint(size_t dimensions)
   {
+      /*if (dimensions == 0)
+      {
+          fprintf(stderr, "Error: allocateDataPoint requires dimensions > 0\n");
+          exit(EXIT_FAILURE);
+      }*/
+
       DataPoint point;
-      point.attributes = malloc(dimensions * sizeof(double));
+      point.attributes = calloc(dimensions, sizeof(double)); /* zero-init for safe += use */
       handleMemoryError(point.attributes);
       point.dimensions = dimensions;
       point.partition = SIZE_MAX; // Initialize partition to default value, here SIZE_MAX. Cant use -1 as its size_t
@@ -379,20 +374,15 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-  * @brief Allocates and initializes a DataPoints structure.
-  *
-  * This function allocates memory for an array of DataPoint structures and initializes each DataPoint.
-  *
-  * @param size The number of DataPoint structures in the array.
-  * @param dimensions The number of dimensions for each DataPoint.
-  * @return A DataPoints structure with allocated memory for its points.
-  */
+   * @brief Allocates an array of `size` points, each with `dimensions` zeroed attributes.
+   */
   DataPoints allocateDataPoints(size_t size, size_t dimensions)
   {
       DataPoints dataPoints;
       dataPoints.points = malloc(size * sizeof(DataPoint));
       handleMemoryError(dataPoints.points);
       dataPoints.size = size;
+
       for (size_t i = 0; i < size; ++i)
       {
           dataPoints.points[i] = allocateDataPoint(dimensions);
@@ -402,20 +392,21 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-  * @brief Allocates and initializes a Centroids structure.
-  *
-  * This function allocates memory for an array of DataPoint structures representing the centroids and initializes each DataPoint.
-  *
-  * @param size The number of centroids.
-  * @param dimensions The number of dimensions for each centroid.
-  * @return A Centroids structure with allocated memory for its points.
-  */
+   * @brief Allocates a centroid array of `size` points with `dimensions` attributes each.
+   */
   Centroids allocateCentroids(size_t size, size_t dimensions)
   {
+      /*if (dimensions == 0 || size == 0)
+      {
+          fprintf(stderr, "Error: allocateCentroids requires dimensions AND size > 0\n");
+          exit(EXIT_FAILURE);
+      }*/
+
       Centroids centroids;
+      centroids.size = size;
       centroids.points = malloc(size * sizeof(DataPoint));
       handleMemoryError(centroids.points);
-      centroids.size = size;
+
       for (size_t i = 0; i < size; ++i)
       {
           centroids.points[i] = allocateDataPoint(dimensions);
@@ -425,73 +416,71 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-  * @brief Allocates and initializes a ClusteringResult structure.
-  *
-  * This function allocates memory for the partition array and the array of DataPoint structures representing the centroids.
-  *
-  * @param numDataPoints The number of data points.
-  * @param numCentroids The number of centroids.
-  * @param dimensions The number of dimensions for each centroid.
-  * @return A ClusteringResult structure with allocated memory for its partition and centroids.
-  */
+   * @brief Builds a clustering result with partition buffer and K centroids.
+   */
   ClusteringResult allocateClusteringResult(size_t numDataPoints, size_t numCentroids, size_t dimensions)
   {
+      /*if (numCentroids == 0 || dimensions == 0)
+      {
+          fprintf(stderr, "Error: allocateClusteringResult requires dimensions > 0 and numCentroids > 0\n");
+          exit(EXIT_FAILURE);
+      }*/
+
       ClusteringResult result;
+      result.sse = DBL_MAX;
+      result.centroidIndex = SIZE_MAX;
       result.partition = malloc(numDataPoints * sizeof(size_t));
       handleMemoryError(result.partition);
+
+      for (size_t i = 0; i < numDataPoints; ++i)
+      {
+          result.partition[i] = SIZE_MAX;
+      }
+      
       result.centroids = malloc(numCentroids * sizeof(DataPoint));
       handleMemoryError(result.centroids);
       for (size_t i = 0; i < numCentroids; ++i)
       {
           result.centroids[i] = allocateDataPoint(dimensions);
-      }
-      result.sse = DBL_MAX;
-      result.centroidIndex = SIZE_MAX;
+      }      
 
       return result;
   }
 
   /**
-  * @brief Initializes a Statistics structure.
-  *
-  * This function sets all fields of the Statistics structure to their default values.
-  *
-  * @param stats A pointer to the Statistics structure to be initialized.
-  */
+   * @brief Resets all statistic accumulators to their baseline.
+   */
   void initializeStatistics(Statistics* stats)
   {
-      if (stats == NULL)
+      /*if (stats == NULL)
       {
           fprintf(stderr, "Error: Null pointer passed to initializeStatistics\n");
           exit(EXIT_FAILURE);
-      }
+      }*/
 
       stats->sseSum = 0.0;
       stats->ciSum = 0;
       stats->timeSum = 0.0;
-      stats->successRate = 0.0;
+      stats->successRate = 0.0; /* used as count; averaged later */
   }
 
   //////////////
   // Helpers //
   ////////////
 
-  /**
-   * @brief Calculates the squared Euclidean distance between two data points.
-   *
-   * This function computes the squared Euclidean distance between two data points
-   * by summing the squared differences of their corresponding attributes.
-   *
-   * @param point1 A pointer to the first DataPoint structure.
-   * @param point2 A pointer to the second DataPoint structure.
-   * @return The squared Euclidean distance between the two data points.
-   */
+/**
+ * @brief Squared Euclidean distance between two points.
+ */
   double calculateSquaredEuclideanDistance(const DataPoint* point1, const DataPoint* point2)
   {
+      const size_t dims = point1->dimensions;
+      const double* a = point1->attributes;
+      const double* b = point2->attributes;
+
       double sum = 0.0;
-      for (size_t i = 0; i < point1->dimensions; ++i)
+      for (size_t i = 0; i < dims; ++i)
       {
-          double diff = point1->attributes[i] - point2->attributes[i];
+          const double diff = a[i] - b[i];
           sum += diff * diff;
       }
       return sum;
@@ -499,27 +488,16 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
   /**
    * @brief Calculates the Euclidean distance between two data points.
-   *
-   * This function computes the Euclidean distance between two data points
-   * by first calculating the squared Euclidean distance and then taking the square root.
-   *
-   * @param point1 A pointer to the first DataPoint structure.
-   * @param point2 A pointer to the second DataPoint structure.
-   * @return The Euclidean distance between the two data points.
+   * 
+   * @note (NOT USED)
    */
   double calculateEuclideanDistance(const DataPoint* point1, const DataPoint* point2)
   {
-      double sqrtDistance = sqrt(calculateSquaredEuclideanDistance(point1, point2));
-      return sqrtDistance;
+      return sqrt(calculateSquaredEuclideanDistance(point1, point2));
   }
 
   /**
-   * @brief Handles file opening errors.
-   *
-   * This function prints an error message to stderr indicating that the specified file
-   * could not be opened and then exits the program with a failure status.
-   *
-   * @param filename The name of the file that could not be opened.
+   * @brief Handles file opening errors and terminates the program.
    */
   void handleFileError(const char* filename)
   {
@@ -528,13 +506,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-  * @brief Handles file read errors.
-  *
-  * This function prints an error message to stderr indicating that an error occurred while reading
-  * from the specified file and then exits the program with a failure status.
-  *
-  * @param filename The name of the file that could not be read.
-  */
+   * @brief Handles file read errors and terminates the program.
+   */
   void handleFileReadError(const char* filename)
   {
       fprintf(stderr, "Error: Unable to read from file '%s'\n", filename);
@@ -542,14 +515,18 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-  * @brief Gets the number of dimensions in the data file.
-  *
-  * This function reads the first line of the specified file and counts the number of tokens
-  * (assumed to be the number of dimensions) separated by spaces (" ", tabs "\t", newlines "\n", carriage return "\r").
-  *
-  * @param filename The name of the file to read.
-  * @return The number of dimensions in the data file.
-  */
+   * @brief Count whitespace-separated values on the first non-empty line.
+   *
+   * Scans the file from the beginning and counts tokens on the first line that
+   * contains any non-whitespace. Tokens are sequences of non-isspace characters
+   * separated by spaces/tabs. Ignores CR characters. Returns 0 if no tokens are
+   * found (e.g., empty file or only blank lines).
+   *
+   * @param filename Path to the data file.
+   * @return Number of columns (dimensions) detected, or 0 if none.
+   * @errors Exits on open/read errors (uses handleFileError/handleFileReadError).
+   * @note Reads character-by-character to avoid fixed-line-buffer truncation.
+   */
   size_t getNumDimensions(const char* filename)
   {
       FILE* file;
@@ -558,24 +535,60 @@ void freeDataPointArray(DataPoint* points, size_t size)
           handleFileError(filename);
       }
 
-      // For disabling the CS6387 warning,
-      // inform the static analyzer that 'file' is not NULL.
-      // Safe to use as we actually check for NULL earlier
+      // Inform static analyzer: 'file' is non-NULL on success
       _Analysis_assume_(file != NULL);
 
-      char firstLine[LINE_BUFSZ];
-      if (fgets(firstLine, sizeof(firstLine), file) == NULL)
-      {
-          handleFileReadError(filename);
-      }
-
       size_t dimensions = 0;
-      char* context = NULL;
-      char* token = STRTOK(firstLine, " \t\r\n", &context); //Delimiter = " ", tabs "\t", newlines "\n", carriage return "\r"
-      while (token != NULL)
+      bool inToken = false;
+      bool foundNonWhitespaceOnLine = false;
+
+      for (;;)
       {
-          dimensions++;
-          token = STRTOK(NULL, " \t\r\n", &context); //Delimiter = " ", tabs "\t", newlines "\n", carriage return "\r" 
+          int ch = fgetc(file);
+
+          if (ch == EOF)
+          {
+              if (ferror(file))
+              {
+                  handleFileReadError(filename);
+              }
+              // EOF: return whatever was counted (0 if nothing found)
+              break;
+          }
+
+          if (ch == '\r')
+          {
+              // Ignore CR to handle CRLF seamlessly
+              continue;
+          }
+
+          if (ch == '\n')
+          {
+              if (foundNonWhitespaceOnLine)
+              {
+                  // Finished the first non-empty line
+                  break;
+              }
+              // Blank/whitespace-only line; reset state and continue to next line
+              inToken = false;
+              dimensions = 0;
+              foundNonWhitespaceOnLine = false;
+              continue;
+          }
+
+          if (!isspace((unsigned char)ch))
+          {
+              foundNonWhitespaceOnLine = true;
+              if (!inToken)
+              {
+                  ++dimensions;
+                  inToken = true;
+              }
+          }
+          else
+          {
+              inToken = false;
+          }
       }
 
       fclose(file);
@@ -584,14 +597,17 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Reads data points from a file.
+   * @brief Load whitespace-separated double vectors, enforcing a consistent dimensionality per row.
    *
-   * This function reads data points from the specified file, where each line represents a data point
-   * with attributes separated by spaces, tabs, newlines, or carriage returns. It allocates memory
-   * for the data points and their attributes, and returns a DataPoints structure containing the data points.
+   * Skips whitespace-only lines. The first non-empty row defines the expected column count;
+   * every subsequent non-empty row must match or the function terminates with an error.
+   * Returns an empty container if the file has no data rows.
    *
-   * @param filename The name of the file to read.
-   * @return A DataPoints structure containing the data points read from the file.
+   * @param filename Path to a space/tab-delimited text file of doubles.
+   * @return DataPoints with size equal to the number of data rows; each point owns its attributes
+   *         (length == expectedDims), dimensions set to expectedDims, and partition = SIZE_MAX.
+   * @errors Exits on file open/read failures, allocation failures, or inconsistent column counts.
+   * @note Parsing uses strtod and the current locale; prefer LC_NUMERIC="C" for dot decimals.
    */
   DataPoints readDataPoints(const char* filename)
   {
@@ -601,80 +617,161 @@ void freeDataPointArray(DataPoint* points, size_t size)
           handleFileError(filename);
       }
 
-      // First pass to count actual lines in the file
+      // First pass: count data rows and establish expected dimensionality
       size_t lineCount = 0;
-      char countBuffer[1024];
+      size_t expectedDims = SIZE_MAX;
+      char countBuffer[LINE_BUFSZ];
+
       while (fgets(countBuffer, sizeof(countBuffer), file) != NULL)
       {
-          // Skip empty lines
-          if (strlen(countBuffer) > 1)
-          { // More than just a newline character
-              lineCount++;
+          // Determine if the line contains any non-whitespace characters
+          bool hasTokenChar = false;
+          for (const unsigned char* p = (const unsigned char*)countBuffer; *p; ++p)
+          {
+              if (!isspace(*p))
+              {
+                  hasTokenChar = true;
+                  break;
+              }
           }
+          if (!hasTokenChar)
+          {
+              continue; // whitespace-only line
+          }
+
+          // Count tokens to validate dimensionality
+          char tmp[LINE_BUFSZ];
+          STRCPY(tmp, sizeof(tmp), countBuffer);
+          size_t tokenCount = 0;
+          char* ctx = NULL;
+          char* tok = STRTOK(tmp, " \t\r\n", &ctx);
+          while (tok != NULL)
+          {
+              ++tokenCount;
+              tok = STRTOK(NULL, " \t\r\n", &ctx);
+          }
+
+          if (tokenCount == 0)
+          {
+              continue; // defensive: no tokens after tokenization
+          }
+
+          if (expectedDims == SIZE_MAX)
+          {
+              expectedDims = tokenCount;
+          }
+          else if (tokenCount != expectedDims)
+          {
+              fclose(file);
+              fprintf(stderr,
+                  "Error: Inconsistent column count in '%s' (expected %zu, got %zu)\n",
+                  filename, expectedDims, tokenCount);
+              exit(EXIT_FAILURE);
+          }
+
+          ++lineCount;
       }
 
-      // Reset file position to beginning
+      // No data rows -> return empty container
+      if (lineCount == 0)
+      {
+          fclose(file);
+          DataPoints empty = { NULL, 0 };
+          return empty;
+      }
+
+      // Second pass: parse into structures
       rewind(file);
 
-      // Allocate data points based on actual line count
       DataPoints dataPoints;
       dataPoints.size = lineCount;
       dataPoints.points = malloc(lineCount * sizeof(DataPoint));
       handleMemoryError(dataPoints.points);
 
-      // Read the file line by line
-      char line[1024]; // Buffer size = 512, increase if needed
+      char line[LINE_BUFSZ];
       size_t currentPoint = 0;
 
       while (fgets(line, sizeof(line), file) && currentPoint < lineCount)
       {
-          // Skip empty lines
-          if (strlen(line) <= 1)
+          // Skip whitespace-only lines
+          bool hasTokenChar = false;
+          for (const unsigned char* p = (const unsigned char*)line; *p; ++p)
+          {
+              if (!isspace(*p))
+              {
+                  hasTokenChar = true;
+                  break;
+              }
+          }
+          if (!hasTokenChar)
           {
               continue;
           }
 
-          // Initialize the data point
-          DataPoint* point = &dataPoints.points[currentPoint];
-
-          // Count tokens first to allocate the right size
+          // Count tokens to confirm dimensionality
           size_t tokenCount = 0;
+          char lineCopy[LINE_BUFSZ];
+          STRCPY(lineCopy, sizeof(lineCopy), line);
           char* countContext = NULL;
-          char lineCopy[1024];
-          strcpy(lineCopy, line);
-
-          char* countToken = STRTOK(lineCopy, " \t\r\n", &countContext);
-          while (countToken != NULL)
+          for (char* ct = STRTOK(lineCopy, " \t\r\n", &countContext);
+              ct != NULL;
+              ct = STRTOK(NULL, " \t\r\n", &countContext))
           {
-              tokenCount++;
-              countToken = STRTOK(NULL, " \t\r\n", &countContext);
+              ++tokenCount;
           }
 
-          // Allocate memory for attributes
-          point->attributes = malloc(tokenCount * sizeof(double));
+          if (tokenCount == 0)
+          {
+              continue; // defensive
+          }
+          if (expectedDims != SIZE_MAX && tokenCount != expectedDims)
+          {
+              fclose(file);
+              freeDataPointArray(dataPoints.points, currentPoint);
+              fprintf(stderr,
+                  "Error: Inconsistent column count in '%s' (expected %zu, got %zu)\n",
+                  filename, expectedDims, tokenCount);
+              exit(EXIT_FAILURE);
+          }
+
+          // Initialize point and allocate attributes
+          DataPoint* point = &dataPoints.points[currentPoint];
+          point->attributes = malloc(expectedDims * sizeof(double));
           handleMemoryError(point->attributes);
-          point->dimensions = 0;
+          point->dimensions = expectedDims;
           point->partition = SIZE_MAX;
 
-          // Parse the actual values
+          // Parse values
           char* context = NULL;
           char* token = STRTOK(line, " \t\r\n", &context);
-
-          while (token != NULL && point->dimensions < tokenCount)
+          size_t dim = 0;
+          while (token != NULL && dim < expectedDims)
           {
-              point->attributes[point->dimensions++] = strtod(token, NULL);
+              point->attributes[dim++] = strtod(token, NULL);
               token = STRTOK(NULL, " \t\r\n", &context);
           }
 
-          currentPoint++;
+          // Final sanity check
+          if (dim != expectedDims)
+          {
+              fclose(file);
+              freeDataPointArray(dataPoints.points, currentPoint + 1);
+              fprintf(stderr,
+                  "Error: Row truncated in '%s' (expected %zu values, got %zu)\n",
+                  filename, expectedDims, dim);
+              exit(EXIT_FAILURE);
+          }
+
+          ++currentPoint;
       }
 
       fclose(file);
 
-      // Verify we read the expected number of points
       if (currentPoint != lineCount)
       {
-          fprintf(stderr, "Error: Expected to read %zu points but only read %zu points\n", lineCount, currentPoint);
+          fprintf(stderr,
+              "Error: Expected to read %zu points but read %zu points\n",
+              lineCount, currentPoint);
           freeDataPointArray(dataPoints.points, currentPoint);
           exit(EXIT_FAILURE);
       }
@@ -683,14 +780,16 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Reads centroids from a file.
+   * @brief Reads centroids from a whitespace-delimited text file.
    *
-   * This function reads centroids from the specified file by first reading the data points
-   * and then converting them into centroids. It allocates memory for the centroids and their attributes,
-   * and returns a Centroids structure containing the centroids.
+   * Treats each non-empty row as one centroid; columns are coordinates. Reuses the
+   * allocation from `readDataPoints` and returns it as `Centroids` (ownership transfers
+   * to the returned object; free with `freeCentroids`).
    *
-   * @param filename The name of the file to read.
-   * @return A Centroids structure containing the centroids read from the file.
+   * @param filename Path to a space/tab-separated text file of doubles.
+   * @return Centroids with `size == rows` and each centroid’s `dimensions == columns`.
+   * @errors Exits on open/read errors or inconsistent column counts (via readDataPoints).
+   * @note Skips whitespace-only lines; parsing uses the current C locale for `strtod`.
    */
   Centroids readCentroids(const char* filename)
   {
@@ -719,41 +818,58 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Reads the value of K from a file.
-   *
-   * This function reads the value of K from the specified file. It expects the file to contain
-   * a single line with a positive integer representing the number of clusters (K).
-   *
-   * @param path The path to the file containing the value of K.
-   * @return The value of K as a size_t.
+   * @brief Reads a single positive integer K from a file (strict, no extra content).
    */
-  static size_t read_k_from_file(const char* path)
+  static size_t readKFromFile(const char* path)
   {
       FILE* fp;
-      if (FOPEN(fp, path, "r") != 0)
+      if (FOPEN(fp, path, "rb") != 0)
       {
           handleFileError(path);
       }
+
+      /* Skip UTF-8 BOM if present */
+      int c1 = fgetc(fp);
+      if (c1 == 0xEF)
+      {
+          int c2 = fgetc(fp);
+          int c3 = fgetc(fp);
+          if (!(c2 == 0xBB && c3 == 0xBF))
+          {
+              if (c3 != EOF) ungetc(c3, fp);
+              if (c2 != EOF) ungetc(c2, fp);
+              ungetc(c1, fp);
+          }
+      }
+      else if (c1 != EOF)
+      {
+          ungetc(c1, fp);
+      }
+
       long k = 0;
       if (fscanf(fp, "%ld", &k) != 1 || k <= 0)
       {
+          fclose(fp);
           fprintf(stderr, "Bad K in %s\n", path);
           exit(EXIT_FAILURE);
       }
+
+      /* Ensure no extra non-whitespace content remains */
+      int ch;
+      do { ch = fgetc(fp); } while (ch != EOF && isspace((unsigned char)ch));
+      if (ch != EOF)
+      {
+          fclose(fp);
+          fprintf(stderr, "Bad K (extra content) in %s\n", path);
+          exit(EXIT_FAILURE);
+      }
+
       fclose(fp);
       return (size_t)k;
   }
 
   /**
-   * @brief Appends a log entry to a CSV file.
-   *
-   * This function appends a log entry to the specified CSV file with the given parameters.
-   * The log entry includes the number of centroids, iteration number, and SSE value.
-   *
-   * @param filePath The path to the CSV file.
-   * @param iteration The current iteration number.
-   * @param ci The number of centroids.
-   * @param sse The sum of squared errors (SSE) value.
+   * @brief Appends a CSV row: ci;iteration;sse.
    */
   void appendLogCsv(const char* filePath, size_t iteration, size_t ci, double sse)
   {
@@ -763,18 +879,13 @@ void freeDataPointArray(DataPoint* points, size_t size)
           handleFileError(filePath);
           return;
       }
-      // Write time, number of centroids, centroid index (CI) and sse
+      /* Columns: ci;iteration;sse */
       fprintf(file, "%zu;%zu;%.0f\n", ci, iteration, sse);
       fclose(file);
   }
 
   /**
-   * @brief Checks if a file exists.
-   *
-   * This function checks if a file with the given file path exists.
-   *
-   * @param filePath The path to the file to check.
-   * @return true if the file exists, false otherwise.
+   * @brief Returns true if the path exists (file or directory).
    */
   bool fileExists(const char* filePath)
   {
@@ -783,13 +894,18 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Writes centroids to a file.
+   * @brief Writes centroids as space-separated rows to outputDirectory/filename.
    *
-   * This function writes the centroids to the specified file. Each centroid's attributes
-   * are written on a new line, with attributes separated by spaces.
+   * One centroid per line; attributes separated by a single space. Uses the current
+   * process numeric locale (does not modify LC_NUMERIC). The destination directory
+   * must exist.
    *
-   * @param filename The name of the file to write the centroids to.
-   * @param centroids A pointer to the Centroids structure containing the centroids to be written.
+   * @param filename Target file name (no path).
+   * @param centroids Centroids to write; writes exactly `centroids->size` rows.
+   * @param outputDirectory Destination directory; must exist.
+   * @return void
+   * @errors Exits on open failure via handleFileError. Ignores write errors.
+   * @note Output format relies on the current locale’s decimal separator.
    */
   void writeCentroidsToFile(const char* filename, const Centroids* centroids, const char* outputDirectory)
   {
@@ -800,29 +916,34 @@ void freeDataPointArray(DataPoint* points, size_t size)
       if (FOPEN(centroidFile, outputFilePath, "w") != 0)
       {
           handleFileError(outputFilePath);
-          return;
       }
 
-      for (size_t i = 0; i < centroids->size; ++i) // Loop through each centroid
+      for (size_t i = 0; i < centroids->size; ++i)
       {
-          for (size_t j = 0; j < centroids->points[i].dimensions; ++j) // Loop through each dimension of a centroid
+          const DataPoint* c = &centroids->points[i];
+          for (size_t j = 0; j < c->dimensions; ++j)
           {
-              fprintf(centroidFile, "%f ", centroids->points[i].attributes[j]);
+              if (j) fputc(' ', centroidFile);
+              fprintf(centroidFile, "%f", c->attributes[j]);
           }
-          fprintf(centroidFile, "\n"); // New line after each centroid's attributes
+          fputc('\n', centroidFile);
       }
 
       fclose(centroidFile);
   }
 
   /**
-   * @brief Writes data point partitions to a file.
+   * @brief Writes one partition label per line to outputDirectory/filename.
    *
-   * This function writes the partition indices of data points to the specified file.
-   * Each partition index is written on a new line.
+   * Serializes `dataPoints->points[i].partition` for all points in order, using the
+   * current C locale. Labels are zero-based; unassigned points may appear as `SIZE_MAX`.
    *
-   * @param filename The name of the file to write the partitions to.
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
+   * @param filename Target file name (no path).
+   * @param dataPoints Points whose partitions to serialize; size determines line count.
+   * @param outputDirectory Destination directory; must exist.
+   * @return void
+   * @errors Exits on open failure via handleFileError. Write errors are not checked.
+   * @note Output intended for debugging/postprocessing; format is line-oriented text.
    */
   void writeDataPointPartitionsToFile(const char* filename, const DataPoints* dataPoints, const char* outputDirectory)
   {
@@ -833,7 +954,6 @@ void freeDataPointArray(DataPoint* points, size_t size)
       if (FOPEN(file, outputFilePath, "w") != 0)
       {
           handleFileError(outputFilePath);
-          return;
       }
 
       for (size_t i = 0; i < dataPoints->size; ++i)
@@ -845,55 +965,47 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Creates a deep copy of a data point.
+   * @brief Deep-copies coordinates and metadata from source into destination.
    *
-   * This function copies the attributes and dimensions of the source data point
-   * to the destination data point. It allocates memory for the attributes of the
-   * destination data point and copies the attribute values from the source.
+   * Resizes `destination->attributes` as needed and copies `source->attributes`,
+   * `dimensions`, and `partition`. Safe for repeated calls on the same destination.
    *
-   * @param destination A pointer to the destination DataPoint structure.
-   * @param source A pointer to the source DataPoint structure.
+   * @param destination Target point; must be a valid object. `attributes` may be NULL or allocated.
+   * @param source Source point to copy from.
+   * @return void
+   * @errors Exits on allocation failure via handleMemoryError.
+   * @note No-op if `destination == source`. Uses `realloc` to minimize churn.
    */
   void deepCopyDataPoint(DataPoint* destination, const DataPoint* source)
   {
-      /*if (destination == NULL || source == NULL)
+      //if (destination == source) return;
+      /*if(destination == NULL || source == NULL)
       {
           fprintf(stderr, "Error: Null pointer passed to deepCopyDataPoint\n");
           exit(EXIT_FAILURE);
       }*/
 
+      /* Resize or allocate attributes buffer */
+      double* newAttrs = (double*)realloc(destination->attributes, source->dimensions * sizeof(double));
+      handleMemoryError(newAttrs);
+
+      destination->attributes = newAttrs;
       destination->dimensions = source->dimensions;
       destination->partition = source->partition;
-
-      if (destination->attributes != NULL)
-      {
-          free(destination->attributes);
-      }
-
-      destination->attributes = malloc(source->dimensions * sizeof(double));
-      handleMemoryError(destination->attributes);
 
       memcpy(destination->attributes, source->attributes, source->dimensions * sizeof(double));
   }
 
   /**
-   * @brief Creates deep copies of an array of data points.
-   *
-   * This function copies the attributes and dimensions of each source data point
-   * to the corresponding destination data point. It allocates memory for the attributes
-   * of each destination data point and copies the attribute values from the source.
-   *
-   * @param destination A pointer to the array of destination DataPoint structures.
-   * @param source A pointer to the array of source DataPoint structures.
-   * @param size The number of data points in the source and destination arrays.
+   * @brief Deep-copies an array of points element-by-element.
    */
   void deepCopyDataPoints(DataPoint* destination, const DataPoint* source, size_t size)
   {
-      if (destination == NULL || source == NULL)
+      /*if (destination == NULL || source == NULL)
       {
           fprintf(stderr, "Error: Null pointer passed to deepCopyDataPoints\n");
           exit(EXIT_FAILURE);
-      }
+      }*/
 
       for (size_t i = 0; i < size; ++i)
       {
@@ -902,27 +1014,26 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Creates a deep copy of a Centroids structure.
+   * @brief Replaces destination with a deep copy of source centroids.
    *
-   * This function copies the centroids from the source Centroids structure
-   * to the destination Centroids structure. It allocates memory for the centroids
-   * in the destination structure and copies the attribute values from the source.
+   * Frees any existing centroids in `destination`, then allocates and copies all
+   * centroid points and their attributes from `source`. Supports empty `source`.
    *
-   * @param source A pointer to the source Centroids structure.
-   * @param destination A pointer to the destination Centroids structure.
-   * @param numCentroids The number of centroids to copy.
+   * @param source Centroid set to copy from.
+   * @param destination Target centroid set to overwrite.
+   * @return void
+   * @errors Exits on allocation failure via handleMemoryError.
+   * @note `destination` assumes ownership of newly allocated memory.
    */
   void deepCopyCentroids(const Centroids* source, Centroids* destination)
   {
       if (destination->points != NULL)
       {
-          // Free the current allocation using the existing size
           freeDataPointArray(destination->points, destination->size);
           destination->points = NULL;
           destination->size = 0;
       }
 
-      // Nothing to copy
       /*if (source->size == 0)
       {
           destination->points = NULL;
@@ -930,10 +1041,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
           return;
       }*/
 
-      // Set the new size to match the source
       destination->size = source->size;
 
-      // Allocate and copy
       size_t dimensions = source->points[0].dimensions;
       destination->points = allocateDataPoints(destination->size, dimensions).points;
 
@@ -944,12 +1053,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Resets all partitions to 0.
-   *
-   * This function iterates through all data points in the DataPoints structure
-   * and sets their partition index to 0.
-   *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
+   * @brief Sets all data point partitions to 0.
    */
   void resetPartitions(DataPoints* dataPoints)
   {
@@ -958,23 +1062,25 @@ void freeDataPointArray(DataPoint* points, size_t size)
           dataPoints->points[i].partition = 0;
       }
   }
+
   /**
-   * @brief Writes the results of clustering algorithms to a CSV file.
+   * @brief Appends a single CSV summary row with aggregate metrics.
    *
-   * This function appends the results of clustering algorithms to a CSV file.
-   * It includes the average Centroid Index (CI), Mean Squared Error (SSE),
-   * relative CI, average time taken, and success rate.
+   * Opens/creates `<outputDirectory>/<filename>.csv`, writes a header once when empty,
+   * then appends averages across `loopCount` runs. Keeps output append-only to preserve history.
    *
-   * @param filename The name of the file to write the results to.
-   * @param stats A Statistics structure containing the results to be written.
-   * @param numCentroids The number of centroids used in the clustering algorithm.
-   * @param algorithm The name of the clustering algorithm used.
-   * @param loopCount The number of loops performed.
-   * @param scaling A scaling factor for the SSE values.
-   * @param outputDirectory The directory where the output file will be created.
-   * @param dataPointsSize The size of the data points used in the clustering algorithm.
+   * @param filename Base name (without extension) used to build the CSV file path.
+   * @param stats Accumulated sums (CI, SSE, time, successes) across runs.
+   * @param numCentroids K for the algorithm to compute relative CI.
+   * @param algorithm Human-readable algorithm label written to the first column.
+   * @param loopCount Number of runs included in stats (must be > 0).
+   * @param scaling Divisor for SSE to adjust units (must be > 0).
+   * @param outputDirectory Destination directory; must exist.
+   * @return void
+   * @errors Exits on open failure via handleFileError. Write errors are not checked.
+   * @note Uses the process locale for numeric formatting; CSV uses semicolons as separators.
    */
-  void writeResultsToFile(const char* filename, Statistics stats, size_t numCentroids, const char* algorithm, size_t loopCount, size_t scaling, const char* outputDirectory, size_t dataPointsSize)
+  void writeResultsToFile(const char* filename, Statistics stats, size_t numCentroids, const char* algorithm, size_t loopCount, size_t scaling, const char* outputDirectory)
   {
       char csvFileName[PATH_MAX];
       snprintf(csvFileName, sizeof(csvFileName), "%s.csv", filename);
@@ -985,10 +1091,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
       if (FOPEN(file, outputFilePath, "a+") != 0)
       {
           handleFileError(outputFilePath);
-          return;
       }
 
-      // Headers
+      /* Write header once when the file is empty */
       fseek(file, 0, SEEK_END);
       if (ftell(file) == 0)
       {
@@ -1007,16 +1112,17 @@ void freeDataPointArray(DataPoint* points, size_t size)
       fclose(file);
   }
 
-
   /**
-   * @brief Creates a unique directory based on the current date and time.
+   * @brief Creates a timestamped output directory under "outputs".
    *
-   * This function generates a unique directory name based on the current date and time
-   * and attempts to create the directory. The directory name is stored in the provided
-   * outputDirectory buffer.
+   * Ensures the base folder "outputs" exists, then creates `outputs/<YYYY-MM-DD_HH-MM-SS>`.
+   * On success, writes the created path into `outputDirectory`.
    *
-   * @param outputDirectory A buffer to store the generated directory name.
-   * @param size The size of the outputDirectory buffer.
+   * @param outputDirectory Buffer that receives the created path.
+   * @param size Buffer capacity in bytes; must be large enough for the path.
+   * @return void
+   * @errors Exits on failure to format time, buffer overflow, or mkdir error (other than EEXIST).
+   * @note Uses local time. Does not remove or clean existing directories.
    */
   void createUniqueDirectory(char* outputDirectory, size_t size)
   {
@@ -1026,8 +1132,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       char datebuf[32];
 
-      if (strftime(datebuf, sizeof datebuf,
-          "%Y-%m-%d_%H-%M-%S", &t) == 0)
+      if (strftime(datebuf, sizeof datebuf, "%Y-%m-%d_%H-%M-%S", &t) == 0)
       {
           fprintf(stderr, "strftime failed\n");
           exit(EXIT_FAILURE);
@@ -1035,11 +1140,11 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       if (MAKE_DIR("outputs") != 0 && errno != EEXIST)
       {
-          perror("mkdir outputs"); exit(EXIT_FAILURE);
+          perror("mkdir outputs");
+          exit(EXIT_FAILURE);
       }
 
-      if (snprintf(outputDirectory, size,
-          "outputs%c%s", PATHSEP, datebuf) >= (int)size)
+      if (snprintf(outputDirectory, size, "outputs%c%s", PATHSEP, datebuf) >= (int)size)
       {
           fprintf(stderr, "Buffer too small in createUniqueDirectory\n");
           exit(EXIT_FAILURE);
@@ -1053,21 +1158,27 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Creates a dataset directory based on the base directory and dataset name.
+   * @brief Ensures a per-dataset subdirectory exists under a base path.
    *
-   * This function generates a dataset directory name by combining the base directory
-   * and the dataset name. It attempts to create the directory and handles any errors.
+   * Builds `<baseDirectory>/<datasetName>` and creates the directory if missing.
+   * Treats pre-existing directories as success.
    *
-   * @param baseDirectory The base directory where the dataset directory will be created.
-   * @param datasetName The name of the dataset.
-   * @param datasetDirectory A buffer to store the generated dataset directory name.
-   * @param size The size of the datasetDirectory buffer.
+   * @param baseDirectory Parent path under which the dataset folder is created.
+   * @param datasetName Leaf folder name (dataset identifier).
+   * @param datasetDirectory Output buffer receiving the combined path.
+   * @param size Capacity of `datasetDirectory` in bytes.
+   * @return void
+   * @errors Exits on buffer overflow or mkdir error other than EEXIST.
    */
   void createDatasetDirectory(const char* baseDirectory, const char* datasetName, char* datasetDirectory, size_t size)
   {
-      snprintf(datasetDirectory, size, "%s%c%s", baseDirectory, PATHSEP, datasetName);
+      if (snprintf(datasetDirectory, size, "%s%c%s", baseDirectory, PATHSEP, datasetName) >= (int)size)
+      {
+          fprintf(stderr, "Buffer too small in createDatasetDirectory\n");
+          exit(EXIT_FAILURE);
+      }
 
-      if (MAKE_DIR(datasetDirectory) != 0)
+      if (MAKE_DIR(datasetDirectory) != 0 && errno != EEXIST)
       {
           perror("Error: Unable to create dataset directory");
           exit(EXIT_FAILURE);
@@ -1075,54 +1186,46 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Gets the name of the split type based on the provided split type index.
-   *
-   * This function returns the name of the split type corresponding to the provided split type index.
-   * If the split type index is invalid, it prints an error message to stderr and returns NULL.
-   *
-   * @param splitType The index of the split type.
-   * @return The name of the split type, or NULL if the split type index is invalid.
+   * @brief Maps an algorithm id to a short stable name.
    */
-  const char* getAlgorithmName(size_t aName)
+  const char* getAlgorithmName(size_t algorithmId)
   {
-      switch (aName) //TODO: katso lopulliset nimet Pasin spostista
+      switch (algorithmId) /* TODO: finalize names from Pasi's email */
       {
-      case 0:
-          return "IntraCluster";
-      case 1:
-          return "Global";
-      case 2:
-          return "LocalRepartition";
-      case 3:
-          return "RandomSwap";
-      case 4:
-          return "Bisecting";
-      case 5:
-          return "RandomSplit";
-      case 6:
-          return "KMeans";
-      case 7:
-          return "RKM";
+      case 0: return "IntraCluster";
+      case 1: return "Global";
+      case 2: return "LocalRepartition";
+      case 3: return "RandomSwap";
+      case 4: return "Bisecting";
+      case 5: return "RandomSplit";
+      case 6: return "KMeans";
+      case 7: return "RKM";
       default:
-          fprintf(stderr, "Error: Invalid algorithm type provided\n");
-          return NULL;
+          fprintf(stderr, "Error: Invalid algorithm type provided: %zu\n", algorithmId);
+          return "Unknown";
       }
   }
 
   /**
-   * @brief Prints the statistics of a clustering algorithm.
+   * @brief Prints a human-readable summary of aggregate metrics.
    *
-   * This function prints the average Centroid Index (CI), Mean Squared Error (SSE),
-   * relative CI, average time taken, and success rate of a clustering algorithm.
+   * Reports averages across `loopCount` runs and a success rate in percent. Intended for
+   * console diagnostics alongside CSV output.
    *
-   * @param algorithmName The name of the clustering algorithm.
-   * @param stats A Statistics structure containing the results to be printed.
-   * @param loopCount The number of loops performed.
-   * @param numCentroids The number of centroids used in the clustering algorithm.
-   * @param scaling A scaling factor for the SSE values.
+   * @param algorithmName Human-readable label to prefix each line.
+   * @param stats Accumulated sums across runs.
+   * @param loopCount Number of runs included (must be > 0).
+   * @param numCentroids K for relative CI (must be > 0 to avoid divide-by-zero).
+   * @param scaling Divisor applied to SSE in CSV (not used here; retained for parity).
+   * @param dataSize Dataset size; currently printed for context.
+   * @return void
+   * @errors None (writes to stdout).
+   * @note Uses the process locale for numeric formatting.
    */
   void printStatistics(const char* algorithmName, Statistics stats, size_t loopCount, size_t numCentroids, size_t scaling, size_t dataSize)
   {
+      (void)scaling; /* not used in this textual summary */
+
       printf("(%s) Average CI: %.2f and SSE: %.0f\n", algorithmName, (double)stats.ciSum / loopCount, stats.sseSum / loopCount / scaling);
       printf("(%s) Relative CI: %.2f\n", algorithmName, (double)stats.ciSum / loopCount / numCentroids);
       printf("(%s) Average time taken: %.0f ms\n", algorithmName, stats.timeSum / loopCount);
@@ -1130,44 +1233,60 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Removes the file extension from a filename.
+   * @brief Returns a copy of filename without its trailing extension.
    *
-   * This function removes the file extension from the given filename and returns the base filename.
-   *
-   * @param filename The name of the file from which to remove the extension.
-   * @return The base filename without the extension.
+   * Uses an internal static buffer. Removes the last '.' only if it appears
+   * after the last path separator; preserves leading-dot names (e.g., ".env").
+   * Not thread-safe.
    */
   char* removeExtension(const char* filename)
   {
       static char baseFileName[PATH_MAX];
 
-      strncpy(baseFileName, filename, sizeof(baseFileName) - 1);
-      baseFileName[sizeof(baseFileName) - 1] = '\0';
+      /* Copy input with guaranteed NUL-termination */
+      STRCPY(baseFileName, sizeof(baseFileName), filename);
 
-      char* dot = strrchr(baseFileName, '.');
-      if (dot)
+      /* Find last path separator (support both styles) */
+      char* lastSep = strrchr(baseFileName, '/');
+      char* lastSep2 = strrchr(baseFileName, '\\');
+      if (lastSep2 && (!lastSep || lastSep2 > lastSep))
+          lastSep = lastSep2;
+
+      /* Find last dot and ensure it is within the basename and not the very first basename char */
+      char* lastDot = strrchr(baseFileName, '.');
+      char* basenameStart = lastSep ? lastSep + 1 : baseFileName;
+
+      if (lastDot && lastDot > basenameStart)
       {
-          *dot = '\0';
+          *lastDot = '\0';
       }
 
       return baseFileName;
   }
 
   /**
-   * @brief Initializes a CSV file for logging and returns the file path.
+   * @brief Ensures a per-algorithm CSV log exists and returns its path.
    *
-   * This function creates a CSV file based on the algorithm type in the output directory.
-   * If the file does not exist, it creates the file and writes the header.
+   * Builds `<outputDirectory>/<AlgorithmName>_log.csv`. If the file does not exist,
+   * creates it and writes the header line. The resolved path is written to `csvFilePath`.
    *
-   * @param splitType The type of algorithm used.
-   * @param outputDirectory The directory where the CSV file will be created.
-   * @param csvFilePath Buffer to store the created file path.
-   * @param csvFilePathSize Size of the csvFilePath buffer.
+   * @param splitType Algorithm id mapped via getAlgorithmName.
+   * @param outputDirectory Directory where the CSV should reside.
+   * @param csvFilePath Output buffer receiving the full CSV path.
+   * @param csvFilePathSize Capacity of `csvFilePath` in bytes.
+   * @return void
+   * @errors Exits on buffer overflow or file open failure (via handleFileError).
+   * @note Header schema: "ci;iteration;sse".
    */
   void initializeCsvFile(size_t splitType, const char* outputDirectory, char* csvFilePath, size_t csvFilePathSize)
   {
       const char* algorithmName = getAlgorithmName(splitType);
-      snprintf(csvFilePath, csvFilePathSize, "%s%c%s_log.csv", outputDirectory, PATHSEP, algorithmName);
+
+      if (snprintf(csvFilePath, csvFilePathSize, "%s%c%s_log.csv", outputDirectory, PATHSEP, algorithmName) >= (int)csvFilePathSize)
+      {
+          fprintf(stderr, "Buffer too small in initializeCsvFile\n");
+          exit(EXIT_FAILURE);
+      }
 
       if (!fileExists(csvFilePath))
       {
@@ -1182,31 +1301,36 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Writes time tracking data to a file.
+   * @brief Writes per-iteration durations to a text file (one value per line).
    *
-   * This function writes the time tracking data collected during algorithm execution
-   * to a file for later analysis.
+   * Creates `<outputDirectory>/<AlgorithmName>_times.txt` and writes `timeIndex` values
+   * from `timeList` as integer milliseconds (rounded). Intended for post-run analysis.
    *
-   * @param outputDirectory The directory where the file will be created.
-   * @param splitType The algorithm type index.
-   * @param timeList An array containing the time data points.
-   * @param timeIndex The number of time data points in the array.
+   * @param outputDirectory Destination directory; must exist.
+   * @param splitType Algorithm id used to name the file via getAlgorithmName.
+   * @param timeList Array of elapsed times in milliseconds.
+   * @param timeIndex Number of valid entries in `timeList`.
+   * @return void
+   * @errors Exits on open failure via handleFileError. Write errors are not checked.
+   * @note Uses text mode; each line is a single integer-like value (%.0f).
    */
   void writeTimeTrackingData(const char* outputDirectory, size_t splitType, const double* timeList, size_t timeIndex)
   {
-      if (timeIndex == 0 || timeList == NULL)
-          return;
+      //if (timeIndex == 0 || timeList == NULL) return;
 
       const char* algorithmName = getAlgorithmName(splitType);
 
       char timesFile[PATH_MAX];
-      snprintf(timesFile, sizeof(timesFile), "%s%c%s_times.txt", outputDirectory, PATHSEP, algorithmName);
+      if (snprintf(timesFile, sizeof(timesFile), "%s%c%s_times.txt", outputDirectory, PATHSEP, algorithmName) >= (int)sizeof(timesFile))
+      {
+          fprintf(stderr, "Buffer too small in writeTimeTrackingData\n");
+          exit(EXIT_FAILURE);
+      }
 
       FILE* timesFilePtr;
       if (FOPEN(timesFilePtr, timesFile, "w") != 0)
       {
           handleFileError(timesFile);
-          return; //TODO: taa on turha, koska handleFileError lopettaa ohjelman. Mutta tan avulla saa warningit pois koska timefileprt ei voikaan olla null alhaalla
       }
 
       for (size_t i = 0; i < timeIndex; ++i)
@@ -1216,7 +1340,6 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       fclose(timesFilePtr);
   }
-
 
   /////////////////
   // Clustering //
@@ -1659,7 +1782,6 @@ void freeDataPointArray(DataPoint* points, size_t size)
           if (FOPEN(statsFile, outputFilePath, "w") != 0)
           {
               handleFileError(outputFilePath);
-              return;
           }
           fprintf(statsFile, "Iteration;NumCentroids;SSE;CI;SplitCluster\n");
       }
@@ -1668,7 +1790,6 @@ void freeDataPointArray(DataPoint* points, size_t size)
           if (FOPEN(statsFile, outputFilePath, "a") != 0)
           {
               handleFileError(outputFilePath);
-              return;
           }
       }
 
@@ -2827,8 +2948,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       // Cleanup
       free(SseList);
-      freeDataPoint(&newCentroid1);
-      freeDataPoint(&newCentroid2);
+      deinitDataPoint(&newCentroid1);
+      deinitDataPoint(&newCentroid2);
 
       return finalResultSse;
   }
@@ -2900,7 +3021,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       printStatistics("K-means", stats, loopCount, numCentroids, scaling, dataPoints->size);
-      writeResultsToFile(fileName, stats, numCentroids, "K-means", loopCount, scaling, outputDirectory, dataPoints->size);
+      writeResultsToFile(fileName, stats, numCentroids, "K-means", loopCount, scaling, outputDirectory);
   }
 
   /**
@@ -3011,7 +3132,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       printStatistics("Repeated K-means", stats, loopCount, numCentroids, scaling, dataPoints->size);
-      writeResultsToFile(fileName, stats, numCentroids, "Repeated K-means", loopCount, scaling, outputDirectory, dataPoints->size);
+      writeResultsToFile(fileName, stats, numCentroids, "Repeated K-means", loopCount, scaling, outputDirectory);
 
       if (trackTime)
       {
@@ -3107,7 +3228,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       printStatistics("Random Swap", stats, loopCount, numCentroids, scaling, dataPoints->size);
-      writeResultsToFile(fileName, stats, numCentroids, "Random swap", loopCount, scaling, outputDirectory, dataPoints->size);
+      writeResultsToFile(fileName, stats, numCentroids, "Random swap", loopCount, scaling, outputDirectory);
 
       if (trackTime)
       {
@@ -3204,7 +3325,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       printStatistics("Random Split", stats, loopCount, numCentroids, scaling, dataPoints->size);
-      writeResultsToFile(fileName, stats, numCentroids, "Random Split", loopCount, scaling, outputDirectory, dataPoints->size);
+      writeResultsToFile(fileName, stats, numCentroids, "Random Split", loopCount, scaling, outputDirectory);
 
       if (trackTime)
       {
@@ -3303,7 +3424,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       printStatistics(splitTypeName, stats, loopCount, numCentroids, scaling, dataPoints->size);
-      writeResultsToFile(fileName, stats, numCentroids, splitTypeName, loopCount, scaling, outputDirectory, dataPoints->size);
+      writeResultsToFile(fileName, stats, numCentroids, splitTypeName, loopCount, scaling, outputDirectory);
 
       if (trackTime)
       {
@@ -3399,7 +3520,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       printStatistics("Bisecting", stats, loopCount, numCentroids, scaling, dataPoints->size);
-      writeResultsToFile(fileName, stats, numCentroids, "Bisecting k-means", loopCount, scaling, outputDirectory, dataPoints->size);
+      writeResultsToFile(fileName, stats, numCentroids, "Bisecting k-means", loopCount, scaling, outputDirectory);
 
       if (trackTime)
       {
@@ -3674,16 +3795,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
   // Main //
   /////////
 
-  //END: kommentoi kaikki muistintarkastukset ja iffit pois lopullisesta versiosta <-tehokkuus
-  //END: credits ja alkupuhe koodin alkuun
-  //     edellisen alle voisi lisata lokin, etta kuka on paivittanyt ja milloin
-
-  //TODO: "static " sellaisten funktioiden eteen jotka eivat muuta mitaan ja joita kutsutaan vain samasta tiedostosta?
-  //TODO: koodin palastelu eri tiedostoihin
-
   int main()
   {
-      //runDebuggery();
+      //runDebuggery(); //TODO poista
       //return 0;
 
       set_numeric_locale_finnish();
@@ -3741,7 +3855,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           size_t loopCount = loops;
           size_t swaps = maxSwaps;
           size_t numDimensions = getNumDimensions(dataFile);
-          size_t numCentroids = read_k_from_file(kFile);
+          size_t numCentroids = readKFromFile(kFile);
 
           printf("Starting the process\n");
           printf("Dataset: %s\n", baseName);
@@ -3770,9 +3884,10 @@ void freeDataPointArray(DataPoint* points, size_t size)
               //loopCount = 1;
           }
           // Run Random Swap
-          //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, swaps, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
+          runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, swaps, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
 
           //loopCount = loops;
+          loopCount = 100;
           // Run Random Split
           //runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
 
@@ -3783,7 +3898,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 1, trackProgress, trackTime);
 
           // Run SSE Split (Local Repartition)
-          //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 2, trackProgress, trackTime);
+          runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 2, trackProgress, trackTime);
 
           // Run Bisecting K-means
           //runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime, bisectingIterations);

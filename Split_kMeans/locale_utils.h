@@ -18,7 +18,7 @@
 
 /* Update log
 * --------------------------------------------------------------------
-* Version 1.0 - 2025-09-29 by Niko Ruohonen
+* Version 1.0.0 - 2025-09-29 by Niko Ruohonen
 * -Initial release.
 * -Added `set_numeric_locale_finnish` function to set the numeric
 * locale to Finnish(fi_FI) with fallback to "C".

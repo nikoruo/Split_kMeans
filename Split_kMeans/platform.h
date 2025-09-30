@@ -26,7 +26,7 @@
 
 /* Update log
 * --------------------------------------------------------------------
-* Version 1.0 - 2025-09-24 by Niko Ruohonen TODO
+* Version 1.0.0 - 2025-09-24 by Niko Ruohonen TODO
 * - Initial release.
 * - Added platform-specific RNG:
 *   - Windows: rand_s
