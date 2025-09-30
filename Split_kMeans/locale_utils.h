@@ -3,9 +3,16 @@
  */
 
 /* locale_utils.h ------------------------------------------------------
- * Utility functions for managing locale settings, particularly for
- * numeric formatting. Provides a function to set the numeric locale
- * to Finnish or fallback to "C" if unavailable.
+ * Utilities for controlling numeric locale.
+ * Provides set_numeric_locale_finnish(), which attempts to set LC_NUMERIC
+ * to a Finnish locale and falls back to "C" if none are available.
+ *
+ * Notes:
+ *  - setlocale() changes process-global state and is not thread-safe.
+ *    Consider calling this early during startup, before starting threads.
+ *  - Candidates tried (in order): "fi_FI.UTF-8", "fi_FI",
+ *    "Finnish_Finland.1252" (Windows). If none succeed, LC_NUMERIC is set
+ *    to "C" and a warning is printed to stderr.
  * --------------------------------------------------------------------
  */
 
@@ -17,13 +24,30 @@
 * locale to Finnish(fi_FI) with fallback to "C".
 * --------------------------------------------------------------------
 * Update 1.1...
+* -...
 */
-
 
 #pragma once
 #include <locale.h>
 #include <stdio.h>
 
+/**
+ * @brief Sets the process numeric locale (LC_NUMERIC) to Finnish with safe fallbacks.
+ *
+ * Tries the following locale names in priority order:
+ *  - "fi_FI.UTF-8" (Linux/BSD)
+ *  - "fi_FI" (generic POSIX)
+ *  - "Finnish_Finland.1252" (Windows/MSVC)
+ *
+ * On success, LC_NUMERIC is set to the first available candidate.
+ * If none are available, a warning is printed to stderr and LC_NUMERIC is set to "C".
+ *
+ * Behavior notes:
+ *  - setlocale() modifies process-global state and is not thread-safe.
+ *    Call this early during initialization, before spawning threads.
+ *
+ * @return void
+ */
 static void set_numeric_locale_finnish(void)
 {
     /* Candidates in priority order

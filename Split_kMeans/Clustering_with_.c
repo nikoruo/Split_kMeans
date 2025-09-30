@@ -137,7 +137,7 @@
 
  // For logging level
  // 1 = none, 2 = debug, 3 = everything
- // Currently most of the LOGGING lines are commented out
+ // Currently most of the LOGGING lines are commented out for maximum performance
 const size_t LOGGING = 1;
 
 //////////////

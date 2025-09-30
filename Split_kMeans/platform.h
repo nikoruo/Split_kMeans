@@ -1,56 +1,85 @@
 /* SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2025 Niko Ruohonen and contributors
- */
+* Copyright (C) 2025 Niko Ruohonen and contributors
+*/
 
 /* platform.h ------------------------------------------------------------
- * Minimal portability layer for building the same C source on
- *   - Windows / MSVC        (Annex-K *_s, rand_s, _mkdir)
- *   - Linux (glibc >= 2.25) getrandom(2)
- *   - BSD / macOS           arc4random()
- *   - Older POSIX           random_r()
- * -------------------------------------------------------------------- */
+* Minimal portability layer for building the same C/C++ source on
+*   - Windows / MSVC        (Annex-K *_s, rand_s, _mkdir)
+*   - Linux (glibc >= 2.25) getrandom(2)
+*   - BSD / macOS           arc4random()
+*   - Fallback (others)     random_r() (GNU extension)
+*
+* Exposes small cross-platform shims:
+*   - String:   STRTOK, STRCPY
+*   - Files:    FOPEN, STAT, MAKE_DIR, MKDIR_OK
+*   - Time:     LOCALTIME
+*   - Paths:    PATHSEP, PATH_MAX (fallback on POSIX if undefined)
+*   - RNG:      RANDOMIZE(unsigned int rv) -> fills rv with 32 bits
+*   - Utils:    cmp_charptr (qsort comparator for const char* arrays)
+*
+* Notes:
+*   - cmp_charptr is case-insensitive on Windows (_stricmp) and
+*     case-sensitive on POSIX (strcmp).
+*   - RANDOMIZE uses system RNG where available; the random_r fallback
+*     uses thread-local state (GNU extension).
+* -------------------------------------------------------------------- */
 
- /* Update log
-  * --------------------------------------------------------------------
-  * Version 1.0 - 2025-09-24 by Niko Ruohonen
-  * - Initial release.
-  * - Added support for platform-specific random number generation:
-  *   - Windows: rand_s
-  *   - Linux: getrandom(2)
-  *   - BSD/macOS: arc4random
-  *   - Older POSIX: random_r
-  * - Added macros for safe string operations (e.g., STRTOK, STRCPY).
-  * - Added directory creation macros (MAKE_DIR).
-  * - Added cross-platform file listing (list_files).
-  * --------------------------------------------------------------------
-  * Update 1.1...
-  */
-
+/* Update log
+* --------------------------------------------------------------------
+* Version 1.0 - 2025-09-24 by Niko Ruohonen TODO
+* - Initial release.
+* - Added platform-specific RNG:
+*   - Windows: rand_s
+*   - Linux: getrandom(2)
+*   - BSD/macOS: arc4random
+*   - Fallback: random_r (GNU extension)
+* - Added safe string macros: STRTOK, STRCPY.
+* - Added filesystem helpers: FOPEN, STAT, MAKE_DIR, MKDIR_OK.
+* - Added time/path helpers: LOCALTIME, PATHSEP, PATH_MAX fallback.
+* - Added cross-platform file listing: list_files.
+* --------------------------------------------------------------------
+* Update 1.1...
+* -...
+*/
 
 #ifndef PLATFORM_H
 #define PLATFORM_H
 #pragma once
 
- /* --------------------------------------------------------------------
-  * Feature macros - must precede any system header on POSIX
-  * -------------------------------------------------------------------- */
+/* --------------------------------------------------------------------
+* Feature macros - must precede any system header on POSIX
+* -------------------------------------------------------------------- */
 #if !defined(_MSC_VER)
 #  ifndef _GNU_SOURCE
 #    define _GNU_SOURCE
 #  endif
 #endif
 
-  /* --------------------------------------------------------------------
-   * Common includes
-   * -------------------------------------------------------------------- */
+/* --------------------------------------------------------------------
+* Common includes
+* -------------------------------------------------------------------- */
 #include <string.h>
 #include <stdio.h>   /* needed for snprintf/fprintf used in this header */
 
-   /* --------------------------------------------------------------------
-    * Helper: qsort comparator for (const char *) arrays.
-    *   Windows: case-insensitive via _stricmp
-    *   POSIX  : case-sensitive via strcmp
-    * -------------------------------------------------------------------- */
+/* --------------------------------------------------------------------
+* Macro reference (public API)
+* --------------------------------------------------------------------
+* STRTOK(str,delim,ctx)  Thread-safe tokenizer (Windows: strtok_s, POSIX: strtok_r).
+* STRCPY(dest,dstsz,src) Copy with guaranteed NUL-termination; POSIX path truncates if needed.
+* FOPEN(fp,name,mode)    Open file; assigns to fp; returns 0 on success or errno on failure.
+* STAT(path,buf)         Wrapper for stat/_stat; see platform headers for struct differences.
+* MAKE_DIR(path)         Create directory; POSIX mode 0755. Use MKDIR_OK(errno) to test existence.
+* MKDIR_OK(err)          True if mkdir succeeded or already existed (POSIX only).
+* LOCALTIME(out,timep)   Thread-safe localtime variant (localtime_s/localtime_r).
+* PATHSEP                Directory separator ('\\' on Windows, '/' on POSIX).
+* RANDOMIZE(rv)          Fill unsigned int lvalue with 32 bits of system randomness; exits on failure.
+* -------------------------------------------------------------------- */
+
+/* --------------------------------------------------------------------
+* Helper: qsort comparator for (const char *) arrays.
+*   Windows: case-insensitive via _stricmp
+*   POSIX  : case-sensitive via strcmp
+* -------------------------------------------------------------------- */
 static int cmp_charptr(const void* a, const void* b)
 {
     const char* sa = *(const char* const*)a;
@@ -69,6 +98,17 @@ static int cmp_charptr(const void* a, const void* b)
 /* "Secure" CRT wrappers */
 # define STRTOK(str, delim, ctx)   strtok_s((str), (delim), (ctx))
 # define STRCPY(dest, dstsz, src)  strcpy_s((dest), (dstsz), (src))
+/**
+ * @brief Open a file with errno-return semantics.
+ *
+ * Assigns the resulting FILE* to the provided lvalue and returns 0 on success;
+ * on failure, leaves the lvalue NULL and returns errno.
+ *
+ * @param fp   FILE* lvalue to receive the opened stream.
+ * @param name Path to the file.
+ * @param mode fopen mode string, e.g. "rb".
+ * @return int 0 on success, or errno on failure.
+ */
 # define FOPEN(fp, name, mode)    ((((fp) = fopen((name), (mode))) == NULL) ? errno : 0)
 
 /* Filesystem */
@@ -81,6 +121,14 @@ static int cmp_charptr(const void* a, const void* b)
 # include <stdlib.h>
 # include <errno.h>     /* errno used in FOPEN() */
 # include <time.h>      /* localtime_s used via LOCALTIME() */
+/**
+ * @brief Fill a 32-bit unsigned lvalue with system randomness.
+ *
+ * Uses rand_s on Windows. On failure, prints an error to stderr and exits
+ * the process with EXIT_FAILURE. Thread-safe.
+ *
+ * @param rv unsigned int lvalue that receives 32 random bits.
+ */
 # define RANDOMIZE(rv)                                                  \
     do { if (rand_s(&(rv)) != 0) {                                       \
              fprintf(stderr, "rand_s failed\n");                        \
@@ -124,6 +172,17 @@ static int cmp_charptr(const void* a, const void* b)
         strncpy((dest), (src), (dstsz));                                \
         (dest)[((dstsz) > 0 ? (dstsz) - 1 : 0)] = '\0';                \
     } while (0)
+/**
+ * @brief Open a file with errno-return semantics.
+ *
+ * Assigns the resulting FILE* to the provided lvalue and returns 0 on success;
+ * on failure, leaves the lvalue NULL and returns errno.
+ *
+ * @param fp   FILE* lvalue to receive the opened stream.
+ * @param name Path to the file.
+ * @param mode fopen mode string, e.g. "rb".
+ * @return int 0 on success, or errno on failure.
+ */
 # define FOPEN(fp, name, mode) ((((fp) = fopen((name), (mode))) == NULL) ? errno : 0)
 
 # define STAT(path, buf)    stat((path), (buf))
@@ -134,7 +193,13 @@ static int cmp_charptr(const void* a, const void* b)
 # define _Analysis_assume_(expr)  ((void)0)
 # define PRAGMA_MSVC(x)
 
-/* ---------- secure RANDOMIZE() ---------- */
+/* ---------- secure RANDOMIZE() ----------
+ * @brief Fill a 32-bit unsigned lvalue with system randomness.
+ * On Linux uses getrandom(); on BSD/macOS uses arc4random();
+ * otherwise falls back to random_r() with thread-local state.
+ * On any failure path, prints an error and exits the process.
+ * Thread-safe.
+ */
 # if defined(__linux__)
 #   include <sys/random.h>
 static inline unsigned int _rand32_getrandom(void)
@@ -186,10 +251,15 @@ static inline unsigned int _rand32_random_r(void)
 #endif /* PLATFORM_H */
 
 /* --------------------------------------------------------------------
- * Simple directory listing (outside the header guard so it can be
- * included in multiple translation units without violating ODR).
- *   - Returns the number of regular files.
- *   - Allocates *out with strdup'ed basenames in lexicographic order.
+ * Simple directory listing (outside the header guard).
+ *   - Returns the number of entries that are not directories.
+ *   - Allocates *out with strdup'ed basenames, sorted:
+ *       - Windows: case-insensitive order
+ *       - POSIX  : case-sensitive order
+ *   - Notes (POSIX): relies on d_type where available; entries with
+ *     DT_UNKNOWN are treated as non-directories and included. Symlinks
+ *     and special files may be included.
+ *   - Ownership: caller owns *out and each string; free all on completion.
  * -------------------------------------------------------------------- */
 
 #ifdef _MSC_VER /* ------------------------- Windows ----------------------- */

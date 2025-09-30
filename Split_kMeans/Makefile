@@ -1,7 +1,44 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2025 Niko Ruohonen and contributors
-
-# Simple Makefile for Split_kMeans (all sources in this folder)
+#
+# Makefile — Split_kMeans
+# --------------------------------------------------------------------
+# Overview
+#   Simple GNU Make build for a single-binary C project in this folder.
+#
+# Requirements
+#   - GNU Make (tested with 3.81+)
+#   - GCC/Clang toolchain
+#
+# Common variables (override via environment or command line):
+#   OUT       - output binary name (default: split_kmeans)
+#   CC        - C compiler (default: gcc)
+#   CSTD      - C standard (default: -std=c11)
+#   OPTFLAGS  - optimization flags (default: -O3)
+#   WARNFLAGS - warning flags (default: -Wall -Wextra -Wpedantic)
+#   WERROR    - empty by default; set to -Werror in CI if desired
+#   THREADS   - 1 to enable pthreads (adds -pthread), 0 otherwise
+#   ARGS      - arguments passed to the binary via `make run ARGS="..."`
+#
+# Targets
+#   all (default)   - build the binary
+#   run             - run ./$(OUT) with optional ARGS
+#   debug           - rebuild with -O0 -g3
+#   asan            - rebuild with AddressSanitizer
+#   ubsan           - rebuild with UndefinedBehaviorSanitizer
+#   clean           - remove outputs and deps
+#
+# Usage examples
+#   make
+#   make THREADS=1
+#   make debug
+#   make run ARGS="--help"
+#
+# Changelog
+#   Version 1.0 - 2025-09-29 by Niko Ruohonen
+#	-Initial version of this Makefile
+# ----------------------------------------------------
+#   Version 1.1...
 
 # Output
 OUT       ?= split_kmeans
