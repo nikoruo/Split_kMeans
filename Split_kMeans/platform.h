@@ -26,17 +26,8 @@
 
 /* Update log
 * --------------------------------------------------------------------
-* Version 1.0.0 - 2025-09-24 by Niko Ruohonen TODO
+* Version 1.0.0 - 2025-10-01 by Niko Ruohonen TODO
 * - Initial release.
-* - Added platform-specific RNG:
-*   - Windows: rand_s
-*   - Linux: getrandom(2)
-*   - BSD/macOS: arc4random
-*   - Fallback: random_r (GNU extension)
-* - Added safe string macros: STRTOK, STRCPY.
-* - Added filesystem helpers: FOPEN, STAT, MAKE_DIR, MKDIR_OK.
-* - Added time/path helpers: LOCALTIME, PATHSEP, PATH_MAX fallback.
-* - Added cross-platform file listing: list_files.
 * --------------------------------------------------------------------
 * Update 1.1...
 * -...

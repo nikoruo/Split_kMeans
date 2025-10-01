@@ -4,7 +4,7 @@
 
 /* Update log
 * --------------------------------------------------------------------
-* Version 1.0.0 - 2025-09-29 by Niko Ruohonen TODO
+* Version 1.0.0 - 2025-10-01 by Niko Ruohonen TODO
 * - Initial release
 * --------------------------------------------------------------------
 * Update 1.1...
@@ -22,7 +22,7 @@
 * to ensure maximum efficiency and effectiveness when applied to multi-dimensional data points.
 *
 * Author: Niko Ruohonen
-* Date: 2025-09-29
+* Date: 2025-10-01
 * Version: 1.0.0
 *
 * Details:
@@ -37,6 +37,12 @@
 * - Includes memory management functions to handle dynamic allocation and deallocation of data structures.
 * - Supports reading and writing data points and centroids from/to files.
 * - Calculates various metrics such as Sum of Squared Errors (SSE) and Centroid Index (CI) to evaluate clustering performance.
+* - Provides two centroid initialization methods:
+        Random centroids (default)
+        K-means++ (KMeans++) seeding (available)
+*   Current builds seed with random centroids. To enable K-means++ for seeding,
+*   replace the call to generateRandomCentroids with generateKMeansPlusPlusCentroids
+*   in the algorithm setup where initial centroids are chosen.
 *
 * Usage:
 * The project can be run by executing the main function, which initializes datasets, ground truth files, and clustering parameters.
@@ -119,12 +125,15 @@
 #include <stddef.h>
 #include <errno.h>
 #include <ctype.h>
+#include <stdint.h> 
+#include <limits.h>
+#include <stdlib.h>
 
 /////////////
 // Macros //
 ///////////
 
-#define LINE_BUFSZ 512 /* tweak if needed */
+#define LINE_BUFSZ 16384 /* tweak if needed */
 
 /**
 * @brief Converts clock ticks to milliseconds.
@@ -1341,73 +1350,133 @@ void freeDataPointArray(DataPoint* points, size_t size)
       fclose(timesFilePtr);
   }
 
+  /* Unbiased random in [0, m-1] using rejection sampling. */
+  static inline size_t bounded_rand(size_t m)
+  {
+      /* Use 32-bit draws when possible to avoid building 64-bit values. */
+      if (m <= (size_t)UINT_MAX)
+      {
+          unsigned int bound = (unsigned int)m;
+          /* threshold = 2^32 % bound; accept r ∈ [threshold, 2^32-1] */
+          unsigned int threshold = (unsigned int)(0u - bound) % bound;
+          unsigned int r;
+          do { RANDOMIZE(r); } while (r < threshold);
+          return (size_t)(r % bound);
+      }
+      else
+      {
+          unsigned long long bound = (unsigned long long)m;
+          /* threshold = 2^64 % bound; accept r ∈ [threshold, 2^64-1] */
+          unsigned long long threshold = (unsigned long long)(0u - bound) % bound;
+
+          unsigned int hi, lo;
+          unsigned long long r;
+          do
+          {
+              RANDOMIZE(hi);
+              RANDOMIZE(lo);
+              r = ((unsigned long long)hi << 32) | (unsigned long long)lo;
+          } while (r < threshold);
+          return (size_t)(r % bound);
+      }
+  }
+
   /////////////////
   // Clustering //
   ///////////////
 
   /**
-   * @brief Generates random centroids from the data points.
+   * @brief Picks K unique data points uniformly and copies them as initial centroids.
    *
-   * This function selects random data points to be used as initial centroids for clustering.
+   * Uses a partial Fisher–Yates shuffle to select `numCentroids` distinct indices from
+   * `dataPoints` without replacement, then deep-copies those points into `centroids`.
+   * Selection of swap index uses rejection sampling (no modulo bias).
    *
-   * @param numCentroids The number of centroids to generate.
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param centroids A pointer to the Centroids structure to store the generated centroids.
+   * @param numCentroids Number of centroids to select (K); must be <= dataPoints->size and > 0.
+   * @param dataPoints Source dataset; `dataPoints->size` must be > 0.
+   * @param centroids Destination centroid container; must have at least K elements.
+   * @return void
+   * @errors Exits if K is invalid, destination too small, or on allocation failure.
+   * @note O(N) init + O(K) swaps. Thread-unsafe due to RANDOMIZE.
    */
   void generateRandomCentroids(size_t numCentroids, const DataPoints* dataPoints, Centroids* centroids)
   {
-      /*if (dataPoints->size < numCentroids)
+      const size_t N = dataPoints->size;
+
+      /*if (numCentroids == 0 || N == 0 || numCentroids > N)
       {
-          fprintf(stderr, "Error: There are less data points than the required number of clusters\n");
+          fprintf(stderr, "Error: Invalid K (%zu) for dataset size (%zu)\n", numCentroids, N);
+          exit(EXIT_FAILURE);
+      }
+      if (centroids->size < numCentroids)
+      {
+          fprintf(stderr, "Error: centroids array too small (%zu < %zu)\n",
+              centroids->size, numCentroids);
           exit(EXIT_FAILURE);
       }*/
 
-      size_t* indices = malloc(sizeof(size_t) * dataPoints->size);
+      /* Overflow guard for allocation */
+      /*if (N > SIZE_MAX / sizeof(size_t))
+      {
+          handleMemoryError(NULL);
+      }*/
+
+      size_t* indices = (size_t*)malloc(N * sizeof(size_t));
       handleMemoryError(indices);
 
-      unsigned int randomValue;
-
-      for (size_t i = 0; i < dataPoints->size; ++i)
+      /* init indices 0..N-1 */
+      for (size_t i = 0; i < N; ++i)
       {
           indices[i] = i;
       }
 
+      /* Partial Fisher–Yates: shuffle first K positions */
       for (size_t i = 0; i < numCentroids; ++i)
       {
-          RANDOMIZE(randomValue);
-          size_t j = i + randomValue % (dataPoints->size - i);
-          size_t temp = indices[i];
+          size_t m = N - i;                  /* remaining span [i..N-1] */
+          size_t j = i + bounded_rand(m);    /* pick uniformly in span */
+          size_t tmp = indices[i];
           indices[i] = indices[j];
-          indices[j] = temp;
+          indices[j] = tmp;
       }
 
+      /* Copy selected points into centroids */
       for (size_t i = 0; i < numCentroids; ++i)
       {
-          size_t selectedIndex = indices[i];
-          deepCopyDataPoint(&centroids->points[i], &dataPoints->points[selectedIndex]);
+          size_t idx = indices[i];
+          deepCopyDataPoint(&centroids->points[i], &dataPoints->points[idx]);
       }
 
       free(indices);
   }
 
   /**
-   * @brief Generates KMeans++ centroids from the data points.
+   * @brief Seeds centroids using the KMeans++ strategy with a robust fallback.
    *
-   * This function selects initial centroids for KMeans clustering using the KMeans++ algorithm.
+   * Chooses the first centroid uniformly at random; each subsequent centroid is chosen
+   * with probability proportional to the squared distance to the nearest chosen centroid.
+   * In degenerate cases where all distances are zero, fills remaining centroids by random picks.
    *
-   * @param numCentroids The number of centroids to generate.
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param centroids A pointer to the Centroids structure to store the generated centroids.
+   * @param numCentroids Number of centroids to choose (K); must be <= dataPoints->size.
+   * @param dataPoints Input dataset (N points).
+   * @param centroids Output container for K centroids (preallocated).
+   * @return void
+   * @errors Exits on invalid K or allocation failure (via handleMemoryError).
+   * @note Maintains a distance cache for O(KN) seeding cost. (NOT-USED)
    */
   void generateKMeansPlusPlusCentroids(size_t numCentroids, const DataPoints* dataPoints, Centroids* centroids)
   {
-      // 1. Choose the first centroid at random
-      unsigned int randomValue;
-      RANDOMIZE(randomValue);
-      size_t firstIndex = (size_t)(randomValue % dataPoints->size);
+      /*if (numCentroids == 0 || dataPoints->size == 0 || numCentroids > dataPoints->size)
+      {
+          fprintf(stderr, "Error: Invalid K (%zu) for dataset size (%zu)\n", numCentroids, dataPoints->size);
+          exit(EXIT_FAILURE);
+      }*/
+
+      /* 1) Choose the first centroid at random */
+      size_t firstIndex = bounded_rand(dataPoints->size);
       deepCopyDataPoint(&centroids->points[0], &dataPoints->points[firstIndex]);
 
-      // Distance cache
+      /* Distance cache: squared distance to the nearest chosen centroid so far */
       double* dist2 = malloc(sizeof(double) * dataPoints->size);
       handleMemoryError(dist2);
 
@@ -1418,7 +1487,6 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       size_t chosen = 1;
-
       while (chosen < numCentroids)
       {
           // 2. Compute the normalising constant distSum
@@ -1429,6 +1497,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
           }
 
           // 3. Select a new centroid with probability r
+          unsigned int randomValue;
+
           RANDOMIZE(randomValue);
           double r = (double)randomValue / ((double)UINT_MAX + 1.0) * distSum;
           double cumulative = 0.0;
@@ -1469,14 +1539,15 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Calculates the sum of squared errors (SSE) for the given data points and centroids.
+   * @brief Sums squared distances from each point to its assigned centroid.
    *
-   * This function computes the SSE by summing the squared Euclidean distances between each data point
-   * and its assigned centroid.
+   * Assumes every point has a valid `partition` in `[0, centroids->size)`. Exits if an
+   * invalid index is encountered to surface upstream assignment errors.
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param centroids A pointer to the Centroids structure containing the centroids.
-   * @return The sum of squared errors (SSE).
+   * @param dataPoints Dataset whose partitions are already assigned.
+   * @param centroids Centroid set referenced by partitions.
+   * @return Total SSE across all points.
+   * @errors Exits on invalid partition index.
    */
   double calculateSSE(const DataPoints* dataPoints, const Centroids* centroids)
   {
@@ -1499,46 +1570,46 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Calculates the mean squared error (MSE) for the given data points and centroids.
+   * @brief Returns SSE normalized by number of values (N·D).
    *
-   * This function computes the MSE by dividing the sum of squared errors (SSE) by the total number
-   * of data points and dimensions.
+   * Computes MSE = SSE / (N·D). Returns 0.0 when the dataset is empty or dimensions is 0
+   * to avoid divide-by-zero.
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param centroids A pointer to the Centroids structure containing the centroids.
-   * @return The mean squared error (MSE).
+   * @param dataPoints Dataset used for the denominator and distances.
+   * @param centroids Centroids referenced by point partitions.
+   * @return Mean squared error (MSE).
+   * @errors Exits on invalid partition indices via calculateSSE.
    */
   double calculateMSE(const DataPoints* dataPoints, const Centroids* centroids)
   {
-      double sse = calculateSSE(dataPoints, centroids);
+      const double sse = calculateSSE(dataPoints, centroids);
 
-      double mse = sse / (dataPoints->size * dataPoints->points[0].dimensions);
+      const double mse = sse / ((double)dataPoints->size * (double)dataPoints->points[0].dimensions);
 
       return mse;
   }
 
   /**
-   * @brief Calculates the sum of squared errors (SSE) for a specific cluster.
+   * @brief Sums squared distances for points assigned to a specific cluster.
    *
-   * This function computes the SSE for a specific cluster by summing the squared Euclidean distances
-   * between each data point in the cluster and its assigned centroid.
+   * Accumulates SSE over points with `partition == clusterLabel`. Returns 0.0 if the
+   * cluster has no points.
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param centroids A pointer to the Centroids structure containing the centroids.
-   * @param clusterLabel The label of the cluster for which to calculate the SSE.
-   * @return The sum of squared errors (SSE) for the specified cluster.
+   * @param dataPoints Dataset with assigned partitions.
+   * @param centroids Centroid set; `clusterLabel` must be < `centroids->size`.
+   * @param clusterLabel Target cluster id.
+   * @return SSE for the specified cluster.
+   * @errors Exits if `clusterLabel` is out of range.
    */
   double calculateClusterSSE(const DataPoints* dataPoints, const Centroids* centroids, size_t clusterLabel)
   {
       double sse = 0.0;
-      size_t count = 0;
 
       for (size_t i = 0; i < dataPoints->size; ++i)
       {
           if (dataPoints->points[i].partition == clusterLabel)
           {
               sse += calculateSquaredEuclideanDistance(&dataPoints->points[i], &centroids->points[clusterLabel]);
-              count++;
           }
       }
 
@@ -1546,14 +1617,16 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Finds the nearest centroid to a given data point.
+   * @brief Returns the index of the nearest centroid by squared Euclidean distance.
    *
-   * This function calculates the squared Euclidean distance between the query point and each centroid,
-   * and returns the index of the nearest centroid.
+   * Requires at least one centroid and matching dimensionality between the query point
+   * and centroids. Fails fast on invalid inputs to surface upstream issues.
    *
-   * @param queryPoint A pointer to the DataPoint structure representing the query point.
-   * @param targetCentroids A pointer to the Centroids structure containing the centroids.
-   * @return The index of the nearest centroid.
+   * @param queryPoint Data point to classify; `dimensions` must match centroid dimensionality.
+   * @param targetCentroids Centroids to compare against; `size` must be > 0.
+   * @return Zero-based index of the nearest centroid.
+   * @errors Exits if no centroids exist or if dimensionality mismatches.
+   * @note O(K·D) per call; distance squared avoids sqrt.
    */
   size_t findNearestCentroid(const DataPoint* queryPoint, const Centroids* targetCentroids)
   {
@@ -1563,17 +1636,16 @@ void freeDataPointArray(DataPoint* points, size_t size)
           exit(EXIT_FAILURE);
       }*/
 
-      size_t nearestCentroidId = SIZE_MAX;
-      double minDistance = DBL_MAX;
-      double newDistance = DBL_MAX;
+      size_t nearestCentroidId = 0;
+      double minDistance = calculateSquaredEuclideanDistance(queryPoint, &targetCentroids->points[0]);
 
-      for (size_t i = 0; i < targetCentroids->size; ++i)
+      for (size_t i = 1; i < targetCentroids->size; ++i)
       {
-          newDistance = calculateSquaredEuclideanDistance(queryPoint, &targetCentroids->points[i]);
+          double d = calculateSquaredEuclideanDistance(queryPoint, &targetCentroids->points[i]);
 
-          if (newDistance < minDistance)
+          if (d < minDistance)
           {
-              minDistance = newDistance;
+              minDistance = d;
               nearestCentroidId = i;
           }
       }
@@ -1582,13 +1654,15 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Assigns each data point to the nearest centroid.
+   * @brief Assigns each data point to its nearest centroid.
    *
-   * This function iterates through all data points and assigns each one to the nearest centroid
-   * based on the squared Euclidean distance.
+   * Computes nearest-centroid labels for all points using squared Euclidean distance.
+   * Requires at least one centroid; exits when none exist.
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param centroids A pointer to the Centroids structure containing the centroids.
+   * @param dataPoints Points to label; updated in-place.
+   * @param centroids Current centroids; `size` must be > 0.
+   * @return void
+   * @errors Exits if no centroids exist.
    */
   void partitionStep(DataPoints* dataPoints, const Centroids* centroids)
   {
@@ -1598,28 +1672,29 @@ void freeDataPointArray(DataPoint* points, size_t size)
           exit(EXIT_FAILURE);
       }*/
 
-      size_t nearestCentroidId = 0;
-
       for (size_t i = 0; i < dataPoints->size; ++i)
       {
-          nearestCentroidId = findNearestCentroid(&dataPoints->points[i], centroids);
+          size_t nearestCentroidId = findNearestCentroid(&dataPoints->points[i], centroids);
           dataPoints->points[i].partition = nearestCentroidId;
       }
   }
 
   /**
-   * @brief Updates the centroids based on the assigned data points.
+   * @brief Recomputes centroids as means of their assigned points.
    *
-   * This function calculates the new centroid for each cluster by averaging the attributes
-   * of all data points assigned to that cluster.
+   * Accumulates per-cluster coordinate sums and divides by counts. Skips clusters with
+   * zero assignments (keeps previous coordinates). Validates partitions and dimensionality.
    *
-   * @param centroids A pointer to the Centroids structure containing the centroids to be updated.
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
+   * @param centroids Centroids to update in-place; `size` must be > 0.
+   * @param dataPoints Dataset with assigned partitions.
+   * @return void
+   * @errors Exits if a point has an out-of-range partition or dimensionality mismatch.
+   * @note O(N·D + K·D) work; uses a single contiguous buffer for sums.
    */
   void centroidStep(Centroids* centroids, const DataPoints* dataPoints)
   {
-      size_t numClusters = centroids->size;
-      size_t dimensions = dataPoints->points[0].dimensions;
+      const size_t numClusters = centroids->size;
+      const size_t dimensions = dataPoints->points[0].dimensions;
 
       // Use a single allocation for the sums
       double* sums = calloc(numClusters * dimensions, sizeof(double));
@@ -1630,8 +1705,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
       // Accumulate sums and counts for each cluster
       for (size_t i = 0; i < dataPoints->size; ++i)
       {
-          DataPoint* point = &dataPoints->points[i];
-          size_t clusterLabel = point->partition;
+          const DataPoint* point = &dataPoints->points[i];
+          const size_t clusterLabel = point->partition;
 
           for (size_t dim = 0; dim < dimensions; ++dim)
           {
@@ -1662,14 +1737,16 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Counts the number of centroids in centroids2 that do not have any centroids in centroids1 assigned to them.
+   * @brief Counts centroids in `centroids2` with no nearest centroid from `centroids1`.
    *
-   * This function iterates through all centroids in centroids1 and finds the nearest centroid in centroids2.
-   * It then counts the number of centroids in centroids2 that do not have any centroids in centroids1 assigned to them.
+   * For each centroid in `centroids1`, marks its nearest neighbor in `centroids2`.
+   * Returns how many centroids in `centroids2` were never marked. If `centroids2` is empty,
+   * returns 0. If `centroids1` is empty, returns `centroids2->size`.
    *
-   * @param centroids1 A pointer to the first Centroids structure.
-   * @param centroids2 A pointer to the second Centroids structure.
-   * @return The number of centroids in centroids2 that do not have any centroids in centroids1 assigned to them.
+   * @param centroids1 Reference set used to mark nearest neighbors.
+   * @param centroids2 Target set whose unmarked count is returned.
+   * @return Number of orphan centroids in `centroids2`.
+   * @errors Exits via `findNearestCentroid` if dimensionality mismatches.
    */
   size_t countOrphans(const Centroids* centroids1, const Centroids* centroids2)
   {
@@ -1697,14 +1774,18 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Calculates the Centroid Index (CI) between two sets of centroids.
+   * @brief Centroid Index (CI) as max orphan count between two centroid sets.
    *
-   * This function calculates the Centroid Index (CI) by counting the number of orphan centroids
-   * between two sets of centroids. It returns the maximum count of orphans from either set.
+   * CI = max(orphans(centroids1 → centroids2), orphans(centroids2 → centroids1)),
+   * where orphans(X→Y) is the number of centroids in Y with no centroid from X
+   * selecting them as nearest. Returns 0 when both sets are empty; equals the size
+   * of the non-empty set when compared against an empty one.
    *
-   * @param centroids1 A pointer to the first Centroids structure.
-   * @param centroids2 A pointer to the second Centroids structure.
-   * @return The Centroid Index (CI) between the two sets of centroids.
+   * @param centroids1 First centroid set.
+   * @param centroids2 Second centroid set.
+   * @return CI value (non-negative integer).
+   * @errors Exits via underlying functions on dimensionality mismatch.
+   * @note O(K^2·D) due to nearest-centroid queries across sets.
    */
   size_t calculateCentroidIndex(const Centroids* centroids1, const Centroids* centroids2)
   {
@@ -1726,16 +1807,19 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Saves the state of centroids and partitions at a specific iteration.
+   * @brief Persists a snapshot of centroids and partitions for a given iteration.
    *
-   * This function saves the current state of centroids and partitions during algorithm execution,
-   * allowing for visualization of how the algorithm progresses over iterations.
+   * Produces two files in `outputDirectory`: `<algo>_centroids_iter_<n>.txt`
+   * and `<algo>_partitions_iter_<n>.txt`. Supports post-run visualization and debugging.
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param centroids A pointer to the Centroids structure containing the centroids.
-   * @param iteration The current iteration number.
-   * @param outputDirectory The directory where the files should be created.
-   * @param algorithmName A name identifier for the algorithm being run.
+   * @param dataPoints Dataset to serialize partitions from.
+   * @param centroids Centroids to serialize as space-separated rows.
+   * @param iteration Zero-based iteration counter used in filenames.
+   * @param outputDirectory Destination directory; must exist.
+   * @param algorithmName Short algorithm tag used as filename prefix.
+   * @return void
+   * @errors Exits on buffer overflow in path formatting or file open failure via sub-writers.
+   * @note File format matches other writers in this module.
    */
   void saveIterationState(const DataPoints* dataPoints, const Centroids* centroids,
       size_t iteration, const char* outputDirectory, const char* algorithmName)
@@ -1743,54 +1827,73 @@ void freeDataPointArray(DataPoint* points, size_t size)
       char centroidsFileName[PATH_MAX];
       char partitionsFileName[PATH_MAX];
 
-      snprintf(centroidsFileName, sizeof(centroidsFileName), "%s_centroids_iter_%zu.txt", algorithmName, iteration);
-      snprintf(partitionsFileName, sizeof(partitionsFileName), "%s_partitions_iter_%zu.txt", algorithmName, iteration);
+    if (snprintf(centroidsFileName, sizeof(centroidsFileName),
+                 "%s_centroids_iter_%zu.txt", algorithmName, iteration) >= (int)sizeof(centroidsFileName))
+    {
+        fprintf(stderr, "Buffer too small in saveIterationState (centroids file)\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (snprintf(partitionsFileName, sizeof(partitionsFileName),
+                 "%s_partitions_iter_%zu.txt", algorithmName, iteration) >= (int)sizeof(partitionsFileName))
+    {
+        fprintf(stderr, "Buffer too small in saveIterationState (partitions file)\n");
+        exit(EXIT_FAILURE);
+    }
 
       writeCentroidsToFile(centroidsFileName, centroids, outputDirectory);
       writeDataPointPartitionsToFile(partitionsFileName, dataPoints, outputDirectory);
   }
 
   /**
-   * @brief Writes iteration statistics to a file.
+   * @brief Appends per-iteration metrics to `<outputDirectory>/<algo>_iteration_stats.txt`.
    *
-   * This function appends iteration statistics to a file, recording metrics at each step
-   * of the algorithm for later visualization and analysis.
+   * Writes a header line once when the file is empty, then appends a row with
+   * iteration, K, SSE, CI, and split cluster id. Keeps a single growing log across runs.
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param centroids A pointer to the Centroids structure containing the centroids.
-   * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
-   * @param iteration The current iteration number.
-   * @param sse The mean squared error at this iteration.
-   * @param splitCluster The cluster that was split at this iteration (if applicable).
-   * @param outputDirectory The directory where the file should be created.
-   * @param algorithmName A name identifier for the algorithm being run.
+   * @param dataPoints Dataset used to derive metrics (SSE via caller).
+   * @param centroids Centroids at this iteration (for K and CI).
+   * @param groundTruth Reference centroids for CI.
+   * @param iteration Zero-based iteration number.
+   * @param sse Sum of squared errors at this iteration.
+   * @param splitCluster Cluster id split this iteration or SIZE_MAX when N/A.
+   * @param outputDirectory Destination directory; must exist.
+   * @param algorithmName Algorithm tag used for the log filename.
+   * @return void
+   * @errors Exits on path overflow or open failure.
+   * @note Semicolon-separated CSV-like text; numeric formatting uses current locale.
    */
   void writeIterationStats(const DataPoints* dataPoints, const Centroids* centroids,
       const Centroids* groundTruth, size_t iteration, double sse,
       size_t splitCluster, const char* outputDirectory, const char* algorithmName)
   {
+      (void)dataPoints; /* not used directly; retained for signature symmetry */
+
       char statsFileName[PATH_MAX];
-      snprintf(statsFileName, sizeof(statsFileName), "%s_iteration_stats.txt", algorithmName);
+      if (snprintf(statsFileName, sizeof(statsFileName), "%s_iteration_stats.txt", algorithmName) >= (int)sizeof(statsFileName))
+      {
+          fprintf(stderr, "Buffer too small in writeIterationStats (name)\n");
+          exit(EXIT_FAILURE);
+      }
 
       char outputFilePath[PATH_MAX];
-      snprintf(outputFilePath, sizeof(outputFilePath), "%s%c%s", outputDirectory, PATHSEP, statsFileName);
-
-      // Create the file with headers if it doesn't exist
-      FILE* statsFile = NULL;
-      if (iteration == 0)
+      if (snprintf(outputFilePath, sizeof(outputFilePath), "%s%c%s", outputDirectory, PATHSEP, statsFileName) >= (int)sizeof(outputFilePath))
       {
-          if (FOPEN(statsFile, outputFilePath, "w") != 0)
-          {
-              handleFileError(outputFilePath);
-          }
-          fprintf(statsFile, "Iteration;NumCentroids;SSE;CI;SplitCluster\n");
+          fprintf(stderr, "Buffer too small in writeIterationStats (path)\n");
+          exit(EXIT_FAILURE);
       }
-      else
+
+      FILE* statsFile = NULL;
+      if (FOPEN(statsFile, outputFilePath, "a+") != 0)
       {
-          if (FOPEN(statsFile, outputFilePath, "a") != 0)
-          {
-              handleFileError(outputFilePath);
-          }
+          handleFileError(outputFilePath);
+      }
+
+      /* Write header once when the file is empty */
+      fseek(statsFile, 0, SEEK_END);
+      if (ftell(statsFile) == 0)
+      {
+          fprintf(statsFile, "Iteration;NumCentroids;SSE;CI;SplitCluster\n");
       }
 
       size_t ci = calculateCentroidIndex(centroids, groundTruth);
@@ -1801,18 +1904,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Tracks the progress of the algorithm by writing statistics and saving state.
-   *
-   * This function tracks the progress of the algorithm by writing statistics to a file
-   * and saving the current state of centroids and partitions at each iteration.
-   *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param centroids A pointer to the Centroids structure containing the centroids.
-   * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
-   * @param iteration The current iteration number.
-   * @param clusterToSplit The cluster that was split at this iteration (if applicable).
-   * @param splitType The type of split performed.
-   * @param outputDirectory The directory where the files should be created.
+   * @brief Writes iteration stats and snapshot files for the current state.
    */
   static void trackProgressState(const DataPoints* dataPoints, const Centroids* centroids, const Centroids* groundTruth, size_t iteration, size_t clusterToSplit, size_t splitType, const char* outputDirectory)
   {
@@ -1823,61 +1915,51 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Updates the time tracking data and logs it to a file.
-   *
-   * This function updates the time tracking data by calculating the elapsed time
-   * since the start of the algorithm and appending it to a CSV file.
-   *
-   * @param trackTime A boolean indicating whether to track time.
-   * @param start The starting clock time.
-   * @param timeList An array to store the time data points.
-   * @param timeIndex The index for the next time data point.
+   * @brief Appends elapsed milliseconds since start into `timeList` at `*timeIndex`.
    */
   static void updateTimeTracking(bool trackTime, clock_t start, double* timeList, size_t* timeIndex)
   {
+      (void)trackTime; /* decision handled by caller */
+
       clock_t iterEnd = clock();
       double iterDuration = ((double)(iterEnd - start)) / CLOCKS_PER_MS;
       timeList[(*timeIndex)++] = iterDuration;
   }
 
   /**
-   * @brief Updates the CSV logging with the current iteration statistics.
-   *
-   * This function appends the current iteration statistics to a CSV file,
-   * including the Centroid Index (CI) and sum of squared errors (SSE).
-   *
-   * @param createCsv A boolean indicating whether to create a CSV file.
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param centroids A pointer to the Centroids structure containing the centroids.
-   * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
-   * @param csvFile The name of the CSV file to log the data.
-   * @param iterationNumber The current iteration number.
+   * @brief Appends CI and SSE for the current iteration to the CSV file.
    */
   static void updateCsvLogging(bool createCsv, const DataPoints* dataPoints, const Centroids* centroids, const Centroids* groundTruth, const char* csvFile, size_t iterationNumber)
   {
+      (void)createCsv; /* guarded by caller */
+
       size_t currentCi = calculateCentroidIndex(centroids, groundTruth);
       double currentSse = calculateSSE(dataPoints, centroids);
       appendLogCsv(csvFile, iterationNumber, currentCi, currentSse);
   }
 
   /**
-   * @brief Handles logging and tracking of the algorithm's progress.
+   * @brief Coordinates optional time tracking, iteration snapshots, and CSV appends.
    *
-   * This function manages the logging and tracking of the algorithm's progress,
-   * including time tracking, progress tracking, and CSV logging.
+   * Applies the three logging actions depending on the provided flags. Intended to
+   * centralize progress reporting logic and keep algorithm loops clean.
    *
-   * @param trackTime A boolean indicating whether to track time.
-   * @param start The starting clock time.
-   * @param timeList An array to store the time data points.
-   * @param timeIndex The index for the next time data point.
-   * @param trackProgress A boolean indicating whether to track progress.
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param centroids A pointer to the Centroids structure containing the centroids.
-   * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
-   * @param iterationCount The current iteration number.
-   * @param outputDirectory The directory where the files should be created.
-   * @param createCsv A boolean indicating whether to create a CSV file.
-   * @param csvFile The name of the CSV file to log the data.
+   * @param trackTime Whether to record elapsed time into `timeList`.
+   * @param start Clock taken at the beginning of the enclosing operation.
+   * @param timeList Output array for elapsed times in ms.
+   * @param timeIndex In/out index into `timeList`.
+   * @param trackProgress Whether to write iteration stats and snapshot files.
+   * @param dataPoints Current dataset state (partitions used for stats/snapshots).
+   * @param centroids Current centroid state.
+   * @param groundTruth Reference centroids for CI calculation.
+   * @param iterationCount Iteration number to log.
+   * @param outputDirectory Destination directory for files.
+   * @param createCsv Whether to append a line to the CSV log.
+   * @param csvFile Path to the CSV file (valid if `createCsv` is true).
+   * @param clusterToSplit Cluster id split at this iteration or SIZE_MAX when N/A.
+   * @param splitType Algorithm id used for labeling outputs.
+   * @return void
+   * @errors Exits on I/O failures via underlying helpers.
    */
   static void handleLoggingAndTracking(bool trackTime, clock_t start, double* timeList, size_t* timeIndex, bool trackProgress, const DataPoints* dataPoints,
       const Centroids* centroids, const Centroids* groundTruth, size_t iterationCount, const char* outputDirectory, bool createCsv, const char* csvFile,
@@ -1901,14 +1983,19 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Repartitions data points after a centroid has been removed.
+   * @brief Locally reassigns points after modifying one centroid (Random Swap helper).
    *
-   * This function updates the partition of each data point based on the nearest centroid
-   * after a centroid has been removed from the clustering process.
+   * Performs a two-phase local repartition: (1) reassigns points currently in the
+   * modified cluster (`removed`) to their nearest centroid; (2) compares all other
+   * points’ current centroid against the modified centroid and moves points that
+   * are now closer to it. Leaves other clusters unchanged.
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param centroids A pointer to the Centroids structure containing the centroids.
-   * @param removed The index of the removed centroid.
+   * @param dataPoints Dataset with current partitions.
+   * @param centroids Centroids after the swap; index `removed` denotes the modified centroid.
+   * @param removed Index of the centroid whose coordinates were changed.
+   * @return void
+   * @errors Exits if `removed` is out of range.
+   * @note O(N·D). A full centroid update happens later via k-means iterations.
    */
   void localRepartitionForRS(DataPoints* dataPoints, Centroids* centroids, size_t removed)
   {
@@ -1918,7 +2005,6 @@ void freeDataPointArray(DataPoint* points, size_t size)
           if (dataPoints->points[i].partition == removed)
           {
               size_t nearestCentroid = findNearestCentroid(&dataPoints->points[i], centroids);
-
               dataPoints->points[i].partition = nearestCentroid;
           }
       }
@@ -1948,26 +2034,29 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Runs the k-means algorithm on the given data points and centroids.
+   * @brief Iterates assignment and update steps until SSE no longer improves.
    *
-   * This function iterates through partition and centroid steps, calculates the SSE,
-   * and returns the best SSE obtained during the iterations.
+   * Repeats partition and centroid steps up to `iterations` times, tracking the best
+   * observed SSE and stopping early when the SSE does not strictly decrease.
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param iterations The maximum number of iterations to run the k-means algorithm.
-   * @param centroids A pointer to the Centroids structure containing the centroids.
-   * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
-   * @return The best mean squared error (SSE) obtained during the iterations.
+   * @param dataPoints Dataset to cluster; partitions updated in-place.
+   * @param iterations Maximum iterations to perform (stop earlier on no improvement).
+   * @param centroids Centroid set updated in-place.
+   * @param groundTruth Optional reference (unused here).
+   * @return Best SSE observed during the run.
+   * @errors Exits if dataset is empty or K == 0.
+   * @note Uses strict improvement; add a tolerance if convergence stalls due to rounding.
    */
   double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids, const Centroids* groundTruth)
   {
+      (void)groundTruth;
+
       double bestSse = DBL_MAX;
       double sse = DBL_MAX;
 
       for (size_t iteration = 0; iteration < iterations; ++iteration)
       {
           partitionStep(dataPoints, centroids);
-
           centroidStep(centroids, dataPoints);
 
           sse = calculateSSE(dataPoints, centroids);
@@ -1993,16 +2082,28 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Runs the k-means algorithm on the given data points and centroids.
+   * @brief k-means with optional per-iteration logging and timing.
    *
-   * This function iterates through partition and centroid steps, calculates the SSE,
-   * and returns the best SSE obtained during the iterations.
+   * Runs the assignment/update loop like `runKMeans`, optionally recording elapsed time,
+   * writing snapshots/CI, and appending CSV lines. Increments `*iterationCount` only
+   * when SSE improves.
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param iterations The maximum number of iterations to run the k-means algorithm.
-   * @param centroids A pointer to the Centroids structure containing the centroids.
-   * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
-   * @return The best mean squared error (SSE) obtained during the iterations.
+   * @param dataPoints Dataset to cluster; partitions updated in-place.
+   * @param iterations Maximum iterations to perform.
+   * @param centroids Centroid set updated in-place.
+   * @param groundTruth Optional reference for CI in logs.
+   * @param outputDirectory Destination for snapshot/stat files when enabled.
+   * @param trackProgress Whether to write iteration snapshot/stat files.
+   * @param timeList Output array of elapsed times (ms); valid if `trackTime`.
+   * @param timeIndex In/out index into `timeList`.
+   * @param start Clock at start of outer operation.
+   * @param trackTime Whether to record elapsed time into `timeList`.
+   * @param createCsv Whether to append per-iteration CSV entries.
+   * @param iterationCount In/out iteration number used in logs; incremented on improvements.
+   * @param firstRun Whether this is the first run in a multi-run context (affects logging cadence).
+   * @param csvFile CSV file path; valid if `createCsv`.
+   * @return Best SSE observed during the run.
+   * @errors Exits if dataset is empty or K == 0.
    */
   double runKMeansWithTracking(DataPoints* dataPoints, size_t iterations, Centroids* centroids, const Centroids* groundTruth, const char* outputDirectory,
       bool trackProgress, double* timeList, size_t* timeIndex, clock_t start, bool trackTime, bool createCsv, size_t* iterationCount, bool firstRun, const char* csvFile)
@@ -2013,7 +2114,6 @@ void freeDataPointArray(DataPoint* points, size_t size)
       for (size_t iteration = 0; iteration < iterations; ++iteration)
       {
           partitionStep(dataPoints, centroids);
-
           centroidStep(centroids, dataPoints);
 
           if (firstRun)
@@ -2106,13 +2206,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
           }
 
           //Swap
-          unsigned int randomValue;
-
-          RANDOMIZE(randomValue);
-          size_t randomCentroidId = randomValue % centroids->size;
-
-          RANDOMIZE(randomValue);
-          size_t randomDataPointId = randomValue % dataPoints->size;
+          size_t randomCentroidId = bounded_rand(centroids->size);
+          size_t randomDataPointId = bounded_rand(dataPoints->size);
 
           memcpy(centroids->points[randomCentroidId].attributes, dataPoints->points[randomDataPointId].attributes, dimensions * sizeof(double));
 
@@ -2170,18 +2265,22 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-  *@brief Splits a cluster into two sub - clusters using local k - means.
-  *
-  *This function splits a cluster into two sub - clusters by selecting two random centroids
-  * from the data points in the cluster and running local k - means.It updates the partitions
-  * and centroids based on the results of the local k - means.
-  *
-  *@param dataPoints A pointer to the DataPoints structure containing the data points.
-  * @param centroids A pointer to the Centroids structure containing the centroids.
-  * @param clusterToSplit The index of the cluster to split.
-  * @param localMaxIterations The maximum number of iterations for the local k - means.
-  * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
-  */
+   * @brief Splits one cluster by running a local k-means within that cluster.
+   *
+   * Picks two distinct points from the target cluster as seeds, runs k-means (K=2) on
+   * that cluster’s points only, then updates the original clustering by replacing the
+   * old centroid with one local result and appending the second as a new global centroid.
+   * Partitions for the affected points are rewritten accordingly.
+   *
+   * @param dataPoints All points with current partitions.
+   * @param centroids Global centroids; updated in-place (size increases by one).
+   * @param clusterToSplit Index of the cluster to split.
+   * @param localMaxIterations Max iterations for the local k-means refinement.
+   * @param groundTruth Optional reference centroids (unused in computation).
+   * @return void
+   * @errors Exits on allocation failure.
+   * @note Skips split when the cluster has fewer than 2 points. Uses unbiased selection via bounded_rand.
+   */
   void splitClusterIntraCluster(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t localMaxIterations, const Centroids* groundTruth)
   {
       size_t clusterSize = 0;
@@ -2193,7 +2292,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           }
       }
 
-      // Random split will break without this
+      // Random split will break without this //TODO kommentoi lopullisesta
       if (clusterSize < 2)
       {
           return;
@@ -2213,15 +2312,10 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       // Random centroids
-      unsigned int randomValue;
-      RANDOMIZE(randomValue);
-      size_t c1 = randomValue % clusterSize;
-      size_t c2 = c1;
-      while (c2 == c1)
-      {
-          RANDOMIZE(randomValue);
-          c2 = randomValue % clusterSize;
-      }
+      size_t c1 = bounded_rand(clusterSize);          // uniform in [0, m-1]
+      size_t r = bounded_rand(clusterSize - 1);      // uniform in [0, m-2]
+      size_t c2 = (r < c1) ? r : r + 1;               // maps r to [0..m-1] \ {c1}
+
       size_t datapoint1 = clusterIndices[c1];
       size_t datapoint2 = clusterIndices[c2];
 
@@ -2262,7 +2356,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       //#2
       centroids->size++;
-      centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint)); //TODO: periaatteessa aina tiedetaan lopullinen koko, niin pitaisiko reallocoinnit poistaa ja lisata jonnekin aikaisemmin se oikea koko naille
+      centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint));
       handleMemoryError(centroids->points);
       centroids->points[centroids->size - 1] = allocateDataPoint(dataPoints->points[0].dimensions);
       deepCopyDataPoint(&centroids->points[centroids->size - 1], &localCentroids.points[1]);
@@ -2274,9 +2368,29 @@ void freeDataPointArray(DataPoint* points, size_t size)
       freeCentroids(&localCentroids);
   }
 
+  /**
+ * @brief Splits a cluster locally (k-means) and then refines globally.
+ *
+ * Runs local k-means within the target cluster to produce two centroids, merges them
+ * into the global set (replace + append), then runs a short global k-means refinement
+ * over all data to settle assignments.
+ *
+ * @param dataPoints All points with current partitions.
+ * @param centroids Global centroids; updated in-place (size increases by one).
+ * @param clusterToSplit Index of the cluster to split.
+ * @param localMaxIterations Max iterations for both local and global refinement.
+ * @param groundTruth Optional reference (unused in computation).
+ * @param splitType For labeling/logging (unused here).
+ * @param outputDirectory Output directory for optional logging (unused here).
+ * @param trackProgress/timeList/timeIndex/start/trackTime/createCsv/iteration For logging (unused here).
+ * @return SSE after the global refinement, or current SSE if the cluster is too small to split.
+ * @errors Exits on allocation failure.
+ */
   double splitClusterGlobalV2(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t localMaxIterations, const Centroids* groundTruth, size_t splitType, const char* outputDirectory,
       bool trackProgress, double* timeList, size_t* timeIndex, clock_t start, bool trackTime, bool createCsv, size_t iteration)
   {
+      (void)splitType; (void)outputDirectory; (void)trackProgress; (void)timeList; (void)timeIndex; (void)start; (void)trackTime; (void)createCsv; (void)iteration;
+
       size_t clusterSize = 0;
       for (size_t i = 0; i < dataPoints->size; ++i)
       {
@@ -2300,15 +2414,10 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       // Random centroids
-      unsigned int randomValue;
-      RANDOMIZE(randomValue);
-      size_t c1 = randomValue % clusterSize;
-      size_t c2 = c1;
-      while (c2 == c1)
-      {
-          RANDOMIZE(randomValue);
-          c2 = randomValue % clusterSize;
-      }
+      size_t c1 = bounded_rand(clusterSize);
+      size_t c2 = bounded_rand(clusterSize - 1);
+      if (c2 >= c1) c2++;
+
       size_t datapoint1 = clusterIndices[c1];
       size_t datapoint2 = clusterIndices[c2];
 
@@ -2330,7 +2439,6 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       // Run local k-means
       runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, groundTruth);
-
 
       // Update partitions
       for (size_t i = 0; i < clusterSize; ++i)
@@ -2364,21 +2472,25 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Splits a cluster into two sub-clusters using global k-means.
+   * @brief Replaces one cluster with two random seeds and runs global refinement.
    *
-   * This function splits a cluster into two sub-clusters by selecting two random centroids
-   * from the data points in the cluster and running global k-means. It updates the partitions
-   * and centroids based on the results of the global k-means.
+   * Selects two distinct points from the chosen cluster, overwrites the original centroid
+   * with the first, appends the second as a new centroid, then runs global k-means for
+   * `globalMaxIterations` to refine assignments over all data.
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param centroids A pointer to the Centroids structure containing the centroids.
-   * @param clusterToSplit The index of the cluster to split.
-   * @param globalMaxIterations The maximum number of iterations for the global k-means.
-   * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
+   * @param dataPoints All points with current partitions.
+   * @param centroids Global centroids; updated in-place (size increases by one).
+   * @param clusterToSplit Index of the cluster to split.
+   * @param globalMaxIterations Max iterations for the global refinement.
+   * @param groundTruth Optional reference (unused in computation).
+   * @return SSE after global refinement, or current SSE if the cluster is too small to split.
+   * @errors Exits on allocation failure.
    */
   double splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t globalMaxIterations, const Centroids* groundTruth, size_t splitType, const char* outputDirectory,
       bool trackProgress, double* timeList, size_t* timeIndex, clock_t start, bool trackTime, bool createCsv)
   {
+      (void)splitType; (void)outputDirectory; (void)trackProgress; (void)timeList; (void)timeIndex; (void)start; (void)trackTime; (void)createCsv;
+
       size_t clusterSize = 0;
 
       for (size_t i = 0; i < dataPoints->size; ++i)
@@ -2408,15 +2520,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       // Select two random points from the cluster to be the new centroids
-      unsigned int randomValue;
-      RANDOMIZE(randomValue);
-      size_t c1 = randomValue % clusterSize;
-      size_t c2 = c1;
-      while (c2 == c1)
-      {
-          RANDOMIZE(randomValue);
-          c2 = randomValue % clusterSize;
-      }
+      size_t c1 = bounded_rand(clusterSize);
+      size_t c2 = bounded_rand(clusterSize - 1);
+      if (c2 >= c1) c2++;
 
       // Get the indices of the randomly selected data points
       size_t datapoint1 = clusterIndices[c1];
@@ -2441,24 +2547,27 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Performs local repartitioning of data points to the nearest centroid.
+   * @brief Locally reassigns points to either the split cluster or the new cluster.
    *
-   * This function reassigns data points to the nearest centroid if the nearest centroid
-   * is either the new cluster or the cluster to be split. It updates the clustersAffected
-   * array to mark the affected clusters.
+   * Compares each point currently assigned to “other” clusters against the split
+   * centroid and the newly created centroid. If either is closer than the point’s
+   * current centroid, moves the point and marks the original cluster as affected.
+   * Keeps assignments in the split and new clusters unchanged.
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param centroids A pointer to the Centroids structure containing the centroids.
-   * @param clusterToSplit The index of the cluster to split.
-   * @param clustersAffected A pointer to the array indicating which clusters are affected.
+   * @param dataPoints Dataset with current partitions.
+   * @param centroids Global centroids; newest centroid is at index `centroids->size - 1`.
+   * @param clusterToSplit Index of the cluster that was split.
+   * @param clustersAffected Output array (size >= number of clusters) marking touched clusters.
+   * @return void
+   * @errors Exits if preconditions are violated.
+   * @note O(N·D). Intended to be followed by centroid recomputation.
    */
   void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, bool* clustersAffected)
   {
       size_t newClusterIndex = centroids->size - 1;
 
-      // TODO: Selvita, etta tarvitaanko tata? Oma oletus on, etta ei tarvita
       // new clusters -> old clusters
-      /*for (size_t i = 0; i < dataPoints->size; ++i)
+      for (size_t i = 0; i < dataPoints->size; ++i)
       {
           if (dataPoints->points[i].partition == clusterToSplit || dataPoints->points[i].partition == newClusterIndex)
           {
@@ -2471,7 +2580,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
                   dataPoints->points[i].partition = nearestCentroid;
               }
           }
-      }*/
+      }
 
       // old clusters -> new clusters
       for (size_t i = 0; i < dataPoints->size; ++i)
@@ -2500,16 +2609,19 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Calculates the SSE drop for a tentative split of a cluster.
+   * @brief Estimates SSE improvement from splitting one cluster with local k-means.
    *
-   * This function calculates the SSE drop by running local k-means on a cluster and comparing
-   * the new SSE with the original SSE. It returns the difference between the original SSE and the new SSE.
+   * Copies the points of `clusterLabel`, initializes two seeds from that set,
+   * runs k-means with K=2 locally, and returns the decrease relative to the
+   * original single-cluster SSE (`originalClusterSSE - localSseAfterSplit`).
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param clusterLabel The label of the cluster to split.
-   * @param localMaxIterations The maximum number of iterations for the local k-means.
-   * @param originalClusterSSE The original SSE of the cluster before the split.
-   * @return The SSE drop for the tentative split of the cluster.
+   * @param dataPoints Dataset with current partitions; used to extract the cluster’s points.
+   * @param clusterLabel Cluster id to test a tentative split for.
+   * @param localMaxIterations Max iterations for the local k-means refinement.
+   * @param originalClusterSSE Current SSE of the cluster before splitting.
+   * @return SSE drop (non-negative when the split helps).
+   * @errors Exits on allocation failure.
+   * @note Uses unbiased seeding via `bounded_rand`. Returns 0.0 if the cluster has < 2 points.
    */
   double tentativeSseDrop(DataPoints* dataPoints, size_t clusterLabel, size_t localMaxIterations, double originalClusterSSE)
   {
@@ -2540,15 +2652,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       // Random centroids
-      unsigned int randomValue;
-      RANDOMIZE(randomValue);
-      size_t idx1 = randomValue % clusterSize;
-      size_t idx2 = idx1;
-      while (idx2 == idx1)
-      {
-          RANDOMIZE(randomValue);
-          idx2 = randomValue % clusterSize;
-      }
+      size_t idx1 = bounded_rand(clusterSize);
+      size_t r = bounded_rand(clusterSize - 1);
+      size_t idx2 = (r < idx1) ? r : r + 1;
 
       Centroids localCentroids = allocateCentroids(2, dataPoints->points[0].dimensions);
 
@@ -2567,16 +2673,19 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Calculates the SSE drop for a tentative split of a cluster.
+   * @brief Produces a k-means candidate for a given cluster (for bisecting).
    *
-   * This function calculates the SSE drop by running local k-means on a cluster and comparing
-   * the new SSE with the original SSE. It returns the difference between the original SSE and the new SSE.
+   * Runs local k-means with K=2 on the points of `clusterLabel` using unbiased seeding
+   * and returns two candidate centroids with the achieved local SSE. Caller compares
+   * SSEs across attempts and picks the best pair.
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param clusterLabel The label of the cluster to split.
-   * @param localMaxIterations The maximum number of iterations for the local k-means.
-   * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
-   * @return A ClusteringResult structure containing the new centroids and the SSE drop.
+   * @param dataPoints Dataset with current partitions; used to extract the cluster’s points.
+   * @param clusterLabel Cluster id to bisect.
+   * @param localMaxIterations Max iterations for the local k-means refinement.
+   * @param groundTruth Optional reference (unused in computation).
+   * @return ClusteringResult with `centroids[2]` and `sse` for the cluster’s points.
+   * @errors Exits on allocation failure.
+   * @note Allocates `partition` sized to the cluster for symmetry; it is not populated here.
    */
   ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, size_t clusterLabel, size_t localMaxIterations, const Centroids* groundTruth)
   {
@@ -2609,15 +2718,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       // Random centroids
-      unsigned int randomValue;
-      RANDOMIZE(randomValue);
-      size_t idx1 = randomValue % clusterSize;
-      size_t idx2 = idx1;
-      while (idx2 == idx1)
-      {
-          RANDOMIZE(randomValue);
-          idx2 = randomValue % clusterSize;
-      }
+      size_t idx1 = bounded_rand(clusterSize);
+      size_t r = bounded_rand(clusterSize - 1);
+      size_t idx2 = (r < idx1) ? r : r + 1;
 
       Centroids localCentroids = allocateCentroids(2, dataPoints->points[0].dimensions);
       deepCopyDataPoint(&localCentroids.points[0], &pointsInCluster.points[idx1]);
@@ -2638,18 +2741,22 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Runs the split k-means algorithm with random splitting.
+   * @brief Grows K by repeatedly splitting a random cluster with local k-means.
    *
-   * This function iterates through partition and centroid steps, randomly selects a cluster to split,
-   * and updates the centroids and partitions based on the results of the local k-means.
-   * It returns the best mean squared error (SSE) obtained during the iterations.
+   * Starts from current centroids, repeatedly selects a random cluster, performs an
+   * intra-cluster split (local k-means), updates global centroids and partitions,
+   * and logs progress if enabled. Stops when `centroids->size == maxCentroids`,
+   * then runs a final global k-means and returns its SSE.
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param centroids A pointer to the Centroids structure containing the centroids.
-   * @param maxCentroids The maximum number of centroids to generate.
-   * @param maxIterations The maximum number of iterations for the k-means algorithm.
-   * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
-   * @return The best mean squared error (SSE) obtained during the iterations.
+   * @param dataPoints Dataset; partitions updated in-place across splits.
+   * @param centroids Global centroids; grows until `maxCentroids`.
+   * @param maxCentroids Target number of centroids (K).
+   * @param maxIterations Max iterations for local/final k-means refinements.
+   * @param groundTruth Optional reference for logging (CI).
+   * @param outputDirectory Destination directory for logs (when enabled).
+   * @param trackProgress/timeList/timeIndex/start/trackTime/createCsv Logging/timing controls and buffers.
+   * @return Final SSE after the concluding global k-means.
+   * @errors Exits on allocation failure in underlying functions.
    */
   double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, const Centroids* groundTruth, const char* outputDirectory,
       bool trackProgress, double* timeList, size_t* timeIndex, clock_t start, bool trackTime, bool createCsv)
@@ -2669,8 +2776,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       while (centroids->size < maxCentroids)
       {
-          RANDOMIZE(randomValue);
-          size_t clusterToSplit = randomValue % centroids->size;
+          size_t clusterToSplit = bounded_rand(centroids->size);
 
           splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth);
 
@@ -2696,19 +2802,26 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Runs the split k-means algorithm with tentative splitting (choosing to split the one that reduces the SSE the most).
+   * @brief Iteratively grows K by splitting the cluster that maximizes expected SSE drop.
    *
-   * This function iterates through partition and centroid steps, selects a cluster to split based on the SSE drop,
-   * and updates the centroids and partitions based on the results of the local k-means.
-   * It returns the best mean squared error (SSE) obtained during the iterations.
+   * Computes per-cluster SSE drops via tentative local k-means, repeatedly splits the
+   * cluster with the highest drop using the selected strategy:
+   *  - 0: Intra-cluster split (local k-means on the cluster).
+   *  - 1: Global split (local k-means, then global refinement).
+   *  - 2: Local repartition (reassigns neighbors to split/new centroids).
+   * Logs progress/timing when enabled. Returns the final SSE (from the last refinement).
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param centroids A pointer to the Centroids structure containing the centroids.
-   * @param maxCentroids The maximum number of centroids to generate.
-   * @param maxIterations The maximum number of iterations for the k-means algorithm.
-   * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
-   * @param splitType The type of split to perform (0 = intra-cluster, 1 = global, 2 = local repartition).
-   * @return The best mean squared error (SSE) obtained during the iterations.
+   * @param dataPoints Dataset; partitions updated in-place.
+   * @param centroids Global centroids; grows until `maxCentroids`.
+   * @param maxCentroids Target number of centroids (K).
+   * @param maxIterations Max iterations for local/global k-means refinements.
+   * @param groundTruth Optional reference centroids for logging (CI).
+   * @param splitType Strategy selector: 0=Intra-cluster, 1=Global, 2=LocalRepartition.
+   * @param outputDirectory Destination directory for logs.
+   * @param trackProgress/timeList/timeIndex/start/trackTime/createCsv Logging/timing controls and buffers.
+   * @return Final SSE after all splits and final refinement.
+   * @errors Exits on allocation failure in underlying helpers.
+   * @note Seeding inside split helpers uses `bounded_rand` to avoid modulo bias.
    */
   double runSseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, const Centroids* groundTruth, size_t splitType, const char* outputDirectory,
       bool trackProgress, double* timeList, size_t* timeIndex, clock_t start, bool trackTime, bool createCsv)
@@ -2836,18 +2949,25 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Runs the Bisecting k-means algorithm on the given data points and centroids.
+   * @brief Grows K by repeatedly bisecting the cluster with the largest SSE.
    *
-   * This function iterates through partition and centroid steps, selects a cluster to split based on the SSE,
-   * and updates the centroids and partitions based on the results of the local k-means.
-   * It returns the best mean squared error (SSE) obtained during the iterations.
+   * Starts from the current centroids, performs an initial split to reach K=2,
+   * then repeatedly picks the cluster with the highest current SSE, runs several
+   * local k-means attempts on that cluster, and applies the best candidate split.
+   * Reassigns points globally after each accepted split and updates per-cluster SSEs.
+   * Stops when centroids->size == maxCentroids or no cluster has ≥2 points.
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param centroids A pointer to the Centroids structure containing the centroids.
-   * @param maxCentroids The maximum number of centroids to generate.
-   * @param maxIterations The maximum number of iterations for the k-means algorithm.
-   * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
-   * @return The best mean squared error (SSE) obtained during the iterations.
+   * @param dataPoints Dataset; partitions updated in-place across splits.
+   * @param centroids Global centroids; grown in-place up to maxCentroids.
+   * @param maxCentroids Target number of clusters (K); must be ≥ 2.
+   * @param maxIterations Max iterations for the local k-means and final global k-means.
+   * @param groundTruth Optional reference centroids for CI in logs (may be NULL).
+   * @param outputDirectory Destination directory for optional iteration logs/snapshots.
+   * @param trackProgress/timeList/timeIndex/start/trackTime/createCsv Logging/timing controls.
+   * @param bisectingIterations Number of local k-means attempts per split; 0 treated as 1.
+   * @return Final SSE after the concluding refinement step.
+   * @errors Exits on allocation failures via helpers. Validates K≥2; skips unsplittable clusters.
+   * @note Recomputes per-cluster SSE after each global reassignment for robust selection.
    */
   double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, const Centroids* groundTruth, const char* outputDirectory,
       bool trackProgress, double* timeList, size_t* timeIndex, clock_t start, bool trackTime, bool createCsv, size_t bisectingIterations)
@@ -2955,19 +3075,23 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Runs the k-means algorithm on the given data points and centroids.
+   * @brief Runs baseline k-means multiple times and aggregates CI/SSE/time.
    *
-   * This function iterates through partition and centroid steps, calculates the SSE,
-   * and returns the best SSE obtained during the iterations.
+   * For each run, seeds K centroids uniformly from the data, performs k-means with
+   * early stopping on non-improving SSE, then records SSE, CI vs. ground truth, and
+   * elapsed time. Writes one “perfect” and one “failed” example to disk for inspection.
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
-   * @param numCentroids The number of centroids to generate.
-   * @param maxIterations The maximum number of iterations for the k-means algorithm.
-   * @param loopCount The number of loops to run the k-means algorithm.
-   * @param scaling A scaling factor for the SSE values.
-   * @param fileName The name of the file to write the results to.
-   * @param outputDirectory The directory where the results file is located.
+   * @param dataPoints Dataset clustered in-place; partitions get reassigned every run.
+   * @param groundTruth Reference centroids for CI; dimensions must match data (may be NULL).
+   * @param numCentroids Target K; must be 1..N.
+   * @param maxIterations Maximum k-means iterations (early stop on no improvement).
+   * @param loopCount Number of independent k-means runs (with new random seeds).
+   * @param scaling SSE divisor for CSV (kept for parity; not used in printing).
+   * @param fileName Base name for CSV summary file (without extension).
+   * @param outputDirectory Destination directory for outputs.
+   * @return void
+   * @errors Exits on allocation failures; validates basic inputs to prevent invalid K.
+   * @note Uses uniform seeding; switch to KMeans++ by replacing the seeding call.
    */
   void runKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory)
   {
@@ -2985,12 +3109,14 @@ void freeDataPointArray(DataPoint* points, size_t size)
       {
           printf("Round %zu\n", i + 1);
 
+          resetPartitions(dataPoints);
+
           Centroids centroids = allocateCentroids(numCentroids, dataPoints->points[0].dimensions);
 
           start = clock();
 
-          //generateRandomCentroids(numCentroids, dataPoints, &centroids);
-          generateKMeansPlusPlusCentroids(numCentroids, dataPoints, &centroids);
+          generateRandomCentroids(numCentroids, dataPoints, &centroids);
+          //generateKMeansPlusPlusCentroids(numCentroids, dataPoints, &centroids);
 
           double resultSse = runKMeans(dataPoints, maxIterations, &centroids, groundTruth);
 
@@ -3049,8 +3175,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
       clock_t start, end;
       double duration;
 
-      size_t totalIterations = loopCount * maxRepeats * 5 + 100; //TODO: mietin parempi limit kuin *5
-      double* timeList = malloc(totalIterations * sizeof(double)); //TODO: vois varmaan olla myos size_t koska millisekunteja
+	  size_t totalIterations = loopCount * maxRepeats * 5 + 100; //Estimated upper bound for tracking
+      double* timeList = malloc(totalIterations * sizeof(double));
+
       handleMemoryError(timeList);
       size_t timeIndex = 0;
 
@@ -3239,20 +3366,25 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Runs the split k-means algorithm with random splitting.
+   * @brief Runs Random Split k-means and aggregates CI/SSE/time across runs.
    *
-   * This function iterates through partition and centroid steps, randomly selects a cluster to split,
-   * and updates the centroids and partitions based on the results of the local k-means.
-   * It returns the best mean squared error (SSE) obtained during the iterations.
+   * Seeds centroids, grows K by intra-cluster k-means splits via `runRandomSplit`,
+   * and accumulates SSE, CI vs. ground truth, and elapsed time over `loopCount` runs.
+   * Writes one “perfect” and one “failed” snapshot for inspection.
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
-   * @param numCentroids The number of centroids to generate.
-   * @param maxIterations The maximum number of iterations for the k-means algorithm.
-   * @param loopCount The number of loops to run the k-means algorithm.
-   * @param scaling A scaling factor for the SSE values.
-   * @param fileName The name of the file to write the results to.
-   * @param outputDirectory The directory where the results file is located.
+   * @param dataPoints Dataset clustered in-place; partitions updated per run.
+   * @param groundTruth Reference centroids for CI (may be NULL if CI not needed).
+   * @param numCentroids Target K; must satisfy 1 <= K <= N.
+   * @param maxIterations Upper bound for local/global refinement iterations.
+   * @param loopCount Number of independent runs (new seeds each run).
+   * @param scaling SSE divisor for CSV summary (consistency with other wrappers).
+   * @param fileName Base name for the CSV summary file.
+   * @param outputDirectory Destination directory for outputs.
+   * @param trackProgress When true, enables per-iteration logging in the first run.
+   * @param trackTime When true, collects and writes elapsed times per iteration.
+   * @return void
+   * @errors Exits on allocation failures via helpers; validates inputs to preempt invalid runs.
+   * @note `runRandomSplit` may fail to progress if no cluster has ≥2 points; consider a retry budget there.
    */
   void runRandomSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, bool trackProgress, bool trackTime)
   {
@@ -3263,8 +3395,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       double duration;
 
       //Tracker helpers
-      //size_t failSafety = 0.5 * loopCount; //TODO: ei kaytossa // Note: It may randomly choose a cluster with just 1 data point -> No split. I started with 0.1 multiplier, but 0.5 seems to be a good balance
-      size_t totalIterations = loopCount * numCentroids * 2 + loopCount;
+	  size_t totalIterations = loopCount * numCentroids * 2 + loopCount; //Estimated upper bound for tracking
       double* timeList = malloc(totalIterations * sizeof(double));
       handleMemoryError(timeList);
       size_t timeIndex = 0;
@@ -3336,21 +3467,26 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Runs the split k-means algorithm with tentative splitting (choosing to split the one that reduces the SSE the most).
+   * @brief Runs SSE-based Split k-means and aggregates CI/SSE/time across runs.
    *
-   * This function iterates through partition and centroid steps, selects a cluster to split based on the SSE drop,
-   * and updates the centroids and partitions based on the results of the local k-means.
-   * It returns the best mean squared error (SSE) obtained during the iterations.
+   * Wraps `runSseSplit` for three strategies (intra-cluster, global, local repartition)
+   * and reports aggregate statistics over `loopCount` runs. Produces one failed and one
+   * perfect snapshot to aid diagnostics.
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
-   * @param numCentroids The number of centroids to generate.
-   * @param maxIterations The maximum number of iterations for the k-means algorithm.
-   * @param loopCount The number of loops to run the k-means algorithm.
-   * @param scaling A scaling factor for the SSE values.
-   * @param fileName The name of the file to write the results to.
-   * @param outputDirectory The directory where the results file is located.
-   * @param splitType The type of split to perform (0 = intra-cluster, 1 = global, 2 = local repartition).
+   * @param dataPoints Dataset clustered in-place; partitions updated during runs.
+   * @param groundTruth Reference centroids for CI (may be NULL).
+   * @param numCentroids Target K; must satisfy 1 <= K <= N.
+   * @param maxIterations Upper bound for refinements inside the split strategy.
+   * @param loopCount Number of independent runs.
+   * @param scaling SSE divisor for CSV summary.
+   * @param fileName Base name for the CSV summary file.
+   * @param outputDirectory Destination directory for outputs.
+   * @param splitType Strategy: 0=IntraCluster, 1=Global, 2=LocalRepartition.
+   * @param trackProgress Enable per-iteration logging in the first run.
+   * @param trackTime Enable per-iteration timing output.
+   * @return void
+   * @errors Exits on allocation failures via helpers; validates inputs to preempt invalid runs.
+   * @note Timing buffer is allocated only when requested.
    */
   void runSseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, size_t splitType, bool trackProgress, bool trackTime)
   {
@@ -3363,7 +3499,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       const char* splitTypeName = getAlgorithmName(splitType);
 
       //Tracker helpers
-      size_t totalIterations = loopCount * numCentroids + loopCount;
+	  size_t totalIterations = loopCount * numCentroids + loopCount; //Estimated upper bound for tracking
       double* timeList = malloc(totalIterations * sizeof(double));
       handleMemoryError(timeList);
       size_t timeIndex = 0;
@@ -3435,20 +3571,26 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Runs the Bisecting k-means algorithm on the given data points and centroids.
+   * @brief Runs Bisecting k-means and aggregates CI/SSE/time across runs.
    *
-   * This function iterates through partition and centroid steps, selects a cluster to split based on the SSE,
-   * and updates the centroids and partitions based on the results of the local k-means.
-   * It returns the best mean squared error (SSE) obtained during the iterations.
+   * Seeds an initial centroid, executes the bisecting loop via `runBisectingKMeans`
+   * until K is reached, and aggregates SSE, CI vs. ground truth, and elapsed time
+   * over `loopCount` runs. Writes one failed and one perfect snapshot for inspection.
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
-   * @param numCentroids The number of centroids to generate.
-   * @param maxIterations The maximum number of iterations for the k-means algorithm.
-   * @param loopCount The number of loops to run the k-means algorithm.
-   * @param scaling A scaling factor for the SSE values.
-   * @param fileName The name of the file to write the results to.
-   * @param outputDirectory The directory where the results file is located.
+   * @param dataPoints Dataset clustered in-place; partitions updated per run.
+   * @param groundTruth Reference centroids for CI (may be NULL).
+   * @param numCentroids Target K; must satisfy 1 <= K <= N.
+   * @param maxIterations Max iterations for local/global refinements in the core loop.
+   * @param loopCount Number of independent runs.
+   * @param scaling SSE divisor for CSV summary.
+   * @param fileName Base name for the CSV summary file.
+   * @param outputDirectory Destination directory for outputs.
+   * @param trackProgress Enable per-iteration logging in the first run.
+   * @param trackTime Enable per-iteration timing output.
+   * @param bisectingIterations Local k-means attempts per split (clamped to ≥1).
+   * @return void
+   * @errors Exits on allocation failures via helpers; validates inputs to preempt invalid runs.
+   * @note Timing buffer is allocated only when requested.
    */
   void runBisectingKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, bool trackProgress, bool trackTime, size_t bisectingIterations)
   {
@@ -3459,7 +3601,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       double duration;
 
       //Tracker helpers
-      size_t totalIterations = loopCount * numCentroids + loopCount;
+	  size_t totalIterations = loopCount * numCentroids + loopCount; //Estimated upper bound for tracking
       double* timeList = malloc(totalIterations * sizeof(double));
       handleMemoryError(timeList);
       size_t timeIndex = 0;
@@ -3534,17 +3676,20 @@ void freeDataPointArray(DataPoint* points, size_t size)
   // Random //
   ///////////
 
-  /**
-   * @brief Generates the ground truth centroids based on the data points and partition file.
-   *
-   * This function reads the data points from a file, assigns partition indices to each point,
-   * calculates the centroids for each cluster, and writes the centroids to an output file.
-   *
-   * @param dataFileName The name of the data file containing the data points.
-   * @param partitionFileName The name of the partition file containing the partition indices.
-   * @param outputFileName The name of the output file to write the centroids to.
-   * @return 0 on success, non-zero on failure.
-   */
+/**
+ * @brief Builds ground-truth centroids from data and a partition file.
+ *
+ * Reads points (uniform dimensionality), then reads one 1-based partition label per point,
+ * converts labels to 0-based, and computes per-cluster means. Writes centroids to a file.
+ * Shrinks the dataset if the partition file has fewer entries; warns if it has more.
+ *
+ * @param dataFileName Path to data points (whitespace-separated doubles).
+ * @param partitionFileName Path to partition labels (one integer per line, 1..K).
+ * @param outputFileName Path to write centroids (space-separated doubles per row).
+ * @return 0 on success; non-zero on invalid inputs, file I/O failures, or empty partitions.
+ * @errors Prints diagnostics to stderr/stdout and returns non-zero; alloc failures exit via helpers.
+ * @note Expects 1-based labels; converts to 0-based. Ignores extra partition lines beyond N.
+ */
   int generateGroundTruthCentroids(const char* dataFileName, const char* partitionFileName, const char* outputFileName)
   {
       // Read the data points
@@ -3718,10 +3863,16 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Debug function that calculates CI between a debug centroid file and ground truth.
+   * @brief Computes Centroid Index (CI) between a debug centroid file and ground truth.
    *
-   * This temporary function reads centroids from a debug file and compares them with
-   * ground truth centroids to calculate the Centroid Index (CI).
+   * Loads both centroid sets, validates matching dimensionality and non-empty inputs,
+   * then prints the CI. Intended for quick verification of centroid files.
+   *
+   * @param debugCentroidsFile Path to candidate centroid file.
+   * @param groundTruthFile Path to ground-truth centroid file.
+   * @return void
+   * @errors Prints diagnostics and returns early on file/dimension issues; allocations exit via helpers.
+   * @note CI compares mutual nearest-neighbor coverage; lower is better, 0 means perfect match.
    */
   void debugCalculateCI(const char* debugCentroidsFile, const char* groundTruthFile)
   {
@@ -3748,14 +3899,16 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Debug function that calculates SSE between centroids and data points.
+   * @brief Computes SSE for assigning points to nearest centroids from files.
    *
-   * This function reads centroids from a file and data points from another file,
-   * assigns each data point to the nearest centroid, and calculates the Sum of
-   * Squared Errors (SSE).
+   * Loads centroids and data points, validates matching dimensionality and non-empty inputs,
+   * assigns each point to its nearest centroid, and prints the resulting SSE.
    *
-   * @param centroidsFile The path to the file containing the centroids.
-   * @param dataFile The path to the file containing the data points.
+   * @param debugCentroidsFile Path to centroid file (one centroid per line).
+   * @param dataFile Path to data file (one point per line).
+   * @return void
+   * @errors Prints diagnostics and returns early on file/dimension issues; allocations exit via helpers.
+   * @note Uses squared Euclidean distance; lower SSE indicates tighter clustering.
    */
   void debugCalculateSSE(const char* debugCentroidsFile, const char* dataFile)
   {
@@ -3784,6 +3937,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
       freeDataPoints(&dataPoints);
   }
 
+  /**
+ * @brief Runs a quick CI and SSE sanity check with fixed test files.
+ */
   void runDebuggery()
   {
       debugCalculateCI("debuggery/output_worms_64d.txt", "gt/worms_64d-gt.txt");
@@ -3795,9 +3951,21 @@ void freeDataPointArray(DataPoint* points, size_t size)
   // Main //
   /////////
 
+  /**
+ * @brief Program entry: enumerates datasets, validates pairs, and runs selected algorithms.
+ *
+ * Discovers files under data/gt/centroids, pairs them by sorted order, creates per-dataset
+ * output folders, validates basic preconditions (N>0, 1<=K<=N, matching dimensionality),
+ * and invokes the chosen algorithms. Skips invalid datasets with a diagnostic and continues.
+ *
+ * @return 0 on success
+ * @errors Exits on directory count mismatches or fatal I/O errors via helpers; per-dataset
+ *         validation prints a warning and continues to the next dataset.
+ * @note Sets a Finnish numeric locale at startup for compatibility; some writers use the C locale.
+ */
   int main()
   {
-      //runDebuggery(); //TODO poista
+      //runDebuggery(); //Helper for PCA codes
       //return 0;
 
       set_numeric_locale_finnish();
@@ -3826,7 +3994,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           }
       }
 
-      for (size_t i = 0; i < dataCount; ++i)
+	  for (size_t i = 0; i < 3; ++i) //TODO : Lopulliseen 0
       {
           char dataFile[PATH_MAX];
           char gtFile[PATH_MAX];
@@ -3875,7 +4043,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
           loopCount = 1;
           // Run Repeated K-means
-          runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
+          //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
 
           loopCount = 1;
           if (i == 10 || i == 18)
@@ -3884,10 +4052,10 @@ void freeDataPointArray(DataPoint* points, size_t size)
               //loopCount = 1;
           }
           // Run Random Swap
-          runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, swaps, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
+          //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, swaps, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
 
           //loopCount = loops;
-          loopCount = 100;
+          loopCount = 1000;
           // Run Random Split
           //runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
 
