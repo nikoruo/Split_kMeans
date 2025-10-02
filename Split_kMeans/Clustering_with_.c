@@ -1350,37 +1350,6 @@ void freeDataPointArray(DataPoint* points, size_t size)
       fclose(timesFilePtr);
   }
 
-  /* Unbiased random in [0, m-1] using rejection sampling. */
-  static inline size_t bounded_rand(size_t m)
-  {
-      /* Use 32-bit draws when possible to avoid building 64-bit values. */
-      if (m <= (size_t)UINT_MAX)
-      {
-          unsigned int bound = (unsigned int)m;
-          /* threshold = 2^32 % bound; accept r ∈ [threshold, 2^32-1] */
-          unsigned int threshold = (unsigned int)(0u - bound) % bound;
-          unsigned int r;
-          do { RANDOMIZE(r); } while (r < threshold);
-          return (size_t)(r % bound);
-      }
-      else
-      {
-          unsigned long long bound = (unsigned long long)m;
-          /* threshold = 2^64 % bound; accept r ∈ [threshold, 2^64-1] */
-          unsigned long long threshold = (unsigned long long)(0u - bound) % bound;
-
-          unsigned int hi, lo;
-          unsigned long long r;
-          do
-          {
-              RANDOMIZE(hi);
-              RANDOMIZE(lo);
-              r = ((unsigned long long)hi << 32) | (unsigned long long)lo;
-          } while (r < threshold);
-          return (size_t)(r % bound);
-      }
-  }
-
   /////////////////
   // Clustering //
   ///////////////
@@ -1430,14 +1399,14 @@ void freeDataPointArray(DataPoint* points, size_t size)
           indices[i] = i;
       }
 
+      unsigned int randomValue;
       /* Partial Fisher–Yates: shuffle first K positions */
       for (size_t i = 0; i < numCentroids; ++i)
       {
-          size_t m = N - i;                  /* remaining span [i..N-1] */
-          size_t j = i + bounded_rand(m);    /* pick uniformly in span */
-          size_t tmp = indices[i];
-          indices[i] = indices[j];
-          indices[j] = tmp;
+          RANDOMIZE(randomValue);
+          size_t j = i + randomValue % (dataPoints->size - i);
+          size_t temp = indices[i];
+          indices[j] = temp;
       }
 
       /* Copy selected points into centroids */
@@ -1473,7 +1442,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }*/
 
       /* 1) Choose the first centroid at random */
-      size_t firstIndex = bounded_rand(dataPoints->size);
+      unsigned int randomValue;
+      RANDOMIZE(randomValue);
+      size_t firstIndex = (size_t)(randomValue % dataPoints->size);
       deepCopyDataPoint(&centroids->points[0], &dataPoints->points[firstIndex]);
 
       /* Distance cache: squared distance to the nearest chosen centroid so far */
@@ -1497,8 +1468,6 @@ void freeDataPointArray(DataPoint* points, size_t size)
           }
 
           // 3. Select a new centroid with probability r
-          unsigned int randomValue;
-
           RANDOMIZE(randomValue);
           double r = (double)randomValue / ((double)UINT_MAX + 1.0) * distSum;
           double cumulative = 0.0;
@@ -2206,8 +2175,13 @@ void freeDataPointArray(DataPoint* points, size_t size)
           }
 
           //Swap
-          size_t randomCentroidId = bounded_rand(centroids->size);
-          size_t randomDataPointId = bounded_rand(dataPoints->size);
+          unsigned int randomValue;
+
+          RANDOMIZE(randomValue);
+          size_t randomCentroidId = randomValue % centroids->size;
+
+          RANDOMIZE(randomValue);
+          size_t randomDataPointId = randomValue % dataPoints->size;
 
           memcpy(centroids->points[randomCentroidId].attributes, dataPoints->points[randomDataPointId].attributes, dimensions * sizeof(double));
 
@@ -2312,9 +2286,15 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       // Random centroids
-      size_t c1 = bounded_rand(clusterSize);          // uniform in [0, m-1]
-      size_t r = bounded_rand(clusterSize - 1);      // uniform in [0, m-2]
-      size_t c2 = (r < c1) ? r : r + 1;               // maps r to [0..m-1] \ {c1}
+      unsigned int randomValue;
+      RANDOMIZE(randomValue);
+      size_t c1 = randomValue % clusterSize;
+      size_t c2 = c1;
+      while (c2 == c1)
+      {
+          RANDOMIZE(randomValue);
+          c2 = randomValue % clusterSize;
+      }
 
       size_t datapoint1 = clusterIndices[c1];
       size_t datapoint2 = clusterIndices[c2];
@@ -2414,9 +2394,15 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       // Random centroids
-      size_t c1 = bounded_rand(clusterSize);
-      size_t c2 = bounded_rand(clusterSize - 1);
-      if (c2 >= c1) c2++;
+      unsigned int randomValue;
+      RANDOMIZE(randomValue);
+      size_t c1 = randomValue % clusterSize;
+      size_t c2 = c1;
+      while (c2 == c1)
+      {
+          RANDOMIZE(randomValue);
+          c2 = randomValue % clusterSize;
+      }
 
       size_t datapoint1 = clusterIndices[c1];
       size_t datapoint2 = clusterIndices[c2];
@@ -2520,9 +2506,15 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       // Select two random points from the cluster to be the new centroids
-      size_t c1 = bounded_rand(clusterSize);
-      size_t c2 = bounded_rand(clusterSize - 1);
-      if (c2 >= c1) c2++;
+      unsigned int randomValue;
+      RANDOMIZE(randomValue);
+      size_t c1 = randomValue % clusterSize;
+      size_t c2 = c1;
+      while (c2 == c1)
+      {
+          RANDOMIZE(randomValue);
+          c2 = randomValue % clusterSize;
+      }
 
       // Get the indices of the randomly selected data points
       size_t datapoint1 = clusterIndices[c1];
@@ -2652,9 +2644,15 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       // Random centroids
-      size_t idx1 = bounded_rand(clusterSize);
-      size_t r = bounded_rand(clusterSize - 1);
-      size_t idx2 = (r < idx1) ? r : r + 1;
+      unsigned int randomValue;
+      RANDOMIZE(randomValue);
+      size_t idx1 = randomValue % clusterSize;
+      size_t idx2 = idx1;
+      while (idx2 == idx1)
+      {
+          RANDOMIZE(randomValue);
+          idx2 = randomValue % clusterSize;
+      }
 
       Centroids localCentroids = allocateCentroids(2, dataPoints->points[0].dimensions);
 
@@ -2718,9 +2716,15 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       // Random centroids
-      size_t idx1 = bounded_rand(clusterSize);
-      size_t r = bounded_rand(clusterSize - 1);
-      size_t idx2 = (r < idx1) ? r : r + 1;
+      unsigned int randomValue;
+      RANDOMIZE(randomValue);
+      size_t idx1 = randomValue % clusterSize;
+      size_t idx2 = idx1;
+      while (idx2 == idx1)
+      {
+          RANDOMIZE(randomValue);
+          idx2 = randomValue % clusterSize;
+      }
 
       Centroids localCentroids = allocateCentroids(2, dataPoints->points[0].dimensions);
       deepCopyDataPoint(&localCentroids.points[0], &pointsInCluster.points[idx1]);
@@ -2776,7 +2780,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       while (centroids->size < maxCentroids)
       {
-          size_t clusterToSplit = bounded_rand(centroids->size);
+          RANDOMIZE(randomValue);
+          size_t clusterToSplit = randomValue % centroids->size;
 
           splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth);
 
@@ -3994,7 +3999,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           }
       }
 
-	  for (size_t i = 0; i < 3; ++i) //TODO : Lopulliseen 0
+	  for (size_t i = 0; i < dataCount; ++i) //TODO : Lopulliseen 0
       {
           char dataFile[PATH_MAX];
           char gtFile[PATH_MAX];
@@ -4055,7 +4060,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, swaps, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
 
           //loopCount = loops;
-          loopCount = 1000;
+          loopCount = 10;
           // Run Random Split
           //runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
 
