@@ -1199,15 +1199,15 @@ void freeDataPointArray(DataPoint* points, size_t size)
    */
   const char* getAlgorithmName(size_t algorithmId)
   {
-      switch (algorithmId) /* TODO: finalize names from Pasi's email */
+      switch (algorithmId)
       {
-      case 0: return "IntraCluster";
-      case 1: return "Global";
-      case 2: return "LocalRepartition";
-      case 3: return "RandomSwap";
-      case 4: return "Bisecting";
-      case 5: return "RandomSplit";
-      case 6: return "KMeans";
+      case 0: return "SKM-Intra";
+      case 1: return "SKM-Global";
+      case 2: return "SKM-Local";
+      case 3: return "RS";
+      case 4: return "BisectingKM";
+      case 5: return "SKM-Random";
+      case 6: return "KM";
       case 7: return "RKM";
       default:
           fprintf(stderr, "Error: Invalid algorithm type provided: %zu\n", algorithmId);
@@ -1400,7 +1400,6 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       unsigned int randomValue;
-      /* Partial Fisher–Yates: shuffle first K positions */
       for (size_t i = 0; i < numCentroids; ++i)
       {
           RANDOMIZE(randomValue);
@@ -1939,7 +1938,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           updateTimeTracking(trackTime, start, timeList, timeIndex);
       }
 
-      //TODO: tama tehdaan nyt vain iteraatiolle 0. Halutaanko tehda esim niin monta kertaa etta CI=0 tmv? Tai kommentoida kokonaan pois?
+      //NOTE: tama tehdaan nyt vain iteraatiolle 0. Halutaanko tehda esim niin monta kertaa etta CI=0 tmv? Tai kommentoida kokonaan pois?
       if (trackProgress)
       {
           trackProgressState(dataPoints, centroids, groundTruth, iterationCount, clusterToSplit, splitType, outputDirectory);
@@ -2253,7 +2252,6 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @param groundTruth Optional reference centroids (unused in computation).
    * @return void
    * @errors Exits on allocation failure.
-   * @note Skips split when the cluster has fewer than 2 points. Uses unbiased selection via bounded_rand.
    */
   void splitClusterIntraCluster(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t localMaxIterations, const Centroids* groundTruth)
   {
@@ -2266,7 +2264,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           }
       }
 
-      // Random split will break without this //TODO kommentoi lopullisesta
+      // Random split will break without this
       if (clusterSize < 2)
       {
           return;
@@ -2439,7 +2437,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       //#2
       centroids->size++;
-      centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint)); //TODO: periaatteessa aina tiedetaan lopullinen koko, niin pitaisiko reallocoinnit poistaa ja lisata jonnekin aikaisemmin se oikea koko naille
+      centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint));
       handleMemoryError(centroids->points);
       centroids->points[centroids->size - 1] = allocateDataPoint(dataPoints->points[0].dimensions);
       deepCopyDataPoint(&centroids->points[centroids->size - 1], &localCentroids.points[1]);
@@ -2613,7 +2611,6 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @param originalClusterSSE Current SSE of the cluster before splitting.
    * @return SSE drop (non-negative when the split helps).
    * @errors Exits on allocation failure.
-   * @note Uses unbiased seeding via `bounded_rand`. Returns 0.0 if the cluster has < 2 points.
    */
   double tentativeSseDrop(DataPoints* dataPoints, size_t clusterLabel, size_t localMaxIterations, double originalClusterSSE)
   {
@@ -2646,18 +2643,18 @@ void freeDataPointArray(DataPoint* points, size_t size)
       // Random centroids
       unsigned int randomValue;
       RANDOMIZE(randomValue);
-      size_t idx1 = randomValue % clusterSize;
-      size_t idx2 = idx1;
-      while (idx2 == idx1)
+      size_t c1 = randomValue % clusterSize;
+      size_t c2 = c1;
+      while (c2 == c1)
       {
           RANDOMIZE(randomValue);
-          idx2 = randomValue % clusterSize;
+          c2 = randomValue % clusterSize;
       }
 
       Centroids localCentroids = allocateCentroids(2, dataPoints->points[0].dimensions);
 
-      deepCopyDataPoint(&localCentroids.points[0], &pointsInCluster.points[idx1]);
-      deepCopyDataPoint(&localCentroids.points[1], &pointsInCluster.points[idx2]);
+      deepCopyDataPoint(&localCentroids.points[0], &pointsInCluster.points[c1]);
+      deepCopyDataPoint(&localCentroids.points[1], &pointsInCluster.points[c2]);
 
       // k-means
       double resultSse = runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, NULL);
@@ -2718,17 +2715,17 @@ void freeDataPointArray(DataPoint* points, size_t size)
       // Random centroids
       unsigned int randomValue;
       RANDOMIZE(randomValue);
-      size_t idx1 = randomValue % clusterSize;
-      size_t idx2 = idx1;
-      while (idx2 == idx1)
+      size_t c1 = randomValue % clusterSize;
+      size_t c2 = c1;
+      while (c2 == c1)
       {
           RANDOMIZE(randomValue);
-          idx2 = randomValue % clusterSize;
+          c2 = randomValue % clusterSize;
       }
 
       Centroids localCentroids = allocateCentroids(2, dataPoints->points[0].dimensions);
-      deepCopyDataPoint(&localCentroids.points[0], &pointsInCluster.points[idx1]);
-      deepCopyDataPoint(&localCentroids.points[1], &pointsInCluster.points[idx2]);
+      deepCopyDataPoint(&localCentroids.points[0], &pointsInCluster.points[c1]);
+      deepCopyDataPoint(&localCentroids.points[1], &pointsInCluster.points[c2]);
 
       ClusteringResult localResult = allocateClusteringResult(dataPoints->size, 2, dataPoints->points[0].dimensions);
 
@@ -2826,7 +2823,6 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @param trackProgress/timeList/timeIndex/start/trackTime/createCsv Logging/timing controls and buffers.
    * @return Final SSE after all splits and final refinement.
    * @errors Exits on allocation failure in underlying helpers.
-   * @note Seeding inside split helpers uses `bounded_rand` to avoid modulo bias.
    */
   double runSseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, const Centroids* groundTruth, size_t splitType, const char* outputDirectory,
       bool trackProgress, double* timeList, size_t* timeIndex, clock_t start, bool trackTime, bool createCsv)
@@ -3066,7 +3062,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       //Step 4: Run the final k-means
-      double finalResultSse = runKMeans(dataPoints, maxIterations, centroids, groundTruth); //TODO: Pitaisiko poistaa? Final K-means ei taida olla algoritmia
+      double finalResultSse = runKMeans(dataPoints, maxIterations, centroids, groundTruth);
 
       handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
           dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, 4);
@@ -3999,7 +3995,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           }
       }
 
-	  for (size_t i = 0; i < dataCount; ++i) //TODO : Lopulliseen 0
+	  for (size_t i = 3; i < 4; ++i) //TODO : Lopulliseen datacount
       {
           char dataFile[PATH_MAX];
           char gtFile[PATH_MAX];
@@ -4014,11 +4010,11 @@ void freeDataPointArray(DataPoint* points, size_t size)
           createDatasetDirectory(outputDirectory, baseName, datasetDirectory, sizeof(datasetDirectory));
 
           //Settings
-          size_t loops = 1;        // Number of loops to run the algorithms //todo lopulliseen 100
-          size_t scaling = 1;        // Scaling factor for the printed values //TODO: Ei kaytossa
+          size_t loops = 100;        // Number of loops to run the algorithms
+          size_t scaling = 1;        // Scaling factor for the printed values
           size_t maxIterations = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
           size_t maxRepeats = 1000;     // Number of "repeats" for the repeated k-means algorithm //TODO lopulliseen 1000
-          size_t maxSwaps = 1000;     // Number of trial swaps for the random swap algorithm //TODO lopulliseen 5000
+          size_t maxSwaps = 5000;     // Number of trial swaps for the random swap algorithm
           size_t bisectingIterations = 5;        // Number of tryouts for the bisecting k-means algorithm
           bool trackProgress = true;     // Track progress of the algorithms
           bool trackTime = true;     // Track time of the algorithms
@@ -4047,20 +4043,18 @@ void freeDataPointArray(DataPoint* points, size_t size)
           //runKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory);
 
           loopCount = 1;
+          if (i == 10 || i == 18)
+          {
+              loopCount = 1;
+          }
           // Run Repeated K-means
           //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
 
           loopCount = 1;
-          if (i == 10 || i == 18)
-          {
-              //swaps = maxSwaps * 5;
-              //loopCount = 1;
-          }
           // Run Random Swap
           //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, swaps, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
 
-          //loopCount = loops;
-          loopCount = 10;
+          loopCount = 100;
           // Run Random Split
           //runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
 
