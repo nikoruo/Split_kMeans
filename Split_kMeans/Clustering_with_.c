@@ -1405,6 +1405,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           RANDOMIZE(randomValue);
           size_t j = i + randomValue % (dataPoints->size - i);
           size_t temp = indices[i];
+          indices[i] = indices[j];
           indices[j] = temp;
       }
 
