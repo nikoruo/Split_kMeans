@@ -2132,7 +2132,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       bool trackProgress, double* timeList, size_t* timeIndex, clock_t start, bool trackTime, bool createCsv)
   {
       double bestSse = DBL_MAX;
-      //size_t bestCI = SIZE_MAX;
+      size_t bestCI = SIZE_MAX;
       size_t kMeansIterations = 2;
       size_t numCentroids = centroids->size;
       size_t dimensions = centroids->points[0].dimensions;
@@ -2202,14 +2202,16 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
               bestSse = resultSse;
 
-              //size_t currentCi = calculateCentroidIndex(centroids, groundTruth);
-              //bestCI = currentCi;
+              size_t currentCi = calculateCentroidIndex(centroids, groundTruth);
+              bestCI = currentCi;
 
-              //appendLogCsv(csvFile, iterationCount, currentCi, resultSse);
-              //updateTimeTracking(trackTime, start, timeList, timeIndex);
+			  //For all swaps in RS, we want to track progress p1/2
+              appendLogCsv(csvFile, iterationCount, currentCi, resultSse);
+              updateTimeTracking(trackTime, start, timeList, timeIndex);
 
-              handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
-                  dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, 3);
+			  //For all iterations in RS, we want to track progress
+              //handleLoggingAndTracking(trackTime, start, timeList, timeIndex, trackProgress,
+                //  dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, 3); 
           }
           else
           {
@@ -2225,8 +2227,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
                   dataPoints->points[j].partition = backupPartitions[j];
               }
 
-              //appendLogCsv(csvFile, iterationCount, bestCI, bestSse);
-              //updateTimeTracking(trackTime, start, timeList, timeIndex);
+              //For all swaps in RS, we want to track progress p2/2
+              appendLogCsv(csvFile, iterationCount, bestCI, bestSse);
+              updateTimeTracking(trackTime, start, timeList, timeIndex);
           }
 
           iterationCount++;
@@ -3996,7 +3999,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           }
       }
 
-	  for (size_t i = 3; i < 4; ++i) //TODO : Lopulliseen datacount
+	  for (size_t i = 0; i < dataCount; ++i)
       {
           char dataFile[PATH_MAX];
           char gtFile[PATH_MAX];
@@ -4055,17 +4058,17 @@ void freeDataPointArray(DataPoint* points, size_t size)
           // Run Random Swap
           //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, swaps, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
 
-          loopCount = 100;
-          // Run Random Split
+          loopCount = loops;
+          // Run SKM-Random
           //runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
 
-          // Run SSE Split (Intra-cluster)
+          // Run SKM-Intra
           //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 0, trackProgress, trackTime);
 
-          // Run SSE Split (Global)
+          // Run SKM-Global
           //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 1, trackProgress, trackTime);
 
-          // Run SSE Split (Local Repartition)
+          // Run SKM-Local
           runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 2, trackProgress, trackTime);
 
           // Run Bisecting K-means
