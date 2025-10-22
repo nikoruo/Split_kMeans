@@ -4,7 +4,7 @@
 
 /* Update log
 * --------------------------------------------------------------------
-* Version 1.0.0 - 22-10-2025 by Niko Ruohonen TODO
+* Version 1.0.0 - 22-10-2025 by Niko Ruohonen
 * - Initial release
 * --------------------------------------------------------------------
 * Update 1.1...
@@ -4059,8 +4059,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
               }
               else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
               {
-                  printf("Usage: %s <data.txt> [options] [gt.txt]\n\n", argv[0]);
-                  printf("SKM-Local Clustering Algorithm\n\n");
+                  printf("Usage: %s -k <K> [-r <runs>] [--track-progress] [--track-time] <data.txt> [gt.txt]\n\n", argv[0]);                  printf("SKM-Local Clustering Algorithm\n\n");
                   printf("Options:\n");
                   printf("  -k <K>              Number of clusters\n");
                   printf("  -r, --runs <N>      Number of runs (default: 100)\n");
@@ -4150,7 +4149,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
     }
       
 
-	  for (size_t i = 3; i < 4; ++i)
+	  for (size_t i = 0; i < dataCount; ++i)
       {
           // Determine file paths based on mode
           char currentDataFile[PATH_MAX];
