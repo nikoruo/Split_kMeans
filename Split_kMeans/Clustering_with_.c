@@ -4,7 +4,7 @@
 
 /* Update log
 * --------------------------------------------------------------------
-* Version 1.0.0 - 2025-10-01 by Niko Ruohonen TODO
+* Version 1.0.0 - 22-10-2025 by Niko Ruohonen TODO
 * - Initial release
 * --------------------------------------------------------------------
 * Update 1.1...
@@ -22,7 +22,7 @@
 * to ensure maximum efficiency and effectiveness when applied to multi-dimensional data points.
 *
 * Author: Niko Ruohonen
-* Date: 2025-10-01
+* Date: 22-10-2025
 * Version: 1.0.0
 *
 * Details:
@@ -4150,7 +4150,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
     }
       
 
-	  for (size_t i = 0; i < 1; ++i)
+	  for (size_t i = 0; i < dataCount; ++i)
       {
           // Determine file paths based on mode
           char currentDataFile[PATH_MAX];
