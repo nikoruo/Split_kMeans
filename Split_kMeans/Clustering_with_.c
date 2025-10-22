@@ -45,26 +45,48 @@
 *   in the algorithm setup where initial centroids are chosen.
 *
 * Usage:
-* The project can be run by executing the main function, which initializes datasets, ground truth files, and clustering parameters.
-* It then runs different clustering algorithms on each dataset and writes the results to output files.
+* 1. Directory Batch Mode (no command-line arguments):
+*    The project can be run by executing the main function, which initializes datasets, ground truth files, and clustering parameters.
+*    It then runs different clustering algorithms on each dataset and writes the results to output files.
 *
-* Structure of the project directory:
-*  ProjectRoot/
-    ├─ data/
-    │  ├─ datasetA.txt               # points: one data point per line; all rows same dimensionality
-    │  └─ datasetB.txt
-    ├─ gt/
-    │  ├─ datasetA-gt.txt            # ground truth centroids: one centroid per line; dimensions must match the corresponding data file
-    │  └─ datasetB-gt.txt
-    └─ centroids/
-       ├─ datasetA.k                 # contains ONLY a single positive integer: the number of clusters K (no extra text/BOM)
-       └─ datasetB.k
+*    Structure of the project directory:
+*    ProjectRoot/
+        ├─ data/
+        │  ├─ datasetA.txt               # points: one data point per line; all rows same dimensionality
+        │  └─ datasetB.txt
+        ├─ gt/
+        │  ├─ datasetA-gt.txt            # ground truth centroids: one centroid per line; dimensions must match the corresponding data file
+        │  └─ datasetB-gt.txt
+        └─ centroids/
+            ├─ datasetA_k.txt                 # contains ONLY a single positive integer: the number of clusters K (no extra text/BOM)
+            └─ datasetB_k.txt
 *
-* Pairing and file counts:
-* - Input files are discovered at runtime via directory enumeration (list_files) from "data/", "gt/", and "centroids/".
-* - The number of files in these three folders must match; otherwise the program exits with an error.
-* - Files are paired by sorted filename order. To avoid mismatches, keep base names aligned across folders,
-*   e.g., "datasetA.txt" <-> "datasetA-gt.txt" <-> "datasetA.k".
+*   Pairing and file counts:
+*   - Input files are discovered at runtime via directory enumeration (list_files) from "data/", "gt/", and "centroids/".
+*   - The number of files in these three folders must match; otherwise the program exits with an error.
+*   - Files are paired by sorted filename order. To avoid mismatches, keep base names aligned across folders,
+*       e.g., "datasetA.txt" <-> "datasetA-gt.txt" <-> "datasetA_k.txt".
+*
+* 2. CLI Mode (with command-line arguments):
+*    - Run the executable with arguments to process a single dataset.
+*    - Syntax: split.exe -k <K> [-r <runs>] [--track-progress] [--track-time] <data.txt> [gt.txt]
+*    - Required: data file and K value (via -k flag)
+*    - Optional: ground truth file, number of runs, progress tracking, and time tracking
+*    - K must be explicitly specified via -k; there is no fallback to .txt files in CLI mode
+*    - When runs=1, both --track-progress and --track-time are automatically enabled
+*    - Files can be located anywhere; full or relative paths are accepted
+*    - Examples:
+*        split.exe mydata.txt -k 5
+*        split.exe C:\datasets\mydata.txt -k 5 -r 50 --track-progress C:\datasets\groundtruth.txt
+*        split.exe -h (displays help)
+*
+*   CLI Options:
+*       -k <K>              (Required) Number of clusters
+*       -r, --runs <N>      Number of independent runs (default: 100)
+*       --track-progress    Enable per-iteration statistics and snapshot files
+*       --track-time        Record elapsed times per iteration
+*       -h, --help          Display usage information
+*       [gt.txt]            Optional ground truth file for CI calculation; if omitted, CI uses empty set*
 *
 * Results:
 *  ProjectRoot/
@@ -85,11 +107,12 @@
             └─ ...
 *
 * Notes:
-* - Ensure that the "data/", "gt/", and "centroids/" folders contain the same number of files, with matching base names,
-*   so files pair correctly across folders.
-* - Each data file must be space-separated doubles; all rows must have the same number of dimensions (columns).
-* - Each ground-truth file (gt/*.txt) must use the same dimensionality as its corresponding data file.
-* - Each .k file (centroids/*.k) must contain a single positive integer K and nothing else.
+*   Batch Mode: 
+*   - Ensure that the "data/", "gt/", and "centroids/" folders contain the same number of files, with matching base names,
+*       so files pair correctly across folders.
+*   - Each data file must be space-separated doubles; all rows must have the same number of dimensions (columns).
+*   - Each ground-truth file (gt/*.txt) must use the same dimensionality as its corresponding data file.
+*   - Each K file (centroids/*.txt) must contain a single positive integer K and nothing else.
 * - Outputs are written under outputs/<timestamp>/<dataset-base-name>/.
 * - CSV files use semicolons (;) as separators.
 * - Numeric formatting in some outputs depends on the current C locale. The program sets fi_FI at startup for Excel compatibility on Finnish systems, (<- commented off by default for compatibility)
@@ -3956,109 +3979,271 @@ void freeDataPointArray(DataPoint* points, size_t size)
   // Main //
   /////////
 
-  /**
- * @brief Program entry: enumerates datasets, validates pairs, and runs selected algorithms.
+/**
+ * @brief Program entry: supports directory batch mode or single-file CLI mode.
  *
- * Discovers files under data/gt/centroids, pairs them by sorted order, creates per-dataset
- * output folders, validates basic preconditions (N>0, 1<=K<=N, matching dimensionality),
- * and invokes the chosen algorithms. Skips invalid datasets with a diagnostic and continues.
+ * **Directory mode** (no args):
+ *   - Enumerates `data/`, `gt/`, `centroids/` and pairs files by sorted order.
+ *   - Requires matching file counts across all three directories.
+ *   - K values read from `.txt` files in `centroids/` directory.
+ *
+ * **CLI mode** (args provided):
+ *   - `split.exe <data.txt> -k <K> [-r <runs>] [--track-progress] [--track-time] [gt.txt]`
+ *   - **Required**: data file and K value via `-k <number>`.
+ *   - **Optional**: ground truth file (if omitted, CI calculations use empty set).
+ *   - **Optional**: `-r <runs>` or `--runs <runs>` (default: 100).
+ *   - **Optional**: `--track-progress` enables per-iteration stats/snapshots.
+ *   - **Optional**: `--track-time` records elapsed times per iteration.
+ *   - **Auto-enable tracking**: When runs=1, both tracking flags default to true.
+ *   - **Help**: `-h` or `--help` displays usage information.
  *
  * @return 0 on success
- * @errors Exits on directory count mismatches or fatal I/O errors via helpers; per-dataset
- *         validation prints a warning and continues to the next dataset.
- * @note Sets a Finnish numeric locale at startup for compatibility; some writers use the C locale.
+ * @errors Exits on invalid arguments, file I/O errors, missing K parameter, or validation failures.
+ * @note CLI mode enforces explicit K specification; no fallback to `.txt` files.
  */
-  int main()
+  int main(int argc, char* argv[])
   {
       //runDebuggery(); //Helper for PCA codes
       //return 0;
 
-      set_numeric_locale_finnish();
+      //set_numeric_locale_finnish();
 
       char outputDirectory[PATH_MAX];
       createUniqueDirectory(outputDirectory, sizeof(outputDirectory));
 
-      char** dataNames = NULL, ** gtNames = NULL, ** kNames = NULL;
-      size_t dataCount = list_files("data", &dataNames);
-      size_t gtCount = list_files("gt", &gtNames);
-      size_t kCount = list_files("centroids", &kNames);
+      const char* cliDataFile = NULL;
+      const char* cliGtFile = NULL;
+      size_t cliNumCentroids = 0;
+      size_t cliLoops = 100;
+      bool cliTrackProgress = false;
+      bool cliTrackTime = false;
 
-      if (dataCount == 0 || dataCount != gtCount || dataCount != kCount)
-      {
-          fprintf(stderr,
-              "Directory mismatch: data=%zu, gt=%zu, centroids=%zu\n",
-              dataCount, gtCount, kCount);
-          exit(EXIT_FAILURE);
-      }
+      size_t dataCount = 0;
+      char** dataNames = NULL;
+      char** gtNames = NULL;
+      char** kNames = NULL;
 
-      if (LOGGING == 3)
+      // ============================================================
+    // Parse CLI arguments if provided
+    // ============================================================
+      if (argc > 1)
       {
-          for (size_t i = 0; i < dataCount; ++i)
+          for (int i = 1; i < argc; ++i)
           {
-              printf("Dataset %zu: %s\n", i + 1, dataNames[i]);
+              if (strcmp(argv[i], "-k") == 0)
+              {
+                  if (i + 1 >= argc)
+                  {
+                      fprintf(stderr, "Error: -k requires a numeric argument\n");
+                      fprintf(stderr, "Usage: %s <data.txt> [-k <K>] [-r <runs>] [--track-progress] [--track-time] [gt.txt]\n", argv[0]);
+                      exit(EXIT_FAILURE);
+                  }
+                  cliNumCentroids = (size_t)atol(argv[++i]);
+              }
+              else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--runs") == 0)
+              {
+                  if (i + 1 >= argc)
+                  {
+                      fprintf(stderr, "Error: -r/--runs requires a numeric argument\n");
+                      exit(EXIT_FAILURE);
+                  }
+                  cliLoops = (size_t)atol(argv[++i]);
+              }
+              else if (strcmp(argv[i], "--track-progress") == 0)
+              {
+                  cliTrackProgress = true;
+              }
+              else if (strcmp(argv[i], "--track-time") == 0)
+              {
+                  cliTrackTime = true;
+              }
+              else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
+              {
+                  printf("Usage: %s <data.txt> [options] [gt.txt]\n\n", argv[0]);
+                  printf("SKM-Local Clustering Algorithm\n\n");
+                  printf("Options:\n");
+                  printf("  -k <K>              Number of clusters\n");
+                  printf("  -r, --runs <N>      Number of runs (default: 100)\n");
+                  printf("  --track-progress    Enable progress tracking\n");
+                  printf("  --track-time        Enable time tracking\n");
+                  printf("  -h, --help          Show this help\n");
+                  exit(EXIT_SUCCESS);
+              }
+              else if (!cliDataFile)
+              {
+                  cliDataFile = argv[i];
+              }
+              else if (!cliGtFile)
+              {
+                  cliGtFile = argv[i];
+              }
+              else
+              {
+                  fprintf(stderr, "Error: Unknown option: %s\n", argv[i]);
+                  fprintf(stderr, "Use -h for help\n");
+                  exit(EXIT_FAILURE);
+              }
           }
+
+          // CLI mode: single dataset from command line
+          if (!cliDataFile)
+          {
+              fprintf(stderr, "Error: Data file required\n");
+              exit(EXIT_FAILURE);
+          }
+
+          // K must be explicitly specified via -k in CLI mode
+          if (cliNumCentroids == 0)
+          {
+              fprintf(stderr, "Error: K must be specified with -k <number>\n");
+              fprintf(stderr, "Usage: %s <data.txt> -k <K> [-r <runs>] [--track-progress] [--track-time] [gt.txt]\n", argv[0]);
+              exit(EXIT_FAILURE);
+          }
+
+          // Enable tracking by default for single runs
+          if (cliLoops == 1)
+          {
+              cliTrackProgress = true;
+              cliTrackTime = true;
+          }
+
+          printf("\n=== CLI Mode: SKM-Local ===\n");
+          printf("Data: %s\n", cliDataFile);
+          printf("Ground truth: %s\n", cliGtFile ? cliGtFile : "None");
+          printf("K: %zu, Runs: %zu\n\n", cliNumCentroids, cliLoops);
+
+          // Create single-file lists for unified loop
+          dataCount = 1;
+          dataNames = createStringList(1);
+          gtNames = createStringList(1);
+          kNames = createStringList(1);
+
+          STRCPY(dataNames[0], PATH_MAX, cliDataFile);
+          if (cliGtFile)
+          {
+              STRCPY(gtNames[0], PATH_MAX, cliGtFile);
+          }
+          // K file path (empty, won't be used since we have cliNumCentroids)
+          kNames[0][0] = '\0';
       }
-
-	  for (size_t i = 0; i < dataCount; ++i)
+      else 
       {
-          char dataFile[PATH_MAX];
-          char gtFile[PATH_MAX];
-          char kFile[PATH_MAX];
-          snprintf(dataFile, sizeof dataFile, "data%c%s", PATHSEP, dataNames[i]);
-          snprintf(gtFile, sizeof gtFile, "gt%c%s", PATHSEP, gtNames[i]);
-          snprintf(kFile, sizeof kFile, "centroids%c%s", PATHSEP, kNames[i]);
-          char* baseName = removeExtension(dataNames[i]);
+          // ============================================================
+          // Directory batch mode
+          // ============================================================
+          dataCount = list_files("data", &dataNames);
+          size_t gtCount = list_files("gt", &gtNames);
+          size_t kCount = list_files("centroids", &kNames);
 
-          // Creates a subdirectory for each the dataset
+          if (dataCount == 0 || dataCount != gtCount || dataCount != kCount)
+          {
+              fprintf(stderr, "Directory mismatch: data=%zu, gt=%zu, centroids=%zu\n",
+                  dataCount, gtCount, kCount);
+              exit(EXIT_FAILURE);
+          }
+
+          printf("=== Directory Batch Mode: %zu datasets ===\n\n", dataCount);
+
+          // Batch mode defaults
+          cliTrackProgress = true;
+          cliTrackTime = true;
+    }
+      
+
+	  for (size_t i = 0; i < 1; ++i)
+      {
+          // Determine file paths based on mode
+          char currentDataFile[PATH_MAX];
+          char currentGtFile[PATH_MAX];
+          char* baseName = NULL;
+          size_t currentK = 0;
+          size_t currentLoops = 0;
+          bool currentTrackProgress = false;
+          bool currentTrackTime = false;
+
+          if (argc > 1)
+          {
+              // CLI mode: use parsed values
+              STRCPY(currentDataFile, sizeof(currentDataFile), cliDataFile);
+              if (cliGtFile)
+              {
+                  STRCPY(currentGtFile, sizeof(currentGtFile), cliGtFile);
+              }
+              else
+              {
+                  currentGtFile[0] = '\0';  // No ground truth
+              }
+
+              baseName = removeExtension(cliDataFile);
+              char* baseNameOnly = strrchr(baseName, '/');
+              if (!baseNameOnly) baseNameOnly = strrchr(baseName, '\\');
+              if (baseNameOnly) baseNameOnly++; else baseNameOnly = baseName;
+              baseName = baseNameOnly;
+
+              currentK = cliNumCentroids;
+              currentLoops = cliLoops;
+              currentTrackProgress = cliTrackProgress;
+              currentTrackTime = cliTrackTime;
+          }
+          else
+          {
+              // Batch mode: build paths from file lists
+              snprintf(currentDataFile, sizeof(currentDataFile), "data%c%s", PATHSEP, dataNames[i]);
+              snprintf(currentGtFile, sizeof(currentGtFile), "gt%c%s", PATHSEP, gtNames[i]);
+
+              char kFile[PATH_MAX];
+              snprintf(kFile, sizeof(kFile), "centroids%c%s", PATHSEP, kNames[i]);
+
+              baseName = removeExtension(dataNames[i]);
+              currentK = readKFromFile(kFile);
+              currentLoops = 100;  // Default for batch
+              currentTrackProgress = cliTrackProgress;
+              currentTrackTime = cliTrackTime;
+          }
+
+          // Create dataset subdirectory
           char datasetDirectory[PATH_MAX];
           createDatasetDirectory(outputDirectory, baseName, datasetDirectory, sizeof(datasetDirectory));
 
-          //Settings
-          size_t loops = 100;        // Number of loops to run the algorithms
-          size_t scaling = 1;        // Scaling factor for the printed values
-          size_t maxIterations = SIZE_MAX; // Maximum number of iterations for the k-means algorithm
-          size_t maxRepeats = 1000;     // Number of "repeats" for the repeated k-means algorithm //TODO lopulliseen 1000
-          size_t maxSwaps = 5000;     // Number of trial swaps for the random swap algorithm
-          size_t bisectingIterations = 5;        // Number of tryouts for the bisecting k-means algorithm
-          bool trackProgress = true;     // Track progress of the algorithms
-          bool trackTime = true;     // Track time of the algorithms
-
-          DataPoints dataPoints = readDataPoints(dataFile);
-          Centroids  groundTruth = readCentroids(gtFile);
-          size_t loopCount = loops;
-          size_t swaps = maxSwaps;
-          size_t numDimensions = getNumDimensions(dataFile);
-          size_t numCentroids = readKFromFile(kFile);
-
-          printf("Starting the process\n");
-          printf("Dataset: %s\n", baseName);
-
+          // Read data and ground truth
+          size_t numDimensions = getNumDimensions(currentDataFile);
           if (numDimensions == 0)
           {
-              fprintf(stderr, "--> Skipping (couldn’t read dimensions)\n");
+              fprintf(stderr, "--> Skipping %s (couldn't read dimensions)\n", baseName);
               continue;
           }
-          printf("Number of dimensions in the data: %zu\n", numDimensions);
-          printf("Dataset size: %zu\n", dataPoints.size);
-          printf("Number of clusters in the data: %zu\n", numCentroids);
-          printf("Number of loops: %zu\n\n", loopCount);
+
+          DataPoints dataPoints = readDataPoints(currentDataFile);
+          if (dataPoints.size == 0)
+          {
+              fprintf(stderr, "--> Skipping %s (no data points)\n", baseName);
+              continue;
+          }
+
+          Centroids groundTruth = { NULL, 0 };
+          if (currentGtFile[0] != '\0')
+          {
+              groundTruth = readCentroids(currentGtFile);
+          }
+
+          printf("Starting process\n");
+          printf("Dataset: %s\n", baseName);
+          printf("Dimensions: %zu, Data points: %zu, K: %zu, Runs: %zu\n\n",
+              numDimensions, dataPoints.size, currentK, currentLoops);
+
+          // Algorithm parameters
+          size_t scaling = 1;
+          size_t maxIterations = SIZE_MAX;
 
           // Run K-means
           //runKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory);
 
-          loopCount = 1;
-          if (i == 10 || i == 18)
-          {
-              loopCount = 1;
-          }
           // Run Repeated K-means
           //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, maxRepeats, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
 
-          loopCount = 1;
           // Run Random Swap
           //runRandomSwapAlgorithm(&dataPoints, &groundTruth, numCentroids, swaps, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
 
-          loopCount = loops;
           // Run SKM-Random
           //runRandomSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime);
 
@@ -4069,7 +4254,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           //runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 1, trackProgress, trackTime);
 
           // Run SKM-Local
-          runSseSplitAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, 2, trackProgress, trackTime);
+          runSseSplitAlgorithm(&dataPoints, &groundTruth, currentK, maxIterations, currentLoops, scaling, baseName, datasetDirectory, 2, currentTrackProgress, currentTrackTime);
 
           // Run Bisecting K-means
           //runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, numCentroids, maxIterations, loopCount, scaling, baseName, datasetDirectory, trackProgress, trackTime, bisectingIterations);

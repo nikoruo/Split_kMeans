@@ -11,6 +11,7 @@ License: AGPL-3.0-only (see LICENSE)
 # TLDR
 - Default run: SSE Split (Local Repartition, splitType=2) with random unique centroid initialization.
 - All other algorithms are commented out in `main()` in `Split_kMeans/clustering_with_.c`.
+- Two modes: **Directory Batch Mode** (no args) and **CLI Mode** (with args).
 
 ## Features
 
@@ -41,6 +42,7 @@ License: AGPL-3.0-only (see LICENSE)
 
 ## Project layout
 
+### Directory Batch Mode structure:
 - data/ — input datasets, one point per line (whitespace-separated doubles). All rows must have identical dimensionality.
 - gt/ — ground-truth centroids, one centroid per line (same dimensionality as corresponding data file).
 - centroids/ — a `.k` file per dataset containing only one positive integer K (UTF‑8 BOM tolerated).
@@ -63,6 +65,11 @@ Example formats
   9.00 2.30 8.70
 - K file (single integer, no extra content):
   2
+
+### CLI Mode:
+- Files can be located anywhere; provide full or relative paths on the command line.
+- No specific directory structure required.
+- Outputs still written to: outputs/<YYYY-MM-DD_HH-MM-SS>/<dataset-base-name>/
 
 ## How it works (high level)
 
@@ -94,12 +101,17 @@ Notes
 
 ## Usage (user manual)
 
+### Directory Batch Mode (no arguments)
 Input discovery
 - Program looks for:
   - data/*.txt — points
   - gt/*.txt — ground-truth centroids
   - centroids/*.k — K per dataset
 - All three folders must contain the same number of files; pairs are formed by sorted filename order.
+
+### CLI Mode (with arguments)
+Syntax:
+*.exe -k <K> [-r <runs>] [--track-progress] [--track-time] <data.txt> [gt.txt]
 
 Runtime behavior
 - On start, a folder is created: outputs/<YYYY-MM-DD_HH-MM-SS>/.
@@ -157,10 +169,12 @@ These helpers are available (call them from `main()` when needed):
 
 ## Notes and limitations
 
-- Input pairing is strictly by sorted order; keep file bases aligned across data/gt/centroids/.
-- `.k` files must contain a single positive integer (no trailing content).
+- **Batch Mode**: Input pairing is strictly by sorted order; keep file bases aligned across data/gt/centroids/.
+- **CLI Mode**: Files can be located anywhere; K must be explicitly specified via `-k`.
+- K files (batch mode) must contain a single positive integer (no trailing content).
 - Some algorithms log only during the first loop when `trackProgress` is true.
 - K-means++ seeding is implemented but not enabled by default.
+- Ground truth is optional in CLI mode; if omitted, CI calculations use an empty centroid set.
 
 ## Acknowledgements
 
