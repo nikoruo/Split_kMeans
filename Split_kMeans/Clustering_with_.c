@@ -111,8 +111,8 @@
 *   - Ensure that the "data/", "gt/", and "centroids/" folders contain the same number of files, with matching base names,
 *       so files pair correctly across folders.
 *   - Each data file must be space-separated doubles; all rows must have the same number of dimensions (columns).
-*   - Each ground-truth file (gt/*.txt) must use the same dimensionality as its corresponding data file.
-*   - Each K file (centroids/*.txt) must contain a single positive integer K and nothing else.
+*   - Each ground-truth file (gt/\*.txt) must use the same dimensionality as its corresponding data file.
+*   - Each K file (centroids/\*.txt) must contain a single positive integer K and nothing else.
 * - Outputs are written under outputs/<timestamp>/<dataset-base-name>/.
 * - CSV files use semicolons (;) as separators.
 * - Numeric formatting in some outputs depends on the current C locale. The program sets fi_FI at startup for Excel compatibility on Finnish systems, (<- commented off by default for compatibility)
@@ -4150,7 +4150,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
     }
       
 
-	  for (size_t i = 0; i < dataCount; ++i)
+	  for (size_t i = 3; i < 4; ++i)
       {
           // Determine file paths based on mode
           char currentDataFile[PATH_MAX];

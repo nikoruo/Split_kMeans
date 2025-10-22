@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: AGPL-3.0-only
+﻿/* SPDX-License-Identifier: AGPL-3.0-only
 * Copyright (C) 2025 Niko Ruohonen and contributors
 */
 
@@ -43,6 +43,12 @@
 #if !defined(_MSC_VER)
 #  ifndef _GNU_SOURCE
 #    define _GNU_SOURCE
+#  endif
+/* MinGW needs POSIX visibility in C11 mode */
+#  if defined(__MINGW32__) || defined(__MINGW64__)
+#    ifndef _POSIX_C_SOURCE
+#      define _POSIX_C_SOURCE 200809L
+#    endif
 #  endif
 #endif
 
@@ -142,7 +148,6 @@ static int cmp_charptr(const void* a, const void* b)
 
 # include <errno.h>
 # include <limits.h>
-# include <pthread.h>
 # include <stdint.h>
 # include <stdio.h>
 # include <stdlib.h>
@@ -151,46 +156,99 @@ static int cmp_charptr(const void* a, const void* b)
 # include <time.h>
 # include <unistd.h>
 
+# ifdef _REENTRANT
+#   include <pthread.h>
+# endif
+
 /* Provide a fallback when PATH_MAX is not defined */
 # ifndef PATH_MAX
 #   define PATH_MAX 4096
 # endif
 
+/* Ensure strdup is declared (may not be visible with strict C11) */
+#if defined(__MINGW32__) || defined(__MINGW64__)
+    extern char* strdup(const char*);
+    
+    /* MinGW doesn't provide strtok_r, so we implement it */
+    static inline char* _mingw_strtok_r(char* str, const char* delim, char** saveptr)
+    {
+        char* token;
+        if (str == NULL) str = *saveptr;
+        
+        /* Skip leading delimiters */
+        str += strspn(str, delim);
+        if (*str == '\0') {
+            *saveptr = str;
+            return NULL;
+        }
+        
+        /* Find end of token */
+        token = str;
+        str = strpbrk(token, delim);
+        if (str == NULL) {
+            /* No more delimiters; point saveptr to end */
+            *saveptr = token + strlen(token);
+        } else {
+            /* Terminate token and update saveptr */
+            *str = '\0';
+            *saveptr = str + 1;
+        }
+        return token;
+    }
+#endif
+
 /* Safe wrappers */
+#if defined(__MINGW32__) || defined(__MINGW64__)
+/* MinGW-specific implementations (GCC/Clang on Windows) */
+# include <windows.h>  /* Needed for rand_s and mkdir fallback */
+
+# define STRTOK(str, delim, ctx) _mingw_strtok_r((str), (delim), (ctx))
+# define MAKE_DIR(path)     mkdir(path)
+
+/* MinGW localtime_r wrapper */
+static inline struct tm* _mingw_localtime_r(const time_t* timep, struct tm* result)
+{
+    struct tm* tmp = localtime(timep);
+    if (tmp) *result = *tmp;
+    return tmp;
+}
+# define LOCALTIME(out, timep) _mingw_localtime_r((timep), (out))
+
+/* MinGW RNG: Use rand_s() to match MSVC quality and Linux getrandom() */
+static inline unsigned int _mingw_rand32(void)
+{
+    unsigned int v;
+    if (rand_s(&v) != 0) {
+        fprintf(stderr, "rand_s failed on MinGW\n");
+        exit(EXIT_FAILURE);
+    }
+    return v;
+}
+
+# define RANDOMIZE(rv)  (rv) = _mingw_rand32()
+#else
+/* Standard POSIX */
 # define STRTOK(str, delim, ctx) strtok_r((str), (delim), (ctx))
+# define MAKE_DIR(path)     mkdir((path), 0755)
+# define LOCALTIME(out, timep) localtime_r((timep), (out))
+#endif
+
 # define STRCPY(dest, dstsz, src)                                       \
     do {                                                                \
         strncpy((dest), (src), (dstsz));                                \
         (dest)[((dstsz) > 0 ? (dstsz) - 1 : 0)] = '\0';                \
     } while (0)
-/**
- * @brief Open a file with errno-return semantics.
- *
- * Assigns the resulting FILE* to the provided lvalue and returns 0 on success;
- * on failure, leaves the lvalue NULL and returns errno.
- *
- * @param fp   FILE* lvalue to receive the opened stream.
- * @param name Path to the file.
- * @param mode fopen mode string, e.g. "rb".
- * @return int 0 on success, or errno on failure.
- */
-# define FOPEN(fp, name, mode) ((((fp) = fopen((name), (mode))) == NULL) ? errno : 0)
 
+# define FOPEN(fp, name, mode) ((((fp) = fopen((name), (mode))) == NULL) ? errno : 0)
 # define STAT(path, buf)    stat((path), (buf))
-# define MAKE_DIR(path)     mkdir((path), 0755)
 # define MKDIR_OK(err)      ((err) == 0 || (err) == EEXIST)
 
 /* Silence MSVC-only annotations */
 # define _Analysis_assume_(expr)  ((void)0)
 # define PRAGMA_MSVC(x)
 
-/* ---------- secure RANDOMIZE() ----------
- * @brief Fill a 32-bit unsigned lvalue with system randomness.
- * On Linux uses getrandom(); on BSD/macOS uses arc4random();
- * otherwise falls back to random_r() with thread-local state.
- * On any failure path, prints an error and exits the process.
- * Thread-safe.
- */
+/* Platform-specific RNG (MinGW handled above) */
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
 # if defined(__linux__)
 #   include <sys/random.h>
 static inline unsigned int _rand32_getrandom(void)
@@ -205,37 +263,16 @@ static inline unsigned int _rand32_getrandom(void)
     return v;
 }
 #   define RANDOMIZE(rv)  (rv) = _rand32_getrandom()
-
 # elif defined(__OpenBSD__) || defined(__APPLE__)
 #   include <stdlib.h>
 #   define RANDOMIZE(rv)  (rv) = arc4random()
-
-# else  /* portable random_r() fallback */
-#   include <stdlib.h>
-static inline unsigned int _rand32_random_r(void)
-{
-    static __thread struct random_data rd;
-    static __thread char statebuf[64];
-    static __thread int ready = 0;
-
-    if (!ready) {
-        initstate_r((unsigned)time(NULL) ^ (unsigned)getpid(),
-            statebuf, sizeof statebuf, &rd);
-        ready = 1;
-    }
-
-    int32_t out;
-    if (random_r(&rd, &out) != 0) {
-        fprintf(stderr, "random_r failed\n");
-        exit(EXIT_FAILURE);
-    }
-    return (unsigned int)out;
-}
-#   define RANDOMIZE(rv)  (rv) = _rand32_random_r()
-# endif /* random source */
+# else
+/* Fallback for other systems */
+#   define RANDOMIZE(rv) do { srand((unsigned)time(NULL)); (rv) = (unsigned)rand() | ((unsigned)rand() << 16); } while(0)
+# endif
+#endif
 
 # define PATHSEP '/'
-# define LOCALTIME(out, timep) localtime_r((timep), (out))
 
 #endif /* _MSC_VER */
 

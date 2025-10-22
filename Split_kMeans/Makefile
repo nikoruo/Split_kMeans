@@ -45,6 +45,13 @@
 # Output
 OUT       ?= split_kmeans
 
+# Detect Windows (MinGW/MSYS/Cygwin)
+ifdef WINDIR
+  EXEEXT := .exe
+else
+  EXEEXT :=
+endif
+
 # Toolchain / flags
 CC        ?= gcc
 CSTD      ?= -std=c11
@@ -71,10 +78,10 @@ DEPS := $(OBJ:.o=.d)
 .PHONY: all clean run debug asan ubsan
 .DEFAULT_GOAL := all
 
-all: $(OUT)
+all: $(OUT)$(EXEEXT)
 
 # Link
-$(OUT): $(OBJ)
+$(OUT)$(EXEEXT): $(OBJ)
 	$(CC) $(LDFLAGS) $^ -o $@ $(LDLIBS)
 
 # Compile with automatic dependency generation
@@ -82,8 +89,8 @@ $(OUT): $(OBJ)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c $< -o $@
 
 # Run with optional args: make run ARGS="..."
-run: $(OUT)
-	./$(OUT) $(ARGS)
+run: $(OUT)$(EXEEXT)
+	./$(OUT)$(EXEEXT) $(ARGS)
 
 # Convenience builds
 debug: CFLAGS += -O0 -g3
@@ -98,7 +105,7 @@ ubsan: LDFLAGS += -fsanitize=undefined
 ubsan: clean all
 
 clean:
-	$(RM) -f $(OUT) $(OBJ) $(DEPS)
+	$(RM) -f $(OUT)$(EXEEXT) $(OUT) $(OBJ) $(DEPS)
 
 # Include generated dependency files if present
 -include $(DEPS)
