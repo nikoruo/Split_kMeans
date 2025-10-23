@@ -173,6 +173,7 @@
 // For logging level
 // 1 = none, 2 = debug, 3 = everything
 // Most LOGGING lines are commented out for performance
+// note: (NOT USED)
 static const size_t LOGGING = 1;
 
 //////////////
@@ -1256,9 +1257,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @errors None (writes to stdout).
    * @note Uses the process locale for numeric formatting.
    */
-  void printStatistics(const char* algorithmName, Statistics stats, size_t loopCount, size_t numCentroids, size_t scaling, size_t dataSize)
+  void printStatistics(const char* algorithmName, Statistics stats, size_t loopCount, size_t numCentroids, size_t scaling)
   {
-      (void)scaling; /* not used in this textual summary */
+      (void)scaling; // (NOT USED): could be used for scaling statistics if needed
 
       printf("(%s) Average CI: %.2f and SSE: %.0f\n", algorithmName, (double)stats.ciSum / loopCount, stats.sseSum / loopCount / scaling);
       printf("(%s) Relative CI: %.2f\n", algorithmName, (double)stats.ciSum / loopCount / numCentroids);
@@ -1334,6 +1335,54 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
   }
   
+  /**
+   * @brief Saves example centroid and partition files for perfect and failed runs.
+   *
+   * If `centroidIndex` is 0 (perfect run) and `*savedPerfect` is false, saves the
+   * centroids and partitions to `<algorithmPrefix>_centroids_perfect.txt` and
+   * `<algorithmPrefix>_partitions_perfect.txt`, then sets `*savedPerfect` to true.
+   * If `centroidIndex` is non-zero (failed run) and `*savedFailed` is false, saves
+   * to `<algorithmPrefix>_centroids_failed.txt` and
+   * `<algorithmPrefix>_partitions_failed.txt`, then sets `*savedFailed` to true.
+   *
+   * @param centroids Centroids to save.
+   * @param dataPoints Data points whose partitions to save.
+   * @param centroidIndex Index of the centroid set (0 = perfect).
+   * @param algorithmPrefix Prefix for output file names.
+   * @param outputDirectory Directory where files are saved.
+   * @param savedPerfect Pointer to a bool tracking if perfect example was saved.
+   * @param savedFailed Pointer to a bool tracking if failed example was saved.
+   * @return void
+   * @errors None (errors in writing files are handled internally).
+   */
+  static void saveExampleSnapshots(const Centroids* centroids, const DataPoints* dataPoints,
+      size_t centroidIndex, const char* algorithmPrefix, const char* outputDirectory,
+      bool* savedPerfect, bool* savedFailed)
+  {
+      if (centroidIndex != 0 && !(*savedFailed))
+      {
+          char centroidsFile[PATH_MAX];
+          char partitionsFile[PATH_MAX];
+          snprintf(centroidsFile, sizeof(centroidsFile), "%s_centroids_failed.txt", algorithmPrefix);
+          snprintf(partitionsFile, sizeof(partitionsFile), "%s_partitions_failed.txt", algorithmPrefix);
+
+          writeCentroidsToFile(centroidsFile, centroids, outputDirectory);
+          writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
+          *savedFailed = true;
+      }
+      else if (centroidIndex == 0 && !(*savedPerfect))
+      {
+          char centroidsFile[PATH_MAX];
+          char partitionsFile[PATH_MAX];
+          snprintf(centroidsFile, sizeof(centroidsFile), "%s_centroids_perfect.txt", algorithmPrefix);
+          snprintf(partitionsFile, sizeof(partitionsFile), "%s_partitions_perfect.txt", algorithmPrefix);
+
+          writeCentroidsToFile(centroidsFile, centroids, outputDirectory);
+          writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
+          *savedPerfect = true;
+      }
+  }
+
   /////////////////
   // Clustering //
   ///////////////
@@ -2327,11 +2376,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
  * @return SSE after the global refinement, or current SSE if the cluster is too small to split.
  * @errors Exits on allocation failure.
  */
-  double splitClusterGlobalV2(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t localMaxIterations, const Centroids* groundTruth, size_t splitType, const char* outputDirectory,
-      bool trackProgress, clock_t start, bool createCsv, size_t iteration)
+  double splitClusterGlobalV2(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t localMaxIterations, const Centroids* groundTruth)
   {
-      (void)splitType; (void)outputDirectory; (void)trackProgress; (void)start; (void)createCsv; (void)iteration;
-
       size_t clusterSize = 0;
       for (size_t i = 0; i < dataPoints->size; ++i)
       {
@@ -2432,12 +2478,10 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @param groundTruth Optional reference (unused in computation).
    * @return SSE after global refinement, or current SSE if the cluster is too small to split.
    * @errors Exits on allocation failure.
+   * @note (NOT USED): This variant starts global k-means directly after random seeding -> clusters are not stable -> worse results
    */
-  double splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t globalMaxIterations, const Centroids* groundTruth, size_t splitType, const char* outputDirectory,
-      bool trackProgress, clock_t start, bool createCsv)
+  double splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t globalMaxIterations, const Centroids* groundTruth)
   {
-      (void)splitType; (void)outputDirectory; (void)trackProgress; (void)start; (void)createCsv;
-
       size_t clusterSize = 0;
 
       for (size_t i = 0; i < dataPoints->size; ++i)
@@ -2840,9 +2884,12 @@ void freeDataPointArray(DataPoint* points, size_t size)
               }
           }
 
+		  // Split the chosen cluster
+		  // 0: Intra-cluster
+		  // 1: Global
+		  // 2: Local repartition
           if (splitType == 0) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth);
-          else if (splitType == 1) finalResultSse = splitClusterGlobalV2(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth, splitType, outputDirectory,
-              trackProgress, start, createCsv, iterationCount);
+          else if (splitType == 1) finalResultSse = splitClusterGlobalV2(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth);
           else if (splitType == 2) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth);
 
           if (centroids->size < maxCentroids)
@@ -3094,23 +3141,13 @@ void freeDataPointArray(DataPoint* points, size_t size)
           stats.timeSum += duration;
           if (centroidIndex == 0) stats.successRate++;
 
-          if (centroidIndex != 0 && savedNonZeroResults == false)
-          {
-              writeCentroidsToFile("kMeans_centroids_failed.txt", &centroids, outputDirectory);
-              writeDataPointPartitionsToFile("kMeans_partitions_failed.txt", dataPoints, outputDirectory);
-              savedNonZeroResults = true;
-          }
-          else if (centroidIndex == 0 && savedZeroResults == false)
-          {
-              writeCentroidsToFile("kMeans_centroids_perfect.txt", &centroids, outputDirectory);
-              writeDataPointPartitionsToFile("kMeans_partitions_perfect.txt", dataPoints, outputDirectory);
-              savedZeroResults = true;
-          }
+          saveExampleSnapshots(&centroids, dataPoints, centroidIndex, "kMeans",
+              outputDirectory, &savedZeroResults, &savedNonZeroResults);
 
           freeCentroids(&centroids);
       }
 
-      printStatistics("K-means", stats, loopCount, numCentroids, scaling, dataPoints->size);
+      printStatistics("K-means", stats, loopCount, numCentroids, scaling);
       writeResultsToFile(fileName, stats, numCentroids, "K-means", loopCount, scaling, outputDirectory);
   }
 
@@ -3138,6 +3175,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       clock_t start, end;
       double duration;
+
+	  bool savedZeroResults = false;
+	  bool savedNonZeroResults = false;
 
       char csvFile[PATH_MAX];
       if (trackProgress)
@@ -3209,16 +3249,13 @@ void freeDataPointArray(DataPoint* points, size_t size)
           stats.timeSum += duration;
           if (centroidIndex == 0) stats.successRate++;
 
-          if (i == 0)
-          {
-              writeCentroidsToFile("repeatedKMeans_centroids.txt", &bestCentroids, outputDirectory);
-              writeDataPointPartitionsToFile("repeatedKMeans_partitions.txt", dataPoints, outputDirectory);
-          }
+          saveExampleSnapshots(&bestCentroids, dataPoints, centroidIndex, "repeatedKMeans",
+              outputDirectory, &savedZeroResults, &savedNonZeroResults);
 
           freeCentroids(&bestCentroids);
       }
 
-      printStatistics("Repeated K-means", stats, loopCount, numCentroids, scaling, dataPoints->size);
+      printStatistics("Repeated K-means", stats, loopCount, numCentroids, scaling);
       writeResultsToFile(fileName, stats, numCentroids, "Repeated K-means", loopCount, scaling, outputDirectory);
   }
 
@@ -3275,33 +3312,13 @@ void freeDataPointArray(DataPoint* points, size_t size)
           stats.timeSum += duration;
           if (centroidIndex == 0) stats.successRate++;
 
-          if (centroidIndex != 0 && savedNonZeroResults == false)
-          {
-              char centroidsFile[PATH_MAX];
-              char partitionsFile[PATH_MAX];
-              snprintf(centroidsFile, sizeof(centroidsFile), "RandomSwap_centroids_failed.txt");
-              snprintf(partitionsFile, sizeof(partitionsFile), "RandomSwap_partitions_failed.txt");
-
-              writeCentroidsToFile(centroidsFile, &centroids, outputDirectory);
-              writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
-              savedNonZeroResults = true;
-          }
-          else if (centroidIndex == 0 && savedZeroResults == false)
-          {
-              char centroidsFile[PATH_MAX];
-              char partitionsFile[PATH_MAX];
-              snprintf(centroidsFile, sizeof(centroidsFile), "RandomSwap_centroids_perfect.txt");
-              snprintf(partitionsFile, sizeof(partitionsFile), "RandomSwap_partitions_perfect.txt");
-
-              writeCentroidsToFile(centroidsFile, &centroids, outputDirectory);
-              writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
-              savedZeroResults = true;
-          }
+          saveExampleSnapshots(&centroids, dataPoints, centroidIndex, "RandomSwap",
+              outputDirectory, &savedZeroResults, &savedNonZeroResults);
 
           freeCentroids(&centroids);
       }
 
-      printStatistics("Random Swap", stats, loopCount, numCentroids, scaling, dataPoints->size);
+      printStatistics("Random Swap", stats, loopCount, numCentroids, scaling);
       writeResultsToFile(fileName, stats, numCentroids, "Random swap", loopCount, scaling, outputDirectory);
   }
 
@@ -3362,33 +3379,13 @@ void freeDataPointArray(DataPoint* points, size_t size)
           stats.timeSum += duration;
           if (centroidIndex == 0) stats.successRate++;
 
-          if (centroidIndex != 0 && savedNonZeroResults == false)
-          {
-              char centroidsFile[PATH_MAX];
-              char partitionsFile[PATH_MAX];
-              snprintf(centroidsFile, sizeof(centroidsFile), "RandomSplit_centroids_failed.txt");
-              snprintf(partitionsFile, sizeof(partitionsFile), "RandomSplit_partitions_failed.txt");
-
-              writeCentroidsToFile(centroidsFile, &centroids, outputDirectory);
-              writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
-              savedNonZeroResults = true;
-          }
-          else if (centroidIndex == 0 && savedZeroResults == false)
-          {
-              char centroidsFile[PATH_MAX];
-              char partitionsFile[PATH_MAX];
-              snprintf(centroidsFile, sizeof(centroidsFile), "RandomSplit_centroids_perfect.txt");
-              snprintf(partitionsFile, sizeof(partitionsFile), "RandomSplit_partitions_perfect.txt");
-
-              writeCentroidsToFile(centroidsFile, &centroids, outputDirectory);
-              writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
-              savedZeroResults = true;
-          }
+          saveExampleSnapshots(&centroids, dataPoints, centroidIndex, "RandomSplit",
+              outputDirectory, &savedZeroResults, &savedNonZeroResults);
 
           freeCentroids(&centroids);
       }
 
-      printStatistics("Random Split", stats, loopCount, numCentroids, scaling, dataPoints->size);
+      printStatistics("Random Split", stats, loopCount, numCentroids, scaling);
       writeResultsToFile(fileName, stats, numCentroids, "Random Split", loopCount, scaling, outputDirectory);
   }
 
@@ -3452,33 +3449,13 @@ void freeDataPointArray(DataPoint* points, size_t size)
           stats.timeSum += duration;
           if (centroidIndex == 0) stats.successRate++;
 
-          if (centroidIndex != 0 && savedNonZeroResults == false)
-          {
-              char centroidsFile[PATH_MAX];
-              char partitionsFile[PATH_MAX];
-              snprintf(centroidsFile, sizeof(centroidsFile), "%s_centroids_failed.txt", splitTypeName);
-              snprintf(partitionsFile, sizeof(partitionsFile), "%s_partitions_failed.txt", splitTypeName);
-
-              writeCentroidsToFile(centroidsFile, &centroids, outputDirectory);
-              writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
-              savedNonZeroResults = true;
-          }
-          else if (centroidIndex == 0 && savedZeroResults == false)
-          {
-              char centroidsFile[PATH_MAX];
-              char partitionsFile[PATH_MAX];
-              snprintf(centroidsFile, sizeof(centroidsFile), "%s_centroids_perfect.txt", splitTypeName);
-              snprintf(partitionsFile, sizeof(partitionsFile), "%s_partitions_perfect.txt", splitTypeName);
-
-              writeCentroidsToFile(centroidsFile, &centroids, outputDirectory);
-              writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
-              savedZeroResults = true;
-          }
+          saveExampleSnapshots(&centroids, dataPoints, centroidIndex, splitTypeName,
+              outputDirectory, &savedZeroResults, &savedNonZeroResults);
 
           freeCentroids(&centroids);
       }
 
-      printStatistics(splitTypeName, stats, loopCount, numCentroids, scaling, dataPoints->size);
+      printStatistics(splitTypeName, stats, loopCount, numCentroids, scaling);
       writeResultsToFile(fileName, stats, numCentroids, splitTypeName, loopCount, scaling, outputDirectory);
   }
 
@@ -3540,33 +3517,13 @@ void freeDataPointArray(DataPoint* points, size_t size)
           stats.timeSum += duration;
           if (centroidIndex == 0) stats.successRate++;
 
-          if (centroidIndex != 0 && savedNonZeroResults == false)
-          {
-              char centroidsFile[PATH_MAX];
-              char partitionsFile[PATH_MAX];
-              snprintf(centroidsFile, sizeof(centroidsFile), "Bisecting_centroids_failed.txt");
-              snprintf(partitionsFile, sizeof(partitionsFile), "Bisecting_partitions_failed.txt");
-
-              writeCentroidsToFile(centroidsFile, &centroids, outputDirectory);
-              writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
-              savedNonZeroResults = true;
-          }
-          else if (centroidIndex == 0 && savedZeroResults == false)
-          {
-              char centroidsFile[PATH_MAX];
-              char partitionsFile[PATH_MAX];
-              snprintf(centroidsFile, sizeof(centroidsFile), "Bisecting_centroids_perfect.txt");
-              snprintf(partitionsFile, sizeof(partitionsFile), "Bisecting_partitions_perfect.txt");
-
-              writeCentroidsToFile(centroidsFile, &centroids, outputDirectory);
-              writeDataPointPartitionsToFile(partitionsFile, dataPoints, outputDirectory);
-              savedZeroResults = true;
-          }
+          saveExampleSnapshots(&centroids, dataPoints, centroidIndex, "Bisecting",
+              outputDirectory, &savedZeroResults, &savedNonZeroResults);
 
           freeCentroids(&centroids);
       }
 
-      printStatistics("Bisecting", stats, loopCount, numCentroids, scaling, dataPoints->size);
+      printStatistics("Bisecting", stats, loopCount, numCentroids, scaling);
       writeResultsToFile(fileName, stats, numCentroids, "Bisecting k-means", loopCount, scaling, outputDirectory);
   }
 
@@ -4012,7 +3969,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
     }
       
 
-	  for (size_t i = 0; i < 1; ++i)
+	  for (size_t i = 0; i < 3; ++i)
       {
           // Determine file paths based on mode
           char currentDataFile[PATH_MAX];
@@ -4091,22 +4048,23 @@ void freeDataPointArray(DataPoint* points, size_t size)
               numDimensions, dataPoints.size, currentK, currentLoops);
 
           // Algorithm parameters
-          size_t scaling = 1;
+          size_t scaling = 1; // (NOT USED): could be used for scaling statistics if needed
           size_t maxIterations = SIZE_MAX;
           const size_t maxSwaps = 5000;
-          const size_t maxRepeats = 1000;
+          const size_t maxRepeats = 10;
 		  const size_t bisectingIterations = 5;
           size_t maxLoops = 1;
+
           // Run K-means
           //runKMeansAlgorithm(&dataPoints, &groundTruth, currentK, maxIterations, currentLoops, scaling, baseName, datasetDirectory);
 
           // Run Repeated K-means
           maxLoops = 5;
-          runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, currentK, maxIterations, maxRepeats, maxLoops, scaling, baseName, datasetDirectory, currentTrackProgress);
+          //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, currentK, maxIterations, maxRepeats, maxLoops, scaling, baseName, datasetDirectory, currentTrackProgress);
 
           // Run Random Swap
           maxLoops = 1;
-          runRandomSwapAlgorithm(&dataPoints, &groundTruth, currentK, maxSwaps, maxLoops, scaling, baseName, datasetDirectory, currentTrackProgress);
+          //runRandomSwapAlgorithm(&dataPoints, &groundTruth, currentK, maxSwaps, maxLoops, scaling, baseName, datasetDirectory, currentTrackProgress);
 
           // Run SKM-Random
           //runRandomSplitAlgorithm(&dataPoints, &groundTruth, currentK, maxIterations, currentLoops, scaling, baseName, datasetDirectory, currentTrackProgress);
@@ -4121,7 +4079,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           runSseSplitAlgorithm(&dataPoints, &groundTruth, currentK, maxIterations, currentLoops, scaling, baseName, datasetDirectory, 2, currentTrackProgress);
 
           // Run Bisecting K-means
-          runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, currentK, maxIterations, currentLoops, scaling, baseName, datasetDirectory, currentTrackProgress, bisectingIterations);
+          //runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, currentK, maxIterations, currentLoops, scaling, baseName, datasetDirectory, currentTrackProgress, bisectingIterations);
 
           // Clean up
           freeDataPoints(&dataPoints);
