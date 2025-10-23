@@ -111,7 +111,7 @@ Input discovery
 
 ### CLI Mode (with arguments)
 Syntax:
-*.exe -k <K> [-r <runs>] [--track-progress] [--track-time] <data.txt> [gt.txt]
+*.exe -k <K> [-r <runs>] [--track-progress] <data.txt> [gt.txt]
 
 Runtime behavior
 - On start, a folder is created: outputs/<YYYY-MM-DD_HH-MM-SS>/.
@@ -120,8 +120,7 @@ Runtime behavior
 
 Outputs per dataset (examples)
 - Aggregates
-  - <Algorithm>_log.csv: ci;iteration;sse (semicolon-separated)
-  - <Algorithm>_times.txt: elapsed ms per logged iteration (integers)
+  - <Algorithm>_log.csv: ci;iteration;sse;ms (semicolon-separated)
   - <Algorithm>_iteration_stats.txt: Iteration;NumCentroids;SSE;CI;SplitCluster
   - <base>.csv: a summary row per algorithm with averages:
     - Algorithm;Average CI;SSE;Relative CI;MS;Success Rate
@@ -154,7 +153,6 @@ Open `Split_kMeans/clustering_with_.c`, see `main()`:
 - Adjust parameters near the dataset loop:
   - loops, maxIterations, maxRepeats, maxSwaps, bisectingIterations
   - trackProgress (writes per-iteration logs/snapshots on the first run)
-  - trackTime (collects iteration times)
 - Current debug settings include:
   - A restricted dataset index range in the for-loop.
   - Finnish numeric locale set at startup.
