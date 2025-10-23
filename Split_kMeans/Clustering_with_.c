@@ -1866,12 +1866,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @errors Exits on path overflow or open failure.
    * @note Semicolon-separated CSV-like text; numeric formatting uses current locale.
    */
-  void writeIterationStats(const DataPoints* dataPoints, const Centroids* centroids,
-      const Centroids* groundTruth, size_t iteration, double sse,
-      size_t splitCluster, const char* outputDirectory, const char* algorithmName)
+  void writeIterationStats(const Centroids* centroids, const Centroids* groundTruth, size_t iteration, 
+      double sse, size_t splitCluster, double elapsedMs, const char* outputDirectory, const char* algorithmName)
   {
-      (void)dataPoints; /* not used directly; retained for signature symmetry */
-
       char statsFileName[PATH_MAX];
       if (snprintf(statsFileName, sizeof(statsFileName), "%s_iteration_stats.txt", algorithmName) >= (int)sizeof(statsFileName))
       {
@@ -1896,12 +1893,12 @@ void freeDataPointArray(DataPoint* points, size_t size)
       fseek(statsFile, 0, SEEK_END);
       if (ftell(statsFile) == 0)
       {
-          fprintf(statsFile, "Iteration;NumCentroids;SSE;CI;SplitCluster\n");
+          fprintf(statsFile, "Iteration;NumCentroids;SSE;CI;SplitCluster;MS\n");
       }
 
       size_t ci = calculateCentroidIndex(centroids, groundTruth);
-      fprintf(statsFile, "%zu;%zu;%.0f;%zu;%zu\n",
-          iteration, centroids->size, sse, ci, splitCluster);
+      fprintf(statsFile, "%zu;%zu;%.0f;%zu;%zu;%.0f\n",
+          iteration, centroids->size, sse, ci, splitCluster, elapsedMs);
 
       fclose(statsFile);
   }
@@ -1909,11 +1906,14 @@ void freeDataPointArray(DataPoint* points, size_t size)
   /**
    * @brief Writes iteration stats and snapshot files for the current state.
    */
-  static void trackProgressState(const DataPoints* dataPoints, const Centroids* centroids, const Centroids* groundTruth, size_t iteration, size_t clusterToSplit, size_t splitType, const char* outputDirectory)
+  static void trackProgressState(const DataPoints* dataPoints, const Centroids* centroids, 
+      const Centroids* groundTruth, size_t iteration, size_t clusterToSplit, size_t splitType, 
+      const char* outputDirectory, double elapsedMs)
   {
       const char* splitTypeName = getAlgorithmName(splitType);
       double currentSse = calculateSSE(dataPoints, centroids);
-      writeIterationStats(dataPoints, centroids, groundTruth, iteration, currentSse, clusterToSplit, outputDirectory, splitTypeName);
+      
+      writeIterationStats(centroids, groundTruth, iteration, currentSse, clusterToSplit, elapsedMs, outputDirectory, splitTypeName);
       saveIterationState(dataPoints, centroids, iteration, outputDirectory, splitTypeName);
   }
 
@@ -1941,19 +1941,17 @@ void freeDataPointArray(DataPoint* points, size_t size)
       const Centroids* centroids, const Centroids* groundTruth, size_t iterationCount, const char* outputDirectory, bool createCsv, const char* csvFile,
       size_t clusterToSplit, size_t splitType)
   {
-      double elapsedMs = 0.0;
+      clock_t now = clock();
+      double elapsedMs = ((double)(now - start)) / CLOCKS_PER_MS;
 
-      //NOTE: tama tehdaan nyt vain iteraatiolle 0. Halutaanko tehda esim niin monta kertaa etta CI=0 tmv? Tai kommentoida kokonaan pois?
+      //NOTE: Only done for iteration=1 atm. Make changes to "if" if needed
       if (trackProgress)
       {
-          trackProgressState(dataPoints, centroids, groundTruth, iterationCount, clusterToSplit, splitType, outputDirectory);
+          trackProgressState(dataPoints, centroids, groundTruth, iterationCount, clusterToSplit, splitType, outputDirectory, elapsedMs);
       }
 
       if (createCsv)
       {
-          clock_t iterEnd = clock();
-          elapsedMs = ((double)(iterEnd - start)) / CLOCKS_PER_MS;
-
           size_t currentCi = calculateCentroidIndex(centroids, groundTruth);
           double currentSse = calculateSSE(dataPoints, centroids);
           appendLogCsv(csvFile, iterationCount, currentCi, currentSse, elapsedMs);
@@ -2027,7 +2025,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
    */
   double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids, const Centroids* groundTruth)
   {
-      (void)groundTruth;
+      (void)groundTruth; // (NOT USED: can be used for debug logging
 
       double bestSse = DBL_MAX;
       double sse = DBL_MAX;
