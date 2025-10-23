@@ -3967,7 +3967,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
     }
       
 
-	  for (size_t i = 0; i < 3; ++i)
+	  for (size_t i = 0; i < dataCount; ++i)
       {
           // Determine file paths based on mode
           char currentDataFile[PATH_MAX];
@@ -3979,7 +3979,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
           if (argc > 1)
           {
+              // ============================================================
               // CLI mode: use parsed values
+              // ============================================================
               STRCPY(currentDataFile, sizeof(currentDataFile), cliDataFile);
               if (cliGtFile)
               {
@@ -4002,7 +4004,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
           }
           else
           {
+              // ============================================================
               // Batch mode: build paths from file lists
+              // ============================================================
               snprintf(currentDataFile, sizeof(currentDataFile), "data%c%s", PATHSEP, dataNames[i]);
               snprintf(currentGtFile, sizeof(currentGtFile), "gt%c%s", PATHSEP, gtNames[i]);
 
@@ -4051,17 +4055,17 @@ void freeDataPointArray(DataPoint* points, size_t size)
           const size_t maxSwaps = 5000;
           const size_t maxRepeats = 10;
 		  const size_t bisectingIterations = 5;
-          size_t maxLoops = 1;
+		  size_t maxLoops = 1; // Used to control loops in RKM + RS
 
           // Run K-means
           //runKMeansAlgorithm(&dataPoints, &groundTruth, currentK, maxIterations, currentLoops, scaling, baseName, datasetDirectory);
 
           // Run Repeated K-means
-          maxLoops = 5;
+          //maxLoops = 10;
           //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, currentK, maxIterations, maxRepeats, maxLoops, scaling, baseName, datasetDirectory, currentTrackProgress);
 
           // Run Random Swap
-          maxLoops = 1;
+          //maxLoops = 1;
           //runRandomSwapAlgorithm(&dataPoints, &groundTruth, currentK, maxSwaps, maxLoops, scaling, baseName, datasetDirectory, currentTrackProgress);
 
           // Run SKM-Random
@@ -4072,9 +4076,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
           // Run SKM-Global
           //runSseSplitAlgorithm(&dataPoints, &groundTruth, currentK, maxIterations, currentLoops, scaling, baseName, datasetDirectory, 1, currentTrackProgress);
-
+          if (i <= 17)continue;
           // Run SKM-Local
-          runSseSplitAlgorithm(&dataPoints, &groundTruth, currentK, maxIterations, currentLoops, scaling, baseName, datasetDirectory, 2, currentTrackProgress);
+          runSseSplitAlgorithm(&dataPoints, &groundTruth, currentK, maxIterations, 50, scaling, baseName, datasetDirectory, 2, currentTrackProgress);
 
           // Run Bisecting K-means
           //runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, currentK, maxIterations, currentLoops, scaling, baseName, datasetDirectory, currentTrackProgress, bisectingIterations);
