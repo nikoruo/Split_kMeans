@@ -3,15 +3,16 @@
 */
 
 /* platform.h ------------------------------------------------------------
-* Minimal portability layer for building the same C/C++ source on
+* Minimal portability layer for building the same C/C++ source on:
 *   - Windows / MSVC        (Annex-K *_s, rand_s, _mkdir)
-*   - Linux (glibc >= 2.25) getrandom(2)
-*   - BSD / macOS           arc4random()
-*   - Fallback (others)     random_r() (GNU extension)
+*   - Windows / MinGW       (rand_s, custom strtok_r, mkdir)
+*   - Linux (glibc >= 2.25) (getrandom(2))
+*   - BSD / macOS           (arc4random())
+*   - Fallback (others)     (rand() + time seeding - NOT thread-safe)
 *
 * Exposes small cross-platform shims:
 *   - String:   STRTOK, STRCPY
-*   - Files:    FOPEN, STAT, MAKE_DIR, MKDIR_OK
+*   - Files:    FOPEN, STAT, MAKE_DIR, MKDIR_OK, list_files
 *   - Time:     LOCALTIME
 *   - Paths:    PATHSEP, PATH_MAX (fallback on POSIX if undefined)
 *   - RNG:      RANDOMIZE(unsigned int rv) -> fills rv with 32 bits
@@ -20,13 +21,22 @@
 * Notes:
 *   - cmp_charptr is case-insensitive on Windows (_stricmp) and
 *     case-sensitive on POSIX (strcmp).
-*   - RANDOMIZE uses system RNG where available; the random_r fallback
-*     uses thread-local state (GNU extension).
+*   - RANDOMIZE uses cryptographically strong system RNG where available
+*     (rand_s, getrandom, arc4random). Fallback uses rand() which is:
+*       • NOT thread-safe
+*       • NOT cryptographically secure
+*       • NOT suitable for high-frequency calls
+*   - list_files returns non-directory entries sorted case-insensitively
+*     on Windows and case-sensitively on POSIX.
+*
+* Security Notice:
+*   - RANDOMIZE is designed for statistical algorithms (e.g., k-means clustering).
+*   - NOT suitable for cryptographic key generation or security tokens.
 * -------------------------------------------------------------------- */
 
 /* Update log
 * --------------------------------------------------------------------
-* Version 1.0.0 - 22-10-2025 by Niko Ruohonen
+* Version 1.0.0 - 26-10-2025 by Niko Ruohonen
 * - Initial release.
 * --------------------------------------------------------------------
 * Update 1.1...
@@ -279,15 +289,24 @@ static inline unsigned int _rand32_getrandom(void)
 #endif /* PLATFORM_H */
 
 /* --------------------------------------------------------------------
- * Simple directory listing (outside the header guard).
- *   - Returns the number of entries that are not directories.
- *   - Allocates *out with strdup'ed basenames, sorted:
- *       - Windows: case-insensitive order
- *       - POSIX  : case-sensitive order
- *   - Notes (POSIX): relies on d_type where available; entries with
- *     DT_UNKNOWN are treated as non-directories and included. Symlinks
- *     and special files may be included.
- *   - Ownership: caller owns *out and each string; free all on completion.
+ * size_t list_files(const char* dir, char*** out)
+ *
+ * Enumerate non-directory files in 'dir', returning a sorted array.
+ *
+ * @param dir  Directory path (relative or absolute)
+ * @param out  Receives allocated array of filenames (NULL on error/empty)
+ * @return     File count, or 0 on error/empty directory
+ *
+ * Sorting: case-insensitive (Windows) / case-sensitive (POSIX)
+ * Excludes: directories, ".", ".."
+ * Memory:   Caller must free array and each string (see example)
+ * Thread:   Safe on POSIX.1-2008 systems
+ *
+ * Example:
+ *   char** files;
+ *   size_t n = list_files("data", &files);
+ *   for (size_t i = 0; i < n; i++) { printf("%s\n", files[i]); free(files[i]); }
+ *   free(files);
  * -------------------------------------------------------------------- */
 
 #ifdef _MSC_VER /* ------------------------- Windows ----------------------- */
@@ -340,3 +359,5 @@ static size_t list_files(const char* dir, char*** out)
     return n;
 }
 #endif /* list_files */
+
+/* End of platform.h */

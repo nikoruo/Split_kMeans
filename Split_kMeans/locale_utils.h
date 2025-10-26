@@ -13,12 +13,17 @@
  *  - Candidates tried (in order): "fi_FI.UTF-8", "fi_FI",
  *    "Finnish_Finland.1252" (Windows). If none succeed, LC_NUMERIC is set
  *    to "C" and a warning is printed to stderr.
- * --------------------------------------------------------------------
- */
+ * 
+ * Example:
+ *   int main(void) {
+ *       set_numeric_locale_finnish();  // Call before CSV writes
+ *       printf("%.2f\n", 3.14);        // Prints "3,14" on Finnish locale
+ *   }
+ * --------------------------------------------------------------------*/
 
 /* Update log
 * --------------------------------------------------------------------
-* Version 1.0.0 - 22-10-2025 by Niko Ruohonen
+* Version 1.0.0 - 26-10-2025 by Niko Ruohonen
 * -Initial release.
 * --------------------------------------------------------------------
 * Update 1.1...
@@ -26,6 +31,10 @@
 */
 
 #pragma once
+
+#ifndef LOCALE_UTILS_H
+#define LOCALE_UTILS_H
+
 #include <locale.h>
 #include <stdio.h>
 
@@ -71,4 +80,5 @@ static void set_numeric_locale_finnish(void)
         "using \"C\" (decimal point = '.')\n");
     setlocale(LC_NUMERIC, "C");
 }
-#pragma once
+
+#endif /* LOCALE_UTILS_H */

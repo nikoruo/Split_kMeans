@@ -4,7 +4,7 @@
 
 /* Update log
 * --------------------------------------------------------------------
-* Version 1.0.0 - 22-10-2025 by Niko Ruohonen
+* Version 1.0.0 - 26-10-2025 by Niko Ruohonen
 * - Initial release
 * --------------------------------------------------------------------
 * Update 1.1...
@@ -13,112 +13,78 @@
 
 // Introduction
 /**
-* Project Name: Split_kMeans
-*
-* Description:
-* This project focuses on the development and implementation of various clustering algorithms.
-* The primary goal was to create a novel clustering algorithm, the SSE Split Algorithm,
-* and also to implement existing algorithms. All algorithms were designed and optimized
-* to ensure maximum efficiency and effectiveness when applied to multi-dimensional data points.
-*
+* Project: Split K-Means
 * Author: Niko Ruohonen
-* Date: 22-10-2025
 * Version: 1.0.0
+* Date: 26-10-2025*
+* 
+* DESCRIPTION:
+* Implementation of multiple clustering algorithms with focus on the novel SSE Split Algorithm.
+* Designed for efficient clustering of multi-dimensional data points.
 *
-* Details:
-* - Implements multiple clustering algorithms:
-        K-means
-        Repeated K-means
-        Random Swap
-        Random Split
-        SSE Split (Intra-cluster, Global, Local Repartition)
-        Bisecting K-means.
-* - Provides detailed logging options for debugging and performance analysis. (<- commented off by default for performance)
-* - Includes memory management functions to handle dynamic allocation and deallocation of data structures.
-* - Supports reading and writing data points and centroids from/to files.
-* - Calculates various metrics such as Sum of Squared Errors (SSE) and Centroid Index (CI) to evaluate clustering performance.
-* - Provides two centroid initialization methods:
-        Random centroids (default)
-        K-means++ (KMeans++) seeding (available)
-*   Current builds seed with random centroids. To enable K-means++ for seeding,
-*   replace the call to generateRandomCentroids with generateKMeansPlusPlusCentroids
-*   in the algorithm setup where initial centroids are chosen.
+* IMPLEMENTED ALGORITHMS:
+* - K-means, Repeated K-means, Random Swap, Random Split
+* - SSE Split (Intra-cluster, Global, Local Repartition)
+* - Bisecting K-means
+*
+* FEATURES:
+* - Memory-safe dynamic allocation with comprehensive error handling
+* - File I/O for data points, centroids, and results
+* - Performance metrics: SSE (Sum of Squared Errors) and CI (Centroid Index)
+* - Two initialization methods: Random (default) and K-means++ (available)
+* - Optional detailed logging (commented out by default for performance)
 *
 * Usage:
-* 1. Directory Batch Mode (no command-line arguments):
-*    The project can be run by executing the main function, which initializes datasets, ground truth files, and clustering parameters.
-*    It then runs different clustering algorithms on each dataset and writes the results to output files.
+* 1. Directory Batch Mode (no arguments):
+*    Processes multiple datasets from predefined folder structure:
 *
-*    Structure of the project directory:
 *    ProjectRoot/
-        ├─ data/
-        │  ├─ datasetA.txt               # points: one data point per line; all rows same dimensionality
-        │  └─ datasetB.txt
-        ├─ gt/
-        │  ├─ datasetA-gt.txt            # ground truth centroids: one centroid per line; dimensions must match the corresponding data file
-        │  └─ datasetB-gt.txt
-        └─ centroids/
-            ├─ datasetA_k.txt                 # contains ONLY a single positive integer: the number of clusters K (no extra text/BOM)
-            └─ datasetB_k.txt
+*    ├─ data/          # Input data files (space-separated doubles)
+*    ├─ gt/            # Ground truth centroids (matching dimensionality)
+*    └─ centroids/     # K values (single integer per file, no BOM)
+*    
+*    Files are paired by sorted filename order. Ensure matching counts and base names.
+*    Example: datasetA.txt <-> datasetA-gt.txt <-> datasetA_k.txt
 *
-*   Pairing and file counts:
-*   - Input files are discovered at runtime via directory enumeration (list_files) from "data/", "gt/", and "centroids/".
-*   - The number of files in these three folders must match; otherwise the program exits with an error.
-*   - Files are paired by sorted filename order. To avoid mismatches, keep base names aligned across folders,
-*       e.g., "datasetA.txt" <-> "datasetA-gt.txt" <-> "datasetA_k.txt".
+* 2. CLI Mode (with arguments):
+*    Syntax: split.exe -k <K> [options] <data.txt> [gt.txt]
 *
-* 2. CLI Mode (with command-line arguments):
-*    - Run the executable with arguments to process a single dataset.
-*    - Syntax: split.exe -k <K> [-r <runs>] [--track-progress] <data.txt> [gt.txt]
-*    - Required: data file and K value (via -k flag)
-*    - Optional: ground truth file, number of runs, progress tracking, and time tracking
-*    - K must be explicitly specified via -k; there is no fallback to .txt files in CLI mode
-*    - When runs=1, both --track-progress and --track-time are automatically enabled
-*    - Files can be located anywhere; full or relative paths are accepted
-*    - Examples:
-*        split.exe mydata.txt -k 5
-*        split.exe C:\datasets\mydata.txt -k 5 -r 50 --track-progress C:\datasets\groundtruth.txt
-*        split.exe -h (displays help)
+*    Required:
+*      -k <K>              Number of clusters
+*      <data.txt>          Input data file
 *
-*   CLI Options:
-*       *   CLI Options:
-*       -k <K>              (Required) Number of clusters
-*       -r, --runs <N>      Number of independent runs (default: 100)
-*       --track-progress    Enable per-iteration statistics, snapshots, and time logging
-*       -h, --help          Display usage information
-*       <data.txt>          Input data file
-*       [gt.txt]            Optional ground truth file for CI calculation; if omitted, CI uses empty set*
+*    Optional:
+*      -r, --runs <N>      Number of runs (default: 100)
+*      --track-progress    Enable iteration stats and snapshots
+*      [gt.txt]            Ground truth for CI calculation
+*      -h, --help          Display help
 *
-* Results:
-*  ProjectRoot/
-    └─ outputs/
-    └─ 2025-09-29_14-32-10/       # created automatically
-        ├─ datasetA/
-        │  ├─ RKM_log.csv
-        │  ├─ RKM_times.txt
-        │  ├─ RKM_iteration_stats.txt
-        │  ├─ repeatedKMeans_centroids.txt
-        │  ├─ repeatedKMeans_partitions.txt
-        │  ├─ kMeans_centroids_perfect.txt
-        │  ├─ kMeans_partitions_perfect.txt
-        │  ├─ RandomSwap_centroids_failed.txt
-        │  ├─ RandomSwap_partitions_failed.txt
-        │  └─ ... (depends on which algorithms you run)
-        └─ datasetB/
-            └─ ...
+*    Examples:
+*      split.exe -k 5 mydata.txt
+*      split.exe -k 5 -r 50 --track-progress C:\data\mydata.txt C:\data\gt.txt
 *
-* Notes:
-*   Batch Mode: 
-*   - Ensure that the "data/", "gt/", and "centroids/" folders contain the same number of files, with matching base names,
-*       so files pair correctly across folders.
-*   - Each data file must be space-separated doubles; all rows must have the same number of dimensions (columns).
-*   - Each ground-truth file (gt/\*.txt) must use the same dimensionality as its corresponding data file.
-*   - Each K file (centroids/\*.txt) must contain a single positive integer K and nothing else.
-* - Outputs are written under outputs/<timestamp>/<dataset-base-name>/.
-* - CSV files use semicolons (;) as separators.
-* - Numeric formatting in some outputs depends on the current C locale. The program sets fi_FI at startup for Excel compatibility on Finnish systems, (<- commented off by default for compatibility)
-*   and some files are intentionally written using the "C" locale for dot decimal separators.
-* - Future plans include adding more clustering algorithms and improving the performance of existing ones.
+* OUTPUT STRUCTURE:
+* outputs/
+* └─ <timestamp>/
+*    └─ <dataset>/
+*       ├─ <Algorithm>_log.csv           # Per-iteration metrics
+*       ├─ <Algorithm>_iteration_stats.txt
+*       ├─ <Algorithm>_centroids_perfect.txt
+*       ├─ <Algorithm>_partitions_perfect.txt
+*       ├─ <Algorithm>_centroids_failed.txt
+*       └─ <Algorithm>_partitions_failed.txt
+*
+* REQUIREMENTS:
+* - Input files: whitespace-separated doubles, consistent dimensionality per row
+* - K files: single positive integer only
+* - Ground truth: must match data dimensionality
+* - CSV output uses semicolons (;) as separators
+*
+* NOTES:
+* - To enable K-means++ initialization, replace generateRandomCentroids()
+*   with generateKMeansPlusPlusCentroids() in algorithm setup
+* - Locale handling: Program can optionally set fi_FI for Excel compatibility
+*   (currently commented out for portability)
 */
 
 /**
@@ -3813,13 +3779,11 @@ void freeDataPointArray(DataPoint* points, size_t size)
  *   - K values read from `.txt` files in `centroids/` directory.
  *
  * **CLI mode** (args provided):
- *   - `split.exe <data.txt> -k <K> [-r <runs>] [--track-progress] [--track-time] [gt.txt]`
+ *   - `split.exe -k <K> [-r <runs>] [--track-progress] <data.txt> [gt.txt]`
  *   - **Required**: data file and K value via `-k <number>`.
  *   - **Optional**: ground truth file (if omitted, CI calculations use empty set).
  *   - **Optional**: `-r <runs>` or `--runs <runs>` (default: 100).
  *   - **Optional**: `--track-progress` enables per-iteration stats/snapshots.
- *   - **Optional**: `--track-time` records elapsed times per iteration.
- *   - **Auto-enable tracking**: When runs=1, both tracking flags default to true.
  *   - **Help**: `-h` or `--help` displays usage information.
  *
  * @return 0 on success
@@ -3859,7 +3823,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
                   if (i + 1 >= argc)
                   {
                       fprintf(stderr, "Error: -k requires a numeric argument\n");
-                      fprintf(stderr, "Usage: %s <data.txt> [-k <K>] [-r <runs>] [--track-progress] [gt.txt]\n", argv[0]);
+                      fprintf(stderr, "Usage: %s -k <K> [-r <runs>] [--track-progress] <data.txt> [gt.txt]\n", argv[0]);
                       exit(EXIT_FAILURE);
                   }
                   cliNumCentroids = (size_t)atol(argv[++i]);
@@ -3880,12 +3844,28 @@ void freeDataPointArray(DataPoint* points, size_t size)
               else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
               {
                   printf("Usage: %s -k <K> [-r <runs>] [--track-progress] <data.txt> [gt.txt]\n\n", argv[0]);
-                  printf("SKM-Local Clustering Algorithm\n\n");
-                  printf("Options:\n");
+                  printf("SKM-Local Clustering Algorithm v1.0.0\n");
+                  printf("Implements SSE-based split k-means with local repartition.\n\n");
+
+                  printf("Required:\n");
                   printf("  -k <K>              Number of clusters\n");
+                  printf("  <data.txt>          Input data file (whitespace-separated doubles)\n\n");
+
+                  printf("Optional:\n");
                   printf("  -r, --runs <N>      Number of runs (default: 100)\n");
-                  printf("  --track-progress    Enable progress tracking and time logging\n");
-                  printf("  -h, --help          Show this help\n");
+                  printf("  --track-progress    Enable per-iteration stats and snapshots\n");
+                  printf("  [gt.txt]            Ground truth file for CI calculation\n");
+                  printf("  -h, --help          Display this help\n\n");
+
+                  printf("Examples:\n");
+                  printf("  %s -k 5 mydata.txt\n", argv[0]);
+                  printf("  %s -k 8 -r 50 data.txt groundtruth.txt\n", argv[0]);
+                  printf("  %s -k 3 --track-progress C:\\\\data\\\\mydata.txt\n\n", argv[0]);
+
+                  printf("Modes:\n");
+                  printf("  CLI Mode:   Provide arguments as shown above\n");
+                  printf("  Batch Mode: Run without arguments to process data/, gt/, centroids/\n");
+
                   exit(EXIT_SUCCESS);
               }
               else if (!cliDataFile)
@@ -3915,14 +3895,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
           if (cliNumCentroids == 0)
           {
               fprintf(stderr, "Error: K must be specified with -k <number>\n");
-              fprintf(stderr, "Usage: %s <data.txt> -k <K> [-r <runs>] [--track-progress] [--track-time] [gt.txt]\n", argv[0]);
+              fprintf(stderr, "Usage: %s -k <K> [-r <runs>] [--track-progress] <data.txt> [gt.txt]\n", argv[0]);
               exit(EXIT_FAILURE);
-          }
-
-          // Enable tracking by default for single runs
-          if (cliLoops == 1)
-          {
-              cliTrackProgress = true;
           }
 
           printf("\n=== CLI Mode: SKM-Local ===\n");
@@ -4048,24 +4022,22 @@ void freeDataPointArray(DataPoint* points, size_t size)
           printf("Dataset: %s\n", baseName);
           printf("Dimensions: %zu, Data points: %zu, K: %zu, Runs: %zu\n\n",
               numDimensions, dataPoints.size, currentK, currentLoops);
-
+          
           // Algorithm parameters
           size_t scaling = 1; // (NOT USED): could be used for scaling statistics if needed
-          size_t maxIterations = SIZE_MAX;
-          const size_t maxSwaps = 5000;
-          const size_t maxRepeats = 10;
-		  const size_t bisectingIterations = 5;
-		  size_t maxLoops = 1; // Used to control loops in RKM + RS
+          size_t maxIterations = SIZE_MAX; // For K-means
+          const size_t maxSwaps = 5000; // For Random Swap
+          const size_t maxRepeats = 1000; // For Repeated K-means
+          const size_t bisectingIterations = 5; // For Bisecting K-means
+          size_t maxLoops = 1; // (NOT USED): Can be used to control loops in RKM + RS
 
           // Run K-means
           //runKMeansAlgorithm(&dataPoints, &groundTruth, currentK, maxIterations, currentLoops, scaling, baseName, datasetDirectory);
 
           // Run Repeated K-means
-          //maxLoops = 10;
           //runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, currentK, maxIterations, maxRepeats, maxLoops, scaling, baseName, datasetDirectory, currentTrackProgress);
 
           // Run Random Swap
-          //maxLoops = 1;
           //runRandomSwapAlgorithm(&dataPoints, &groundTruth, currentK, maxSwaps, maxLoops, scaling, baseName, datasetDirectory, currentTrackProgress);
 
           // Run SKM-Random
@@ -4076,9 +4048,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
           // Run SKM-Global
           //runSseSplitAlgorithm(&dataPoints, &groundTruth, currentK, maxIterations, currentLoops, scaling, baseName, datasetDirectory, 1, currentTrackProgress);
-          if (i <= 17)continue;
+
           // Run SKM-Local
-          runSseSplitAlgorithm(&dataPoints, &groundTruth, currentK, maxIterations, 50, scaling, baseName, datasetDirectory, 2, currentTrackProgress);
+          runSseSplitAlgorithm(&dataPoints, &groundTruth, currentK, maxIterations, currentLoops, scaling, baseName, datasetDirectory, 2, currentTrackProgress);
 
           // Run Bisecting K-means
           //runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, currentK, maxIterations, currentLoops, scaling, baseName, datasetDirectory, currentTrackProgress, bisectingIterations);

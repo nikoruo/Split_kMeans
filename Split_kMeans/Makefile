@@ -1,42 +1,51 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2025 Niko Ruohonen and contributors
 #
-# Makefile — Split_kMeans
+# Makefile — split_kmeans
 # --------------------------------------------------------------------
 # Overview
-#   Simple GNU Make build for a single-binary C project in this folder.
+#   GNU Make build system for the Split K-Means clustering algorithm.
+#   Produces a single binary from C sources in the current directory.
 #
 # Requirements
-#   - GNU Make (tested with 3.81+)
-#   - GCC/Clang toolchain
+#   - GNU Make 3.81+ (tested with 4.3+)
+#   - GCC or Clang toolchain
+#   - Supported platforms: Linux, macOS, Windows (MinGW/MSYS/Cygwin)
 #
-# Common variables (override via environment or command line):
+# Variables (override via environment or command line)
 #   OUT       - output binary name (default: split_kmeans)
 #   CC        - C compiler (default: gcc)
 #   CSTD      - C standard (default: -std=c11)
 #   OPTFLAGS  - optimization flags (default: -O3)
 #   WARNFLAGS - warning flags (default: -Wall -Wextra -Wpedantic)
-#   WERROR    - empty by default; set to -Werror in CI if desired
-#   THREADS   - 1 to enable pthreads (adds -pthread), 0 otherwise
-#   ARGS      - arguments passed to the binary via `make run ARGS="..."`
+#   WERROR    - empty by default; set to -Werror in CI
+#   THREADS   - set to 1 to enable pthreads (adds -pthread)
+#   ARGS      - runtime arguments for `make run` target
 #
 # Targets
-#   all (default)   - build the binary
-#   run             - run ./$(OUT) with optional ARGS
-#   debug           - rebuild with -O0 -g3
-#   asan            - rebuild with AddressSanitizer
-#   ubsan           - rebuild with UndefinedBehaviorSanitizer
-#   clean           - remove outputs and deps
+#   all (default) - build the binary
+#   run           - execute ./$(OUT) with optional ARGS
+#   debug         - rebuild with -O0 -g3 (no optimizations)
+#   asan          - rebuild with AddressSanitizer
+#   ubsan         - rebuild with UndefinedBehaviorSanitizer
+#   clean         - remove binary, objects, and dependency files
 #
-# Usage examples
-#   make
-#   make THREADS=1
-#   make debug
-#   make run ARGS="--help"
+# Usage Examples
+#   make                              # build release binary
+#   make THREADS=1                    # build with pthread support
+#   make debug                        # build for debugging
+#   make run ARGS="-k 5 data.txt"     # run with arguments
+#   make CC=clang OPTFLAGS=-O2        # use Clang with -O2
+#
+# Notes
+#   - Windows builds automatically append .exe extension
+#   - Dependencies are auto-generated via -MMD -MP
+#   - Math library (-lm) is linked by default
+#   - Use CPPFLAGS for preprocessor defines (e.g., -DDEBUG)
 #
 # Changelog
-#   Version 1.0.0 - 22-10-2025 by Niko Ruohonen
-#	-Initial version of this Makefile
+#   Version 1.0.0 - 26-10-2025 by Niko Ruohonen
+#     - Initial version of this Makefile
 # ----------------------------------------------------
 #   Version 1.1...
 #

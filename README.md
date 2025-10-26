@@ -12,6 +12,22 @@ License: AGPL-3.0-only (see LICENSE)
 - Default run: SSE Split (Local Repartition, splitType=2) with random unique centroid initialization.
 - All other algorithms are commented out in `main()` in `Split_kMeans/clustering_with_.c`.
 - Two modes: **Directory Batch Mode** (no args) and **CLI Mode** (with args).
+- Supports MinGW/Visual Studio on Windows and GCC/Clang on POSIX (Linux/macOS).
+
+## Quick Start
+- Clone the repo.
+- Build using Visual Studio 2022 (Windows) or Makefile (POSIX).
+    - split_kmeans.exe (Windows) or ./split_kmeans (POSIX) is produced.
+- Run without arguments for batch mode or with arguments for CLI mode.
+- See **Usage** section below for details.
+
+## Changelog
+
+### v1.0.0 - 26-10-2025 by Niko Ruohonen
+- Initial release
+- Implements K-means, RKM, Random Swap, Random Split, SKM (3 variants), Bisecting K-means
+- CLI and Batch modes
+- Cross-platform support (Windows MSVC, MinGW, Linux, macOS)
 
 ## Features
 
@@ -38,14 +54,14 @@ License: AGPL-3.0-only (see LICENSE)
 
 - Portability
   - Windows (MSVC/Visual Studio 2022) and POSIX (GNU Make).
-  - RNG uses system sources: rand_s/getrandom/arc4random/random_r fallback.
+  - RNG uses system sources: rand_s/getrandom/arc4random; fallback to rand() (not thread-safe).
 
 ## Project layout
 
 ### Directory Batch Mode structure:
 - data/ — input datasets, one point per line (whitespace-separated doubles). All rows must have identical dimensionality.
 - gt/ — ground-truth centroids, one centroid per line (same dimensionality as corresponding data file).
-- centroids/ — a `.k` file per dataset containing only one positive integer K (UTF‑8 BOM tolerated).
+- centroids/ — a txt file per dataset containing only one positive integer K.
 - outputs/<YYYY-MM-DD_HH-MM-SS>/<dataset-base-name>/ — created automatically; contains logs, snapshots, aggregates.
 - Split_kMeans/*.c|*.h — source.
 
@@ -54,7 +70,7 @@ Pairing rule
 - Files are paired by sorted filename order. Keep base names aligned, e.g.:
   - data/worms_64d.txt
   - gt/worms_64d-gt.txt
-  - centroids/worms_64d.k
+  - centroids/worms_64d.txt
 
 Example formats
 - data file (N×D):
@@ -106,12 +122,12 @@ Input discovery
 - Program looks for:
   - data/*.txt — points
   - gt/*.txt — ground-truth centroids
-  - centroids/*.k — K per dataset
+  - centroids/*.txt — K per dataset
 - All three folders must contain the same number of files; pairs are formed by sorted filename order.
 
 ### CLI Mode (with arguments)
 Syntax:
-*.exe -k <K> [-r <runs>] [--track-progress] <data.txt> [gt.txt]
+split_kmeans -k <K> [-r <runs>] [--track-progress] <data.txt> [gt.txt]
 
 Runtime behavior
 - On start, a folder is created: outputs/<YYYY-MM-DD_HH-MM-SS>/.
@@ -134,8 +150,9 @@ Outputs per dataset (examples)
 
 Locale and CSV
 - CSV files use semicolons (;).
-- Numeric formatting may follow the current C locale.
-- The program currently attempts to set LC_NUMERIC to a Finnish locale for friendly Excel import on Finnish systems. If your data uses dot decimals and you want to guarantee dot output, either remove the locale call or write critical results using the "C" locale.
+- Numeric formatting uses the "C" locale by default (dot decimals).
+- Finnish locale support is available via `set_numeric_locale_finnish()` 
+  in `locale_utils.h` (currently commented out in main()).
 
 Determinism
 - Randomness is sourced from system RNGs; runs are non-deterministic by design. Seed capture is not currently implemented.
