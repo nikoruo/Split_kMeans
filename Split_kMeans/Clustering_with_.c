@@ -1193,12 +1193,12 @@ void freeDataPointArray(DataPoint* points, size_t size)
   {
       switch (algorithmId)
       {
-      case 0: return "SKM-Intra";
-      case 1: return "SKM-Global";
-      case 2: return "SKM-Local";
+      case 0: return "SKM_Intra";
+      case 1: return "SKM_Global";
+      case 2: return "SKM_Local";
       case 3: return "RS";
-      case 4: return "BisectingKM";
-      case 5: return "SKM-Random";
+      case 4: return "Bisecting_KM";
+      case 5: return "SKM_Random";
       case 6: return "KM";
       case 7: return "RKM";
       default:
@@ -2176,13 +2176,15 @@ void freeDataPointArray(DataPoint* points, size_t size)
               bestCI = currentCi;
 
 			  //For all swaps in RS, we want to track progress p1/2
-              clock_t iterEnd = clock();
-              double elapsedMs = ((double)(iterEnd - start)) / CLOCKS_PER_MS;
-              appendLogCsv(csvFile, iterationCount, currentCi, resultSse, elapsedMs);
+              // This can be used if we are not interested in tracking iteration progress
+              //clock_t iterEnd = clock();
+              //double elapsedMs = ((double)(iterEnd - start)) / CLOCKS_PER_MS;
+              //appendLogCsv(csvFile, iterationCount, currentCi, resultSse, elapsedMs);
 
-			  //For all iterations in RS, we want to track progress
-              //handleLoggingAndTracking(start, trackProgress,
-                //  dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, 3); 
+			  //For all iterations in RS, we want to track progress p1/2
+			  //This can be used if we are interested in tracking iteration progress (only when SSE improves)
+              handleLoggingAndTracking(start, trackProgress,
+                  dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, 3); 
           }
           else
           {
@@ -2202,6 +2204,11 @@ void freeDataPointArray(DataPoint* points, size_t size)
               clock_t iterEnd = clock();
               double elapsedMs = ((double)(iterEnd - start)) / CLOCKS_PER_MS;
               appendLogCsv(csvFile, iterationCount, bestCI, bestSse, elapsedMs);
+
+              //For all iterations in RS, we want to track progress p2/2
+              //This can be used if we are interested in tracking iteration progress (also when SSE doesn't improve)
+              //handleLoggingAndTracking(start, trackProgress,
+                  //dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, 3);
           }
 
           iterationCount++;
@@ -3105,14 +3112,14 @@ void freeDataPointArray(DataPoint* points, size_t size)
           stats.timeSum += duration;
           if (centroidIndex == 0) stats.successRate++;
 
-          saveExampleSnapshots(&centroids, dataPoints, centroidIndex, "kMeans",
+          saveExampleSnapshots(&centroids, dataPoints, centroidIndex, "KM",
               outputDirectory, &savedZeroResults, &savedNonZeroResults);
 
           freeCentroids(&centroids);
       }
 
       printStatistics("K-means", stats, loopCount, numCentroids, scaling);
-      writeResultsToFile(fileName, stats, numCentroids, "K-means", loopCount, scaling, outputDirectory);
+      writeResultsToFile(fileName, stats, numCentroids, "KM", loopCount, scaling, outputDirectory);
   }
 
   /**
@@ -3213,14 +3220,14 @@ void freeDataPointArray(DataPoint* points, size_t size)
           stats.timeSum += duration;
           if (centroidIndex == 0) stats.successRate++;
 
-          saveExampleSnapshots(&bestCentroids, dataPoints, centroidIndex, "repeatedKMeans",
+          saveExampleSnapshots(&bestCentroids, dataPoints, centroidIndex, "RKM",
               outputDirectory, &savedZeroResults, &savedNonZeroResults);
 
           freeCentroids(&bestCentroids);
       }
 
       printStatistics("Repeated K-means", stats, loopCount, numCentroids, scaling);
-      writeResultsToFile(fileName, stats, numCentroids, "Repeated K-means", loopCount, scaling, outputDirectory);
+      writeResultsToFile(fileName, stats, numCentroids, "RKM", loopCount, scaling, outputDirectory);
   }
 
   /**
@@ -3276,14 +3283,14 @@ void freeDataPointArray(DataPoint* points, size_t size)
           stats.timeSum += duration;
           if (centroidIndex == 0) stats.successRate++;
 
-          saveExampleSnapshots(&centroids, dataPoints, centroidIndex, "RandomSwap",
+          saveExampleSnapshots(&centroids, dataPoints, centroidIndex, "RS",
               outputDirectory, &savedZeroResults, &savedNonZeroResults);
 
           freeCentroids(&centroids);
       }
 
       printStatistics("Random Swap", stats, loopCount, numCentroids, scaling);
-      writeResultsToFile(fileName, stats, numCentroids, "Random swap", loopCount, scaling, outputDirectory);
+      writeResultsToFile(fileName, stats, numCentroids, "RS", loopCount, scaling, outputDirectory);
   }
 
   /**
@@ -3343,14 +3350,14 @@ void freeDataPointArray(DataPoint* points, size_t size)
           stats.timeSum += duration;
           if (centroidIndex == 0) stats.successRate++;
 
-          saveExampleSnapshots(&centroids, dataPoints, centroidIndex, "RandomSplit",
+          saveExampleSnapshots(&centroids, dataPoints, centroidIndex, "SKM_Random",
               outputDirectory, &savedZeroResults, &savedNonZeroResults);
 
           freeCentroids(&centroids);
       }
 
       printStatistics("Random Split", stats, loopCount, numCentroids, scaling);
-      writeResultsToFile(fileName, stats, numCentroids, "Random Split", loopCount, scaling, outputDirectory);
+      writeResultsToFile(fileName, stats, numCentroids, "SKM_Random", loopCount, scaling, outputDirectory);
   }
 
   /**
@@ -3481,14 +3488,14 @@ void freeDataPointArray(DataPoint* points, size_t size)
           stats.timeSum += duration;
           if (centroidIndex == 0) stats.successRate++;
 
-          saveExampleSnapshots(&centroids, dataPoints, centroidIndex, "Bisecting",
+          saveExampleSnapshots(&centroids, dataPoints, centroidIndex, "Bisecting_KM",
               outputDirectory, &savedZeroResults, &savedNonZeroResults);
 
           freeCentroids(&centroids);
       }
 
       printStatistics("Bisecting", stats, loopCount, numCentroids, scaling);
-      writeResultsToFile(fileName, stats, numCentroids, "Bisecting k-means", loopCount, scaling, outputDirectory);
+      writeResultsToFile(fileName, stats, numCentroids, "Bisecting_KM", loopCount, scaling, outputDirectory);
   }
 
   /////////////
