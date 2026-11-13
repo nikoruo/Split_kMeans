@@ -125,7 +125,7 @@ Input discovery
   - data/*.txt — points
   - gt/*.txt — ground-truth centroids
   - centroids/*.txt — K per dataset
-- All three folders must contain the same number of files; pairs are formed by sorted filename order.
+- All three folders must contain the same number of *.txt files (other files and folders are ignored); pairs are formed by sorted filename order (case-insensitive, the same on every OS).
 
 ### CLI Mode (with arguments)
 Syntax:

@@ -55,3 +55,40 @@ jobs:
           name: split_kmeans-${{ matrix.compiler }}
           path: build/release/split_kmeans
           if-no-files-found: warn
+
+  # ASan (with LeakSanitizer) and UBSan over the full regression suite
+  sanitizers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        sanitizer: [asan, ubsan]
+
+    env:
+      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+      UBSAN_OPTIONS: print_stacktrace=1
+
+    steps:
+      # ───────────────────────────────────────────────────────────────────
+      - name: Checkout code
+        uses: actions/checkout@v7
+      # ───────────────────────────────────────────────────────────────────
+      - name: Install ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          if [[ "${{ matrix.compiler }}" == "clang" ]]; then
+            sudo apt-get install -y clang
+          else
+            sudo apt-get install -y build-essential
+          fi
+      # ───────────────────────────────────────────────────────────────────
+      # Older sanitizer runtimes crash with the 32-bit mmap randomization of recent kernels
+      - name: Limit ASLR entropy for the sanitizer runtimes
+        run: sudo sysctl -w vm.mmap_rnd_bits=28
+      # ───────────────────────────────────────────────────────────────────
+      - name: Test (${{ matrix.sanitizer }})
+        run: make CC=${{ matrix.compiler }} WERROR=1 ${{ matrix.sanitizer }} check
