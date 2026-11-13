@@ -19,6 +19,25 @@
 *   left. Fixes the hangs on one-point clusters (SKM-Local on e04_tiny with
 *   K=3, bisecting on e02_k_equals_n). Golden files unchanged; bisecting
 *   joins the edge runs (7 new golden files).
+* - 2.5: RKM tracking rows report the CI of the best solution also when the
+*   first repeat stays best (they said NA); the perfect/failed partition
+*   snapshots are relabelled with the best centroids (they held the labels
+*   of the last repeat). Golden files unchanged.
+* - 2.6: the data and ground-truth parser rejects values that are not
+*   finite numbers ("1,5", "abc", "1.5x", nan, inf, 1e999; before, strtod
+*   read them as 1, 0, 1.5, NaN, Inf, Inf) and lines longer than 16383
+*   characters (before, split into extra rows); errors give file, line and
+*   column. getNumDimensions removed. Golden files unchanged.
+* - 2.7: batch mode lists only *.txt files (folders and other files are
+*   ignored) and sorts them the same way on every OS: ASCII case-insensitive,
+*   then byte order (before, MSVC used _stricmp and MinGW/Linux strcmp, so
+*   pairing could differ between builds). list_files moved to platform.c with
+*   checked allocation; every plain dir/name join is checked (joinPath).
+*   STAT, MKDIR_OK and PRAGMA_MSVC removed. Golden files unchanged.
+* - 2.8: ASan and UBSan clean on all 108 regression runs (Windows, Visual
+*   Studio clang 22); CI runs make asan check and make ubsan check with gcc
+*   and clang, leak detection on. _Analysis_assume_ fallback and the sal.h
+*   include removed (unused). No code fixes were needed.
 * --------------------------------------------------------------------
 * Update 1.1...
 * - ...
@@ -56,7 +75,8 @@
 *    ├─ gt/            # Ground truth centroids (matching dimensionality)
 *    └─ centroids/     # K values (single integer per file, no BOM)
 *    
-*    Files are paired by sorted filename order. Ensure matching counts and base names.
+*    Only *.txt files count; they are paired by sorted filename order (case-insensitive,
+*    the same on every OS). Ensure matching counts and base names.
 *    Example: datasetA.txt <-> datasetA-gt.txt <-> datasetA_k.txt
 *
 * 2. CLI Mode (with arguments):
@@ -541,85 +561,50 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Count whitespace-separated values on the first non-empty line.
+   * @brief Reads one line into `buffer` with fgets; NULL at end of file.
    *
-   * Scans the file from the beginning and counts tokens on the first line that
-   * contains any non-whitespace. Tokens are sequences of non-isspace characters
-   * separated by spaces/tabs. Ignores CR characters. Returns 0 if no tokens are
-   * found (e.g., empty file or only blank lines).
-   *
-   * @param filename Path to the data file.
-   * @return Number of columns (dimensions) detected, or 0 if none.
-   * @errors Exits on open/read errors (uses handleFileError/handleFileReadError).
-   * @note Reads character-by-character to avoid fixed-line-buffer truncation.
+   * Exits when the line does not fit in `size - 1` characters (a split line would be read as two rows)
+   * or on a read error. `lineNumber` is 1-based and only used in the error message.
    */
-  size_t getNumDimensions(const char* filename)
+  static char* readDataLine(char* buffer, size_t size, FILE* file, const char* filename, size_t lineNumber)
   {
-      FILE* file;
-      if (FOPEN(file, filename, "r") != 0)
+      if (fgets(buffer, (int)size, file) == NULL)
       {
-          handleFileError(filename);
+          if (ferror(file))
+          {
+              fclose(file);
+              handleFileReadError(filename);
+          }
+          return NULL;
       }
 
-      // Inform static analyzer: 'file' is non-NULL on success
-      _Analysis_assume_(file != NULL);
-
-      size_t dimensions = 0;
-      bool inToken = false;
-      bool foundNonWhitespaceOnLine = false;
-
-      for (;;)
+      if (strchr(buffer, '\n') == NULL && !feof(file))
       {
-          int ch = fgetc(file);
-
-          if (ch == EOF)
+          // The buffer is full: fine only if the line ends right here
+          const int next = fgetc(file);
+          if (next != '\n' && next != EOF)
           {
-              if (ferror(file))
-              {
-                  handleFileReadError(filename);
-              }
-              // EOF: return whatever was counted (0 if nothing found)
-              break;
-          }
-
-          if (ch == '\r')
-          {
-              // Ignore CR to handle CRLF seamlessly
-              continue;
-          }
-
-          if (ch == '\n')
-          {
-              if (foundNonWhitespaceOnLine)
-              {
-                  // Finished the first non-empty line
-                  break;
-              }
-              // Blank/whitespace-only line; reset state and continue to next line
-              inToken = false;
-              dimensions = 0;
-              foundNonWhitespaceOnLine = false;
-              continue;
-          }
-
-          if (!isspace((unsigned char)ch))
-          {
-              foundNonWhitespaceOnLine = true;
-              if (!inToken)
-              {
-                  ++dimensions;
-                  inToken = true;
-              }
-          }
-          else
-          {
-              inToken = false;
+              fclose(file);
+              fprintf(stderr, "Error: Line %zu in '%s' is longer than %zu characters\n", lineNumber, filename, size - 1);
+              exit(EXIT_FAILURE);
           }
       }
+      return buffer;
+  }
 
-      fclose(file);
-
-      return dimensions;
+  /**
+   * @brief Parses a whole token as a finite double; false on trailing characters, NaN, Inf or overflow.
+   */
+  static bool parseFiniteDouble(const char* token, double* value)
+  {
+      char* end = NULL;
+      const double parsed = strtod(token, &end);
+      if (end == token || *end != '\0' || !isfinite(parsed))
+      {
+          return false;
+      }
+      *value = parsed;
+      return true;
   }
 
   /**
@@ -632,8 +617,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @param filename Path to a space/tab-delimited text file of doubles.
    * @return DataPoints with size equal to the number of data rows; each point owns its attributes
    *         (length == expectedDims), dimensions set to expectedDims, and partition = SIZE_MAX.
-   * @errors Exits on file open/read failures, allocation failures, or inconsistent column counts.
-   * @note Parsing uses strtod and the current locale; prefer LC_NUMERIC="C" for dot decimals.
+   * @errors Exits on file open/read failures, allocation failures, inconsistent column counts,
+   *         values that are not finite numbers, and lines longer than LINE_BUFSZ - 1 characters.
+   * @note Parsing uses strtod and the current locale (the program never changes it, so dot decimals).
    */
   DataPoints readDataPoints(const char* filename)
   {
@@ -646,9 +632,10 @@ void freeDataPointArray(DataPoint* points, size_t size)
       // First pass: count data rows and establish expected dimensionality
       size_t lineCount = 0;
       size_t expectedDims = SIZE_MAX;
+      size_t lineNumber = 0;
       char countBuffer[LINE_BUFSZ];
 
-      while (fgets(countBuffer, sizeof(countBuffer), file) != NULL)
+      while (readDataLine(countBuffer, sizeof(countBuffer), file, filename, ++lineNumber) != NULL)
       {
           // Determine if the line contains any non-whitespace characters
           bool hasTokenChar = false;
@@ -690,8 +677,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
           {
               fclose(file);
               fprintf(stderr,
-                  "Error: Inconsistent column count in '%s' (expected %zu, got %zu)\n",
-                  filename, expectedDims, tokenCount);
+                  "Error: Inconsistent column count in '%s' line %zu (expected %zu, got %zu)\n",
+                  filename, lineNumber, expectedDims, tokenCount);
               exit(EXIT_FAILURE);
           }
 
@@ -716,8 +703,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       char line[LINE_BUFSZ];
       size_t currentPoint = 0;
+      lineNumber = 0;
 
-      while (fgets(line, sizeof(line), file) && currentPoint < lineCount)
+      while (currentPoint < lineCount && readDataLine(line, sizeof(line), file, filename, ++lineNumber) != NULL)
       {
           // Skip whitespace-only lines
           bool hasTokenChar = false;
@@ -755,8 +743,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
               fclose(file);
               freeDataPointArray(dataPoints.points, currentPoint);
               fprintf(stderr,
-                  "Error: Inconsistent column count in '%s' (expected %zu, got %zu)\n",
-                  filename, expectedDims, tokenCount);
+                  "Error: Inconsistent column count in '%s' line %zu (expected %zu, got %zu)\n",
+                  filename, lineNumber, expectedDims, tokenCount);
               exit(EXIT_FAILURE);
           }
 
@@ -773,7 +761,15 @@ void freeDataPointArray(DataPoint* points, size_t size)
           size_t dim = 0;
           while (token != NULL && dim < expectedDims)
           {
-              point->attributes[dim++] = strtod(token, NULL);
+              if (!parseFiniteDouble(token, &point->attributes[dim]))
+              {
+                  fclose(file);
+                  fprintf(stderr, "Error: '%s' in '%s' line %zu, column %zu is not a finite number\n",
+                      token, filename, lineNumber, dim + 1);
+                  freeDataPointArray(dataPoints.points, currentPoint + 1);
+                  exit(EXIT_FAILURE);
+              }
+              ++dim;
               token = STRTOK(NULL, " \t\r\n", &context);
           }
 
@@ -943,6 +939,19 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
+   * @brief Writes `dir` + separator + `name` into `out`; exits when it does not fit in `size` bytes.
+   */
+  static void joinPath(char* out, size_t size, const char* dir, const char* name)
+  {
+      const int length = snprintf(out, size, "%s%c%s", dir, PATHSEP, name);
+      if (length < 0 || (size_t)length >= size)
+      {
+          fprintf(stderr, "Error: Path too long: %s%c%s\n", dir, PATHSEP, name);
+          exit(EXIT_FAILURE);
+      }
+  }
+
+  /**
    * @brief Appends one row per run to `<outputDirectory>/<algorithmName>_runs.csv` (run;seed;sse;ci;ms).
    *
    * The seed reproduces the run; SSE uses %.17g so it round-trips; ci is NA without ground truth. Call outside timed code.
@@ -990,11 +999,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
   void writeCentroidsToFile(const char* filename, const Centroids* centroids, const char* outputDirectory)
   {
       char outputFilePath[PATH_MAX];
-      if (snprintf(outputFilePath, sizeof(outputFilePath), "%s%c%s", outputDirectory, PATHSEP, filename) >= (int)sizeof(outputFilePath))
-      {
-          fprintf(stderr, "Buffer too small in writeCentroidsToFile\n");
-          exit(EXIT_FAILURE);
-      }
+      joinPath(outputFilePath, sizeof(outputFilePath), outputDirectory, filename);
 
       FILE* centroidFile;
       if (FOPEN(centroidFile, outputFilePath, "w") != 0)
@@ -1032,11 +1037,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
   void writeDataPointPartitionsToFile(const char* filename, const DataPoints* dataPoints, const char* outputDirectory)
   {
       char outputFilePath[PATH_MAX];
-      if (snprintf(outputFilePath, sizeof(outputFilePath), "%s%c%s", outputDirectory, PATHSEP, filename) >= (int)sizeof(outputFilePath))
-      {
-          fprintf(stderr, "Buffer too small in writeDataPointPartitionsToFile\n");
-          exit(EXIT_FAILURE);
-      }
+      joinPath(outputFilePath, sizeof(outputFilePath), outputDirectory, filename);
 
       FILE* file;
       if (FOPEN(file, outputFilePath, "w") != 0)
@@ -1264,11 +1265,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
    */
   void createDatasetDirectory(const char* baseDirectory, const char* datasetName, char* datasetDirectory, size_t size)
   {
-      if (snprintf(datasetDirectory, size, "%s%c%s", baseDirectory, PATHSEP, datasetName) >= (int)size)
-      {
-          fprintf(stderr, "Buffer too small in createDatasetDirectory\n");
-          exit(EXIT_FAILURE);
-      }
+      joinPath(datasetDirectory, size, baseDirectory, datasetName);
 
       if (MAKE_DIR(datasetDirectory) != 0 && errno != EEXIST)
       {
@@ -1934,11 +1931,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       char outputFilePath[PATH_MAX];
-      if (snprintf(outputFilePath, sizeof(outputFilePath), "%s%c%s", outputDirectory, PATHSEP, statsFileName) >= (int)sizeof(outputFilePath))
-      {
-          fprintf(stderr, "Buffer too small in writeIterationStats (path)\n");
-          exit(EXIT_FAILURE);
-      }
+      joinPath(outputFilePath, sizeof(outputFilePath), outputDirectory, statsFileName);
 
       FILE* statsFile = NULL;
       if (FOPEN(statsFile, outputFilePath, "a+") != 0)
@@ -3368,16 +3361,16 @@ void freeDataPointArray(DataPoint* points, size_t size)
                   bestSse = resultSse;
                   deepCopyCentroids(&centroids, &bestCentroids);
 
+                  // Also on the first repeat: later non-improving rows report the CI of the best solution
+                  bestCI = centroidIndexOrNA(&centroids, groundTruth);
+
                   if (!firstRun)
                   {
-                      size_t currentCi = centroidIndexOrNA(&centroids, groundTruth);
-                      bestCI = currentCi;
-
                       if (trackProgress)
                       {
                           clock_t iterEnd = clock();
                           double elapsedMs = ((double)(iterEnd - start)) / CLOCKS_PER_MS;
-                          appendLogCsv(csvFile, iterationCount, currentCi, resultSse, elapsedMs);
+                          appendLogCsv(csvFile, iterationCount, bestCI, resultSse, elapsedMs);
                       }
                   }
                   else
@@ -3400,6 +3393,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
           end = clock();
           duration = ((double)(end - start)) / CLOCKS_PER_MS;
+
+          // The labels are from the last repeat; the snapshot needs those of the best centroids
+          partitionStep(dataPoints, &bestCentroids);
 
           size_t centroidIndex = centroidIndexOrNA(&bestCentroids, groundTruth);
 
@@ -4348,11 +4344,11 @@ void freeDataPointArray(DataPoint* points, size_t size)
               // ============================================================
               // Batch mode: build paths from file lists
               // ============================================================
-              snprintf(currentDataFile, sizeof(currentDataFile), "data%c%s", PATHSEP, dataNames[i]);
-              snprintf(currentGtFile, sizeof(currentGtFile), "gt%c%s", PATHSEP, gtNames[i]);
+              joinPath(currentDataFile, sizeof(currentDataFile), "data", dataNames[i]);
+              joinPath(currentGtFile, sizeof(currentGtFile), "gt", gtNames[i]);
 
               char kFile[PATH_MAX];
-              snprintf(kFile, sizeof(kFile), "centroids%c%s", PATHSEP, kNames[i]);
+              joinPath(kFile, sizeof(kFile), "centroids", kNames[i]);
 
               baseName = removeExtension(dataNames[i]);
               currentK = readKFromFile(kFile);
@@ -4365,19 +4361,13 @@ void freeDataPointArray(DataPoint* points, size_t size)
           createDatasetDirectory(outputDirectory, baseName, datasetDirectory, sizeof(datasetDirectory));
 
           // Read data and ground truth
-          size_t numDimensions = getNumDimensions(currentDataFile);
-          if (numDimensions == 0)
-          {
-              fprintf(stderr, "--> Skipping %s (couldn't read dimensions)\n", baseName);
-              continue;
-          }
-
           DataPoints dataPoints = readDataPoints(currentDataFile);
           if (dataPoints.size == 0)
           {
               fprintf(stderr, "--> Skipping %s (no data points)\n", baseName);
               continue;
           }
+          const size_t numDimensions = dataPoints.points[0].dimensions;
 
           if (currentK > dataPoints.size)
           {
