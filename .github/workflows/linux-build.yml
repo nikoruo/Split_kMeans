@@ -39,95 +39,19 @@ jobs:
             sudo apt-get install -y build-essential
           fi
       # ───────────────────────────────────────────────────────────────────
-      - name: List C sources (debug aid)
+      - name: Build (warnings are errors)
         run: |
-          echo "C files found under Split_kMeans/:"
-          find Split_kMeans -maxdepth 1 -name '*.c' -print
+          make CC=${{ matrix.compiler }} WERROR=1
+          file build/release/split_kmeans
       # ───────────────────────────────────────────────────────────────────
-      - name: Build (via Makefile)
-        run: |
-          cd Split_kMeans
-          make CC=${{ matrix.compiler }}
-          
-          # Verify binary exists
-          test -f split_kmeans || (echo "ERROR: Binary not created"; exit 1)
-          file split_kmeans
-          ls -lh split_kmeans
-      # ───────────────────────────────────────────────────────────────────
-      - name: Prepare test dataset (batch mode)
-        run: |
-          set -euo pipefail
-          mkdir -p data gt centroids
-          
-          if [ -d ci-fixtures/data ]; then
-            echo "Using CI fixtures..."
-            cp -v ci-fixtures/data/*       ./data/
-            cp -v ci-fixtures/gt/*         ./gt/
-            cp -v ci-fixtures/centroids/*  ./centroids/
-            
-            # Verify fixtures were copied
-            test -n "$(ls -A data/)" || (echo "ERROR: data/ is empty"; exit 1)
-            test -n "$(ls -A gt/)" || (echo "ERROR: gt/ is empty"; exit 1)
-            test -n "$(ls -A centroids/)" || (echo "ERROR: centroids/ is empty"; exit 1)
-          else
-            echo "Creating minimal test dataset..."
-            # Valid 2-point, 2D dataset with K=2
-            echo "0 0" > data/a1.txt
-            echo "10 10" >> data/a1.txt
-            echo "0 0" > gt/a1-ga-cb.txt
-            echo "10 10" >> gt/a1-ga-cb.txt
-            echo "2" > centroids/a1.txt
-          fi
-          
-          # Show what we have
-          echo "=== Test data prepared ==="
-          wc -l data/*.txt gt/*.txt centroids/*.txt || true
-          echo ""
-          echo "=== Data files content ==="
-          for f in data/*.txt; do
-            echo "--- $f ---"
-            head -3 "$f"
-          done
-          echo ""
-          echo "=== GT files content ==="
-          for f in gt/*.txt; do
-            echo "--- $f ---"
-            head -3 "$f"
-          done
-          echo ""
-          echo "=== K files content ==="
-          for f in centroids/*.txt; do
-            echo "--- $f ---"
-            cat "$f"
-          done
-      # ───────────────────────────────────────────────────────────────────
-      - name: Smoke test - Batch mode
-        run: |
-          set -euo pipefail
-          timeout 60s ./Split_kMeans/split_kmeans
-          
-          # Verify outputs were created
-          test -d outputs/ || (echo "ERROR: No outputs/ directory"; exit 1)
-          echo "✓ Batch mode successful"
-          ls -la outputs/
-      # ───────────────────────────────────────────────────────────────────
-      - name: Smoke test - CLI mode
-        run: |
-          set -euo pipefail
-          mkdir -p cli-test
-          echo "0 0" > cli-test/data.txt
-          echo "10 10" >> cli-test/data.txt
-          echo "5 5" > cli-test/gt.txt
-          
-          # Test CLI mode with -k argument
-          timeout 60s ./Split_kMeans/split_kmeans -k 1 cli-test/data.txt cli-test/gt.txt
-          
-          echo "✓ CLI mode successful"
+      # Generated test data, golden runs.csv comparison and both default-invocation smoke tests
+      - name: Test
+        run: make CC=${{ matrix.compiler }} WERROR=1 check
       # ───────────────────────────────────────────────────────────────────
       - name: Upload binary (artifact)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: split_kmeans-${{ matrix.compiler }}
-          path: Split_kMeans/split_kmeans
+          path: build/release/split_kmeans
           if-no-files-found: warn

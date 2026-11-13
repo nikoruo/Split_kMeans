@@ -27,22 +27,22 @@ Default settings (professor's requirement): the exe runs with no arguments (batc
 - [x] 0.16 `university/thesis-notes.txt` (local only): verified quotes, variant map, local repartition material, draft issues, methodology checklist
 
 ## Phase 1: Foundation
-- [ ] 1.1 Repo hygiene: `.gitignore` entries for the root `/data/`, `/gt/`, `/centroids/`, `/outputs/`, `/build/` (`Backups/` is already covered by `Backup*/`), `.gitattributes`, `.editorconfig`, `.clang-format`
-- [ ] 1.2 Move files: `src/main.c`, `src/platform.h`, `src/locale_utils.h`; move VS project to `msvc/` with the debugger working directory at the repo root; move the untracked `data/`, `gt/`, `centroids/` and `Backups/` folders from `Split_kMeans/` to the repo root (you approved) (depends on none)
-- [ ] 1.3 Root `Makefile`, GNU Make 4.3+; release builds define `NDEBUG` so asserts are off, debug and sanitizer builds keep them (depends on 1.2)
-- [ ] 1.4 VS project with wildcard sources, C11, `/W4`, `/utf-8` (parallel with 1.3)
-- [ ] 1.5 `src/rng.[ch]`: PCG32 + SplitMix64, unbiased bounded draws; remove `RANDOMIZE` (fixes the MinGW `rand_s` error); replace `d_type` with `stat()` in `list_files` and guard the `_Analysis_assume_` redefinition, so the code builds on MinGW from here on
-- [ ] 1.6 CLI `--seed` (default: time-based, printed), `--algo` (default `skm-local`; add `skm-global-basic` for `splitClusterGlobal`); per-run `<Algo>_runs.csv`; guard uninitialized `csvFile`; main()'s hard-coded parameters become the option defaults; remove the 12 commented-out algorithm toggles in `main()` (you approved)
-- [ ] 1.6b Log levels: `LOGGING` becomes the runtime option `--log-level 1|2|3` (default 1); uncomment the logging blocks at the levels in the Log levels table; fix the three blocks that do not compile or crash (`SSE(...)` in `runRandomSplit`, undefined `repeat`/`result1` in `runBisectingKMeans`, CI without ground truth in `runKMeans`); level checks only per run, swap, split or iteration, never per point (depends on 1.6)
-- [ ] 1.7 `tests/gen_data.c`: integer-only synthetic scenarios and edge cases (parallel with 1.6)
-- [ ] 1.8 `tests/compare_runs.c`, `make check`, `make golden-update`; smoke tests for both default invocations; recipes work in cmd.exe and sh (depends on 1.6, 1.7)
-- [ ] 1.9 CI: `WERROR=1`, gcc and clang, `make check`; fix the remaining warnings (`set_numeric_locale_finnish` non-static, unused loop counter in `runBisectingKMeans`); keep the default-settings smoke tests; delete `ci-fixtures/` and point the workflow at generated data (you approved)
+- [x] 1.1 Repo hygiene: `.gitignore` entries for the root `/data/`, `/gt/`, `/centroids/`, `/outputs/`, `/build/` (`Backups/` is already covered by `Backup*/`), `.gitattributes`, `.editorconfig`, `.clang-format`
+- [x] 1.2 Move files: `src/main.c`, `src/platform.h`, `src/locale_utils.h`; move VS project to `msvc/` with the debugger working directory at the repo root; move the untracked `data/`, `gt/`, `centroids/` and `Backups/` folders from `Split_kMeans/` to the repo root (you approved) (depends on none)
+- [x] 1.3 Root `Makefile`, GNU Make 4.3+; release builds define `NDEBUG` so asserts are off, debug and sanitizer builds keep them (depends on 1.2)
+- [x] 1.4 VS project with wildcard sources, C11, `/W4`, `/utf-8` (parallel with 1.3)
+- [x] 1.5 `src/rng.[ch]`: PCG32 + SplitMix64, unbiased bounded draws; remove `RANDOMIZE` (fixes the MinGW `rand_s` error); replace `d_type` with `stat()` in `list_files` and guard the `_Analysis_assume_` redefinition, so the code builds on MinGW from here on
+- [x] 1.6 CLI `--seed` (default: time-based, printed), `--algo` (default `skm-local`; add `skm-global-basic` for `splitClusterGlobal`); per-run `<Algo>_runs.csv`; guard uninitialized `csvFile`; main()'s hard-coded parameters become the option defaults; remove the 12 commented-out algorithm toggles in `main()` (you approved)
+- [x] 1.6b Log levels: `LOGGING` becomes the runtime option `--log-level 1|2|3` (default 1); uncomment the logging blocks at the levels in the Log levels table; fix the three blocks that do not compile or crash (`SSE(...)` in `runRandomSplit`, undefined `repeat`/`result1` in `runBisectingKMeans`, CI without ground truth in `runKMeans`); level checks only per run, swap, split or iteration, never per point (depends on 1.6)
+- [x] 1.7 `tests/gen_data.c`: integer-only synthetic scenarios and edge cases (parallel with 1.6); `make testdata` writes 5 main scenarios and 7 edge cases to `build/testdata/{main,edge}`
+- [x] 1.8 `tests/compare_runs.c`, `make check`, `make golden-update`; smoke tests for both default invocations; recipes work in cmd.exe and sh; edge case `e01_k1` crashes today (heap corruption, K=1), so it joins the golden set only after 2.3 (depends on 1.6, 1.7). Done: `-o <dir>` landed here (3.5 still owns the strict CLI); 93 golden files (bisecting is left out of the edge runs, see 2.4); `CHECK_ROOT` moves the check output out of OneDrive, where the per-swap tracking files hit sharing violations (3.2 buffers them)
+- [x] 1.9 CI: `WERROR=1`, gcc and clang, `make check`; fix the remaining warnings (`set_numeric_locale_finnish` non-static, unused loop counter in `runBisectingKMeans`, gcc `-Wformat-truncation` on the output-path `snprintf` calls in `writeCentroidsToFile` and `writeResultsToFile`); keep the default-settings smoke tests; delete `ci-fixtures/` and point the workflow at generated data (you approved). Done: `set_numeric_locale_finnish` moved to `src/locale_utils.c`; the truncation checks also cover `writeDataPointPartitionsToFile`; `handleMemoryError` takes `void*` (gcc 16 `-Wmaybe-uninitialized` at -O0); the old CLI smoke test with `-k 1` is gone (K=1 crashes until 2.3)
 
 ## Phase 2: Crashes, undefined behavior, validation (golden files identical)
 - [ ] 2.1 Boundary validation always on (N, D, K <= N, GT dimensions, parameters >= 1); per-point checks become `assert`s; fix the two commented checks that do not compile before re-enabling them
 - [ ] 2.2 Optional ground truth: CI and success rate reported as NA without it
-- [ ] 2.3 K edge cases: K=1 no split; arrays sized max(K,2); SKM-Global K=2 runs global k-means
-- [ ] 2.4 Split selection: only clusters with >= 2 points; clear error otherwise; k-means++ fallback
+- [ ] 2.3 K edge cases: K=1 no split (`build/testdata/edge/e01_k1` crashes today); arrays sized max(K,2); SKM-Global K=2 runs global k-means
+- [ ] 2.4 Split selection: only clusters with >= 2 points; clear error otherwise; k-means++ fallback; then add `bisecting` to the edge check runs (`EDGE_ALGOS` in the Makefile; today it loops forever on `e02_k_equals_n` when it picks a one-point cluster) and add its 6 edge golden files
 - [ ] 2.5 RKM: correct `bestCI`; relabel points with best centroids before snapshot
 - [ ] 2.6 Parser: check `strtod` endptr, reject NaN/Inf, detect long lines; remove `getNumDimensions`
 - [ ] 2.7 Paths: checked path-join; `list_files` in `platform.c`; `*.txt` only; same sort on all OSes (the `d_type` fix lands in 1.5); delete the unused `STAT`, `MKDIR_OK`, `PRAGMA_MSVC` macros
@@ -90,7 +90,7 @@ References (see the clustering auditor for paths): Fränti, Kaukoranta & Nevalai
 - [ ] 7.4 Tag `v2.0.0`
 
 ## Unused code review (your decision)
-Nothing here is deleted until you write delete in the Decision column. Blank means undecided. Line numbers refer to Split_kMeans/Clustering_with_.c unless noted.
+Nothing here is deleted until you write delete in the Decision column. Blank means undecided. Line numbers refer to src/main.c (formerly Split_kMeans/Clustering_with_.c) unless noted.
 
 | Item | Location | Status | Recommendation | Decision |
 |---|---|---|---|---|
@@ -102,21 +102,21 @@ Nothing here is deleted until you write delete in the Decision column. Blank mea
 | deepCopyDataPoints | line 1003 | no call site | delete (you confirmed); removed in 3.8 | delete |
 | freeStringList | line 345 | no call site; main() frees the same lists by hand | keep (you confirmed); use it in main() | keep |
 | generateGroundTruthCentroids | line 3519 | no call site; README documents it | keep (you confirmed) | keep |
-| runKMeansAlgorithm, runRepeatedKMeansAlgorithm, runRandomSwapAlgorithm, runRandomSplitAlgorithm, runBisectingKMeansAlgorithm | lines 3078, 3141, 3249, 3316, 3454 | toggle-only, enabled by uncommenting calls in main() | keep until 1.6 replaces the toggles (you confirmed) | keep |
+| runKMeansAlgorithm, runRepeatedKMeansAlgorithm, runRandomSwapAlgorithm, runRandomSplitAlgorithm, runBisectingKMeansAlgorithm | lines 3078, 3141, 3249, 3316, 3454 | toggle-only, enabled by uncommenting calls in main() | keep; selectable with `--algo` since 1.6 | keep |
 | randomSwap, localRepartitionForRS, runRandomSplit, runBisectingKMeans, runKMeansWithTracking, deepCopyCentroids, tentativeSplitterForBisecting, allocateClusteringResult, freeClusteringResult | lines 2101, 1942, 2740, 2954, 2047, 1029, 2663, 421, 304 | helpers of the toggle-only wrappers | keep with their wrappers | keep |
 | runDebuggery, debugCalculateCI, debugCalculateSSE | lines 3769, 3703, 3739 | toggle-only debug helpers | keep (you confirmed) | keep |
 | set_numeric_locale_finnish | locale_utils.h line 58 | toggle-only; static, so it fails WERROR when unused | keep (you confirmed), non-static with a header declaration; never call setlocale globally; decimal comma goes into the CSV output only (step 3.4) | keep |
-| LOGGING | line 143 | unused static const; gcc -Wall warns; 30 commented logging lines use it | keep (you confirmed); runtime `--log-level`, default 1; blocks uncommented in 1.6b per the Log levels table | keep |
+| LOGGING | line 143 | unused static const; gcc -Wall warns; 30 commented logging lines use it | keep (you confirmed); now the runtime `logLevel` set by `--log-level` (default 1); blocks uncommented in 1.6b per the Log levels table | keep |
 | STAT, MKDIR_OK, PRAGMA_MSVC | platform.h | unused macros | delete (your call delegated); removed in 2.7 | delete |
 | ClusteringResult.centroidIndex | line 431 | written, read only in a broken comment (line 3006) | delete (you agreed); removed in 3.8 | delete |
 | ClusteringResult.partition | lines 432 to 437 | allocated with N entries per bisecting try, never read | delete (you agreed); removed in 3.8; `ClusteringResult` then holds the SSE and two centroids of one bisecting try | delete |
 | groundTruth parameter of runKMeans (line 1992), splitClusterIntraCluster (line 2239), splitClusterGlobalV2 (line 2350) | runKMeans never reads it (line 1994); the split helpers only pass it on; the wrappers still use groundTruth for CI | dead parameter in these three functions | remove in 3.8 (you confirmed); k-means results unchanged; the tracking and log context from 3.2 carries the ground truth, so level-3 logs and `--track-inner` keep per-iteration CI | remove |
 | scaling parameter | used in writeResultsToFile (line 1106) and printStatistics (line 1230); the (void) cast at line 1228 is stale | keep (you confirmed; the professor's scale is undecided) | keep |
-| 88 commented-out statements: 12 toggles, 30 logging/debug, 40 validation, 6 other | Clustering_with_.c | commented out, not deleted | validation: restore in step 2.1; logging: uncomment in 1.6b; toggles: remove in 1.6; other: keep | decided |
+| 88 commented-out statements: 12 toggles, 30 logging/debug, 40 validation, 6 other | Clustering_with_.c | commented out, not deleted | validation: restore in step 2.1; logging: uncomment in 1.6b; algorithm toggles in main(): removed in 1.6; k-means++ toggles: replaced by `--init` in 3.5; runDebuggery toggle: subcommands in 3.7; other: keep | decided |
 | RS tracking variants: log every swap or only improvements (lines 2180 to 2183 and 2208 to 2211) | randomSwap | commented alternatives; CSV tracking, not console logging | keep today's behavior (one CSV row per swap); the alternatives stay as comments | keep |
 | Two commented checks that do not compile when uncommented: findNearestCentroid (line 1602, uses targetPoints) and splitClusterGlobal (line 2466, return; in a double function) | Clustering_with_.c | broken | fix in step 2.1 before re-enabling | fix |
 | ci-fixtures/ | repo root | used by linux-build.yml | delete in 1.9 when CI switches to generated data (you approved) | delete |
-| main() variables maxSwaps, maxRepeats, bisectingIterations, maxLoops | lines 4036 to 4039 | unused while the calls are commented; gcc warns | become the option defaults in 1.6 and 3.5 (default-settings requirement); maxLoops = 1 run for RKM and RS | keep |
+| main() variables maxSwaps, maxRepeats, bisectingIterations, maxLoops | lines 4036 to 4039 | unused while the calls are commented; gcc warns | became the `Options` defaults in 1.6 (maxLoops = 1 run for RKM and RS unless `--runs` is given); command-line flags follow in 3.5 | keep |
 | loop counter i in runBisectingKMeans | line 2986 | set, never used; gcc warns | remove in 1.9 (needed for WERROR=1; you approved) | remove |
 
 ## Log levels (you confirmed: default 1)

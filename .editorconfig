@@ -1,0 +1,27 @@
+root = true
+
+[*]
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[Makefile]
+indent_style = tab
+
+[*.{md,yml,yaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.sln]
+indent_style = tab
+
+[*.{vcxproj,vcxproj.filters}]
+indent_size = 2
+
+# Data, ground-truth and result files: never rewrite them on save
+[*.txt]
+insert_final_newline = unset
+trim_trailing_whitespace = unset

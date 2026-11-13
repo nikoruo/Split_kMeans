@@ -10,14 +10,14 @@ License: AGPL-3.0-only (see LICENSE)
 
 # TLDR
 - Default run: SSE Split (Local Repartition, splitType=2) with random unique centroid initialization.
-- All other algorithms are commented out in `main()` in `Split_kMeans/clustering_with_.c`.
+- All other algorithms run only when selected with `--algo` (see below).
 - Two modes: **Directory Batch Mode** (no args) and **CLI Mode** (with args).
 - Supports MinGW/Visual Studio on Windows and GCC/Clang on POSIX (Linux/macOS).
 
 ## Quick Start
 - Clone the repo.
 - Build using Visual Studio 2022 (Windows) or Makefile (POSIX).
-    - split_kmeans.exe (Windows) or ./split_kmeans (POSIX) is produced.
+    - build/msvc/x64/Release/Split_kMeans.exe (Visual Studio), build/release/split_kmeans.exe (MinGW) or build/release/split_kmeans (Linux) is produced.
 - Run without arguments for batch mode or with arguments for CLI mode.
 - See **Usage** section below for details.
 
@@ -54,7 +54,7 @@ License: AGPL-3.0-only (see LICENSE)
 
 - Portability
   - Windows (MSVC/Visual Studio 2022) and POSIX (GNU Make).
-  - RNG uses system sources: rand_s/getrandom/arc4random; fallback to rand() (not thread-safe).
+  - RNG: seeded PCG32 (`src/rng.c`), identical sequences on every platform for the same seed.
 
 ## Project layout
 
@@ -63,7 +63,8 @@ License: AGPL-3.0-only (see LICENSE)
 - gt/ — ground-truth centroids, one centroid per line (same dimensionality as corresponding data file).
 - centroids/ — a txt file per dataset containing only one positive integer K.
 - outputs/<YYYY-MM-DD_HH-MM-SS>/<dataset-base-name>/ — created automatically; contains logs, snapshots, aggregates.
-- Split_kMeans/*.c|*.h — source.
+- src/*.c|*.h — source.
+- msvc/ — Visual Studio project (open `Split_kMeans.sln` in the repo root).
 
 Pairing rule
 - The program enumerates files in data/, gt/, centroids/; counts must match.
@@ -95,21 +96,22 @@ Example formats
 - Runs the algorithm(s) you enable in `main()`; writes results and logs into the dataset’s output folder.
 
 Current defaults in code
-- `Split_kMeans/clustering_with_.c` contains toggles in `main()` to select algorithms and iteration budgets.
+- `src/main.c` contains toggles in `main()` to select algorithms and iteration budgets.
 - At the moment, only “SSE Split (Local Repartition)” is enabled.
 
 ## Build
 
-Windows (Visual Studio 2022)
-- Option A: Create a Console Application project and add:
-  - `Split_kMeans/clustering_with_.c`
-  - `Split_kMeans/platform.h`
-  - `Split_kMeans/locale_utils.h`
-- Ensure the file is compiled as C (the `.c` extension is sufficient in MSVC).
+Windows (Visual Studio)
+- Open `Split_kMeans.sln` in the repo root (project in `msvc/`). The debugger runs in the repo root, so batch mode finds `data/`, `gt/` and `centroids/`.
 - Build and run (Debug/Release as desired).
 
-POSIX (Linux/macOS, GCC/Clang)
-- with Makefile (see `Split_kMeans/Makefile` for details):
+POSIX (Linux, GCC/Clang)
+- with the Makefile in the repo root: `make` builds `build/release/split_kmeans`; `make run ARGS="-k 20 data/a1.txt"` runs it from the repo root; `make help` lists the other targets.
+
+Tests
+- `make check` generates synthetic datasets in `build/testdata`, runs the algorithms with a fixed seed, compares every `<Algorithm>_runs.csv` (without the time column) with `tests/golden`, and smoke-tests the two default invocations.
+- `make golden-update` regenerates `tests/golden`; use it only in commits that change an algorithm.
+- The check runs write to `build/check`. Inside a OneDrive folder the tracking files hit sharing violations, so pass an output root outside it, for example `mingw32-make check CHECK_ROOT=C:/Temp` (its `check` subfolder is deleted first; no spaces in the path).
 
 Notes
 - Uses C11 on POSIX via Makefile (`-std=c11`).
@@ -127,15 +129,18 @@ Input discovery
 
 ### CLI Mode (with arguments)
 Syntax:
-split_kmeans -k <K> [-r <runs>] [--track-progress] <data.txt> [gt.txt]
+split_kmeans [--algo <list>] [--seed <N>] [-r <runs>] [-o <dir>] [--track-progress] -k <K> <data.txt> [gt.txt]
+
+The options also work in batch mode (no data file), for example `split_kmeans --algo skm-local,rs --seed 42`.
 
 Runtime behavior
-- On start, a folder is created: outputs/<YYYY-MM-DD_HH-MM-SS>/.
+- On start, a folder is created: outputs/<YYYY-MM-DD_HH-MM-SS>/, and the seed is printed. `-o <dir>` writes to `<dir>` instead (created if missing; existing `<Algorithm>_runs.csv` files are appended to).
 - For each dataset, a subfolder is created: outputs/<timestamp>/<dataset-base-name>/.
-- Algorithms are run as configured in `main()`; switch algorithms by uncommenting the relevant calls.
+- The algorithms chosen with `--algo` run in a fixed order (default: skm-local only).
 
 Outputs per dataset (examples)
 - Aggregates
+  - <Algorithm>_runs.csv: run;seed;sse;ci;ms, one row per run; the seed reproduces that run
   - <Algorithm>_log.csv: ci;iteration;sse;ms (semicolon-separated)
   - <Algorithm>_iteration_stats.txt: Iteration;NumCentroids;SSE;CI;SplitCluster
   - <base>.csv: a summary row per algorithm with averages:
@@ -155,24 +160,15 @@ Locale and CSV
   in `locale_utils.h` (currently commented out in main()).
 
 Determinism
-- Randomness is sourced from system RNGs; runs are non-deterministic by design. Seed capture is not currently implemented.
+- All randomness comes from one seeded PCG32 generator. `--seed <N>` sets the master seed (default: the clock, printed at start). Run i of every algorithm uses a seed derived from the master seed and i, so the same seed and options reproduce the same results.
 
 ## Selecting algorithms and parameters
 
-Open `Split_kMeans/clustering_with_.c`, see `main()`:
-- Toggle algorithms by (un)commenting:
-  - `runKMeansAlgorithm`
-  - `runRepeatedKMeansAlgorithm`
-  - `runRandomSwapAlgorithm`
-  - `runRandomSplitAlgorithm`
-  - `runSseSplitAlgorithm` (splitType: 0, 1, 2)
-  - `runBisectingKMeansAlgorithm`
-- Adjust parameters near the dataset loop:
-  - loops, maxIterations, maxRepeats, maxSwaps, bisectingIterations
-  - trackProgress (writes per-iteration logs/snapshots on the first run)
-- Current debug settings include:
-  - A restricted dataset index range in the for-loop.
-  - Finnish numeric locale set at startup.
+- `--algo <list>`: comma-separated, any of `km`, `rkm`, `rs`, `skm-random`, `skm-intra`, `skm-global`, `skm-global-basic`, `skm-local`, `bisecting` (default `skm-local`).
+- `-r, --runs <N>`: runs per dataset (default 100). RKM and RS run once unless `--runs` is given.
+- Defaults in `main()`: k-means until SSE stops improving, RS 5000 swaps, RKM 1000 repeats, bisecting 5 tries; options for these follow.
+- `--track-progress` writes per-iteration logs and snapshots on the first run; batch mode always tracks.
+- `--log-level <1-3>`: 1 prints the setup and final statistics (default), 2 adds per-run progress, 3 adds per-swap, per-split and per-iteration debug output. Use level 1 for timing experiments.
 
 ## Ground-truth and debugging helpers
 

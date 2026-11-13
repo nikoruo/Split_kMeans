@@ -453,16 +453,16 @@ FodyWeavers.xsd
 */debuggery/
 */centroids/
 
+# root layout from step 1.2 on (Backups/ is covered by Backup*/ above)
+/data/
+/gt/
+/centroids/
+/outputs/
+/debuggery/
+/build/
+
 # thesis materials (copyrighted; only the conversion scripts are tracked)
 /university/**
 !/university/**/
 !/university/**/*.ps1
 /visuals
-
-# --- keep CI fixture files -------------------------------
-!ci-fixtures/data/
-!ci-fixtures/data/**
-!ci-fixtures/gt/
-!ci-fixtures/gt/**
-!ci-fixtures/centroids/
-!ci-fixtures/centroids/**

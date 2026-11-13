@@ -5,11 +5,11 @@
 - Fränti's reference code lives in the sibling folder `../CBModules-master_Win` (for example `src/modules/split.c`). Use it to check algorithm steps only; do not copy its coding style.
 - Literature (local only, ignored by git except the `*.ps1` conversion scripts): Fränti's articles as text in `university/articles/out/text/` (page renders in `out/pages/`), course slides in `university/course/out/md/`. Fränti's articles, slides and CBModules are primary sources; Rantinoja's 2023 thesis is secondary, used only where they are silent. `Gradu_Ruohonen.txt` is the student's own draft, not a source. Use the literature agent for questions about them.
 - Thesis notes for the student live in `university/thesis-notes.txt` (local only).
-- Datasets (untracked): `Split_kMeans/data`, `gt`, `centroids` until step 1.2 moves them to the repo root.
+- Datasets (untracked): `data/`, `gt/`, `centroids/` (and `Backups/`) in the repo root.
 - Compares k-means variants and split-based clustering (SKM Intra, Global, Local) against Repeated K-means, Random Swap, Random Split and Bisecting K-means.
 - Results must be reproducible and statistically comparable. Thesis is in progress: algorithm fixes are the default behavior.
-- Current code is v1.0.0 in `Split_kMeans/Clustering_with_.c`. The refactor plan lives in `docs/refactor-plan.md`.
-- Phase 0 (agent setup) is done. Target layout (`src/`, `msvc/`, root `Makefile`) lands in Phase 1; until then sources and Makefile stay in `Split_kMeans/`.
+- Current code is v1.0.0 in `src/main.c` (single file until Phase 4). The refactor plan lives in `docs/refactor-plan.md`.
+- Layout: sources in `src/`, Visual Studio project in `msvc/` (solution at the root), Makefile at the root; builds go to `build/<config>/` (release, debug, asan, ubsan).
 
 ## Build and test
 - Primary build: `make` in the repo root (GNU Make 4.3+, gcc or clang; on Windows, `mingw32-make` from MinGW-w64).
