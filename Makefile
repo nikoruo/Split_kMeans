@@ -56,14 +56,11 @@ CHECK_DIR    := $(CHECK_ROOT)/check
 CHECK_OUT    := $(if $(or $(filter /%,$(CHECK_ROOT)),$(findstring :,$(CHECK_ROOT))),$(CHECK_DIR),../../../$(CHECK_DIR))
 CHECK_SEED   := 20251026
 CHECK_ALGOS  := km,skm-random,skm-intra,skm-global,skm-global-basic,skm-local,bisecting
-# Bisecting hangs on e02_k_equals_n (it picks a one-point cluster) until plan step 2.4.
-EDGE_ALGOS   := km,skm-random,skm-intra,skm-global,skm-global-basic,skm-local
 MAIN_SETS    := s01_blobs2d s02_blobs8d s03_overlap s04_unbalanced s05_k15
 EDGE_SETS    := e01_k1 e02_k_equals_n e03_duplicates e04_tiny e05_constant_dim e06_highdim e07_k2
 GOLDEN_ALGOS := KM RKM RS SKM_Random SKM_Intra SKM_Global SKM_Global_Basic SKM_Local Bisecting_KM
-GOLDEN_EDGE  := $(filter-out Bisecting_KM,$(GOLDEN_ALGOS))
 GOLDEN_FILES := $(foreach s,$(MAIN_SETS),$(foreach a,$(GOLDEN_ALGOS),main/$(s)/$(a)_runs.csv)) \
-                $(foreach s,$(EDGE_SETS),$(foreach a,$(GOLDEN_EDGE),edge/$(s)/$(a)_runs.csv))
+                $(foreach s,$(EDGE_SETS),$(foreach a,$(GOLDEN_ALGOS),edge/$(s)/$(a)_runs.csv))
 GOLDEN_DIRS  := $(addprefix tests/golden/main/,$(MAIN_SETS)) $(addprefix tests/golden/edge/,$(EDGE_SETS))
 
 # Runs the program inside a test-data group so batch mode finds data/, gt/ and centroids/.
@@ -143,7 +140,7 @@ check-outputs: $(BIN) testdata
 	$(call MKDIR,$(CHECK_DIR))
 	$(call run_in,main) --seed $(CHECK_SEED) -r 5 --algo $(CHECK_ALGOS) -o $(CHECK_OUT)/main > $(NULLDEV)
 	$(call run_in,main) --seed $(CHECK_SEED) --algo rkm,rs -o $(CHECK_OUT)/main > $(NULLDEV)
-	$(call run_in,edge) --seed $(CHECK_SEED) -r 5 --algo $(EDGE_ALGOS) -o $(CHECK_OUT)/edge > $(NULLDEV)
+	$(call run_in,edge) --seed $(CHECK_SEED) -r 5 --algo $(CHECK_ALGOS) -o $(CHECK_OUT)/edge > $(NULLDEV)
 	$(call run_in,edge) --seed $(CHECK_SEED) --algo rkm,rs -o $(CHECK_OUT)/edge > $(NULLDEV)
 
 # Golden comparison, then smoke tests of the two default invocations (CLI with and without ground truth).

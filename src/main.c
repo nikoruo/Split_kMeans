@@ -14,6 +14,11 @@
 *   before, they skipped it and reported SSE 1.7976931348623157e+308 (DBL_MAX).
 *   Golden: e04_tiny SSE DBL_MAX -> 0, e07_k2 SSE DBL_MAX -> 107718.06 (same as
 *   SKM-Intra); new edge case e01_k1 (SSE 14686.68 for every algorithm).
+* - 2.4: split selection considers only clusters with 2 or more points
+*   (SKM variants, Random Split, bisecting); exits with an error if none is
+*   left. Fixes the hangs on one-point clusters (SKM-Local on e04_tiny with
+*   K=3, bisecting on e02_k_equals_n). Golden files unchanged; bisecting
+*   joins the edge runs (7 new golden files).
 * --------------------------------------------------------------------
 * Update 1.1...
 * - ...
@@ -2332,7 +2337,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @param localMaxIterations Max iterations for the local k-means refinement.
    * @param groundTruth Optional reference centroids (unused in computation).
    * @return void
-   * @errors Exits on allocation failure.
+   * @errors Exits on allocation failure. Asserts that the cluster has at least 2 points.
    */
   void splitClusterIntraCluster(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t localMaxIterations, const Centroids* groundTruth, Rng* rng)
   {
@@ -2345,11 +2350,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
           }
       }
 
-      // Random split will break without this
-      if (clusterSize < 2)
-      {
-          return;
-      }
+      // The selection only picks clusters with at least 2 points
+      assert(clusterSize >= 2);
 
       // Collect indices of points in the cluster
       size_t* clusterIndices = malloc(clusterSize * sizeof(size_t));
@@ -2439,8 +2441,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
  * @param splitType For labeling/logging (unused here).
  * @param outputDirectory Output directory for optional logging (unused here).
  * @param trackProgress/start/createCsv/iteration For logging (unused here).
- * @return SSE after the global refinement, or current SSE if the cluster is too small to split.
- * @errors Exits on allocation failure.
+ * @return SSE after the global refinement.
+ * @errors Exits on allocation failure. Asserts that the cluster has at least 2 points.
  */
   double splitClusterGlobalV2(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t localMaxIterations, const Centroids* groundTruth, Rng* rng)
   {
@@ -2452,6 +2454,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
               clusterSize++;
           }
       }
+
+      // The selection only picks clusters with at least 2 points
+      assert(clusterSize >= 2);
 
       // Collect indices of points in the cluster
       size_t* clusterIndices = malloc(clusterSize * sizeof(size_t));
@@ -2539,8 +2544,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @param clusterToSplit Index of the cluster to split.
    * @param globalMaxIterations Max iterations for the global refinement.
    * @param groundTruth Optional reference (unused in computation).
-   * @return SSE after global refinement, or current SSE if the cluster is too small to split.
-   * @errors Exits on allocation failure.
+   * @return SSE after global refinement.
+   * @errors Exits on allocation failure. Asserts that the cluster has at least 2 points.
    * @note Runs as --algo skm-global-basic: starts global k-means directly after random seeding -> clusters are not stable -> worse results
    */
   double splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t globalMaxIterations, const Centroids* groundTruth, Rng* rng)
@@ -2555,10 +2560,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
           }
       }
 
-      if (clusterSize < 2)
-      {
-          return calculateSSE(dataPoints, centroids);
-      }
+          // The selection only picks clusters with at least 2 points
+          assert(clusterSize >= 2);
 
       // Collect the indices of the points in the selected cluster
       size_t* clusterIndices = malloc(clusterSize * sizeof(size_t));
@@ -2743,7 +2746,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @param localMaxIterations Max iterations for the local k-means refinement.
    * @param groundTruth Optional reference (unused in computation).
    * @return ClusteringResult with `centroids[2]` and `sse` for the cluster’s points.
-   * @errors Exits on allocation failure or when the cluster has fewer than 2 points.
+   * @errors Exits on allocation failure. Asserts that the cluster has at least 2 points.
    * @note Allocates `partition` sized to the cluster for symmetry; it is not populated here.
    */
   ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, size_t clusterLabel, size_t localMaxIterations, const Centroids* groundTruth, Rng* rng)
@@ -2757,12 +2760,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
           }
       }
 
-      if (clusterSize < 2)
-      {
-          fprintf(stderr, "Error: Bisecting cannot split cluster %zu with %zu point(s)\n", clusterLabel, clusterSize);
-          exit(EXIT_FAILURE);
-      }
-
+      // The selection only picks clusters with at least 2 points
+      assert(clusterSize >= 2);
 
       DataPoints pointsInCluster = allocateDataPoints(clusterSize, dataPoints->points[0].dimensions);
 
@@ -2803,6 +2802,39 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
+   * @brief Counts the points of clusters 0..numClusters-1 into `sizes`; returns how many have at least 2 points.
+   */
+  static size_t countClusterSizes(const DataPoints* dataPoints, size_t numClusters, size_t* sizes)
+  {
+      memset(sizes, 0, numClusters * sizeof(size_t));
+      for (size_t i = 0; i < dataPoints->size; ++i)
+      {
+          assert(dataPoints->points[i].partition < numClusters);
+          sizes[dataPoints->points[i].partition]++;
+      }
+
+      size_t splittable = 0;
+      for (size_t c = 0; c < numClusters; ++c)
+      {
+          if (sizes[c] >= 2) splittable++;
+      }
+      return splittable;
+  }
+
+  /**
+   * @brief Exits when no cluster has 2 or more points. Cannot happen while K <= N; reports a bug instead of hanging.
+   */
+  static void requireSplittableCluster(size_t splittable, size_t numClusters, size_t splitType)
+  {
+      if (splittable == 0)
+      {
+          fprintf(stderr, "Error: %s found no cluster with 2 or more points to split (K=%zu)\n",
+              getAlgorithmName(splitType), numClusters);
+          exit(EXIT_FAILURE);
+      }
+  }
+
+  /**
    * @brief Grows K by repeatedly splitting a random cluster with local k-means.
    *
    * Starts from current centroids, repeatedly selects a random cluster, performs an
@@ -2834,9 +2866,18 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       size_t iterationCount = 1; //Helper for tracking progress
 
+      size_t* clusterSizes = malloc(maxCentroids * sizeof(size_t));
+      handleMemoryError(clusterSizes);
+
       while (centroids->size < maxCentroids)
       {
+          // Uniform over the clusters with at least 2 points: draw again on smaller ones
+          requireSplittableCluster(countClusterSizes(dataPoints, centroids->size, clusterSizes), centroids->size, 5);
           size_t clusterToSplit = rng_below(rng, centroids->size);
+          while (clusterSizes[clusterToSplit] < 2)
+          {
+              clusterToSplit = rng_below(rng, centroids->size);
+          }
 
           splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth, rng);
 
@@ -2859,6 +2900,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
           iterationCount++;
       }
+
+      free(clusterSizes);
 
       double finalResultSse = runKMeans(dataPoints, maxIterations, centroids, groundTruth);
 
@@ -2907,6 +2950,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
       bool* clustersAffected = calloc(capacity, sizeof(bool));
       handleMemoryError(clustersAffected);
 
+      size_t* clusterSizes = malloc(capacity * sizeof(size_t));
+      handleMemoryError(clusterSizes);
+
       char csvFile[PATH_MAX] = "";
       if (createCsv)
       {
@@ -2939,13 +2985,14 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       while (centroids->size < maxCentroids)
       {
-          // Choose the cluster that reduces the SSE the most
-          size_t clusterToSplit = 0;
-          double maxSseDrop = SseDrops[0];
+          // Choose the cluster that reduces the SSE the most; only clusters with at least 2 points can split
+          requireSplittableCluster(countClusterSizes(dataPoints, centroids->size, clusterSizes), centroids->size, splitType);
+          size_t clusterToSplit = SIZE_MAX;
+          double maxSseDrop = 0.0;
 
-          for (size_t i = 1; i < centroids->size; ++i)
+          for (size_t i = 0; i < centroids->size; ++i)
           {
-              if (SseDrops[i] > maxSseDrop)
+              if (clusterSizes[i] >= 2 && (clusterToSplit == SIZE_MAX || SseDrops[i] > maxSseDrop))
               {
                   maxSseDrop = SseDrops[i];
                   clusterToSplit = i;
@@ -3032,6 +3079,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       free(clusterSSEs);
       free(SseDrops);
       free(clustersAffected);
+      free(clusterSizes);
 
       // Global splits end with global k-means; without one (K <= 2) run it here
       if (!refinedGlobally)
@@ -3051,7 +3099,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * then repeatedly picks the cluster with the highest current SSE, runs several
    * local k-means attempts on that cluster, and applies the best candidate split.
    * Reassigns points globally after each accepted split and updates per-cluster SSEs.
-   * Stops when centroids->size == maxCentroids or no cluster has ≥2 points.
+   * Stops when centroids->size == maxCentroids; only clusters with ≥2 points are split.
    *
    * @param dataPoints Dataset; partitions updated in-place across splits.
    * @param centroids Global centroids; grown in-place up to maxCentroids.
@@ -3071,6 +3119,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
       // The initial split always makes two clusters, so the list holds at least two
       double* SseList = malloc((maxCentroids < 2 ? 2 : maxCentroids) * sizeof(double));
       handleMemoryError(SseList);
+      size_t* clusterSizes = malloc((maxCentroids < 2 ? 2 : maxCentroids) * sizeof(size_t));
+      handleMemoryError(clusterSizes);
       double bestSse = DBL_MAX;
 
       DataPoint newCentroid1 = allocateDataPoint(dataPoints->points[0].dimensions);
@@ -3106,13 +3156,14 @@ void freeDataPointArray(DataPoint* points, size_t size)
       //Repeat until we have K clusters
       while (centroids->size < maxCentroids)
       {
-          size_t clusterToSplit = 0;
-          double maxSSE = SseList[0];
+          //Step 1: Choose the cluster to split (the highest SSE among clusters with at least 2 points)
+          requireSplittableCluster(countClusterSizes(dataPoints, centroids->size, clusterSizes), centroids->size, 4);
+          size_t clusterToSplit = SIZE_MAX;
+          double maxSSE = 0.0;
 
-          //Step 1: Choose the cluster to split (the highest SSE)
-          for (size_t j = 1; j < centroids->size; ++j)
+          for (size_t j = 0; j < centroids->size; ++j)
           {
-              if (SseList[j] > maxSSE)
+              if (clusterSizes[j] >= 2 && (clusterToSplit == SIZE_MAX || SseList[j] > maxSSE))
               {
                   maxSSE = SseList[j];
                   clusterToSplit = j;
@@ -3171,6 +3222,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       // Cleanup
       free(SseList);
+      free(clusterSizes);
       deinitDataPoint(&newCentroid1);
       deinitDataPoint(&newCentroid2);
 
