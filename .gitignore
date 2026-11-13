@@ -453,6 +453,12 @@ FodyWeavers.xsd
 */debuggery/
 */centroids/
 
+# thesis materials (copyrighted; only the conversion scripts are tracked)
+/university/**
+!/university/**/
+!/university/**/*.ps1
+/visuals
+
 # --- keep CI fixture files -------------------------------
 !ci-fixtures/data/
 !ci-fixtures/data/**
