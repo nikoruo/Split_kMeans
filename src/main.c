@@ -3878,7 +3878,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
   /**
  * @brief Runs a quick CI and SSE sanity check with fixed test files.
  */
-  void runDebuggery()
+  void runDebuggery(void)
   {
       debugCalculateCI("debuggery/output_worms_64d.txt", "gt/worms_64d-gt.txt");
       debugCalculateSSE("debuggery/output_worms_64d.txt", "data/worms_64d.txt");
