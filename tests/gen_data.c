@@ -56,8 +56,7 @@ static const Scenario scenarios[] = {
     { "main", "s04_unbalanced", 2, 4, { 300, 25, 25, 25 }, 40, 0, far4, 104, 0 },
     { "main", "s05_k15", 2, 15, { 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40 }, 30, 0, grid15, 105, 0 },
 
-    /* Crashes today (K=1); moves to "edge" when plan step 2.3 fixes it. */
-    { "pending", "e01_k1", 2, 1, { 50 }, 20, 0, single1, 201, 0 },
+    { "edge", "e01_k1", 2, 1, { 50 }, 20, 0, single1, 201, 0 },
     { "edge", "e02_k_equals_n", 2, 8, { 1, 1, 1, 1, 1, 1, 1, 1 }, 0, 0, eight8, 202, 0 },
     { "edge", "e03_duplicates", 2, 3, { 20, 20, 20 }, 0, 0, dup3, 203, 0 },
     { "edge", "e04_tiny", 2, 2, { 2, 1 }, 0, 0, tiny2, 204, 0 },

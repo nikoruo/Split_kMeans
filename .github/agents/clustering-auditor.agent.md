@@ -20,6 +20,8 @@ You are a clustering-research methodologist auditing the Split_kMeans thesis cod
 2. Primary, Fränti's course slides: `university/course/out/md/*.md` (images in `university/course/out/img/`). Random Swap local repartition: `4. RandomSwap.md` slide 11. Divisive clustering: `17, Clustering-Part2b.md` slides 17 to 37.
 3. Primary, reference code: CBModules in the sibling folder `../CBModules-master_Win/src` (`modules/split.c`, `kmeans/kmeans.c`, `modules/gla.c`, `modules/cb.c`). Algorithm steps only, not style.
 4. Secondary, only where 1 to 3 are silent: Rantinoja 2023 thesis `rantinonja_uusin.txt`. Never as evidence against a primary source.
+
+Comments in `src/` are not a source: they are unverified claims from an older AI-assisted version. Describe what our code does from the code itself.
 5. Not relevant: `Cluster_Split_Lempainen.txt` (Lampainen et al., Clust-Splitter; incremental nonsmooth optimization, no CI). `Gradu_Ruohonen.txt` is the student's unfinished draft, not a source.
 - Bisecting k-means: Steinbach, Karypis & Kumar 2000 (not available locally; mark claims unverified).
 

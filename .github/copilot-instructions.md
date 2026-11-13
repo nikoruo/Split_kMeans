@@ -4,6 +4,7 @@
 - Master's thesis project (supervisor: Prof. Pasi Fränti, University of Eastern Finland).
 - Fränti's reference code lives in the sibling folder `../CBModules-master_Win` (for example `src/modules/split.c`). Use it to check algorithm steps only; do not copy its coding style.
 - Literature (local only, ignored by git except the `*.ps1` conversion scripts): Fränti's articles as text in `university/articles/out/text/` (page renders in `out/pages/`), course slides in `university/course/out/md/`. Fränti's articles, slides and CBModules are primary sources; Rantinoja's 2023 thesis is secondary, used only where they are silent. `Gradu_Ruohonen.txt` is the student's own draft, not a source. Use the literature agent for questions about them.
+- Comments in `src/` (doc comments, `@note`, `@errors`, commented-out code) come from an older AI-assisted version and are unverified claims, not a source. Current behavior is what the code does; intended behavior comes from the primary sources or the user. Never change code to match a comment on its own; report the mismatch.
 - Thesis notes for the student live in `university/thesis-notes.txt` (local only).
 - Datasets (untracked): `data/`, `gt/`, `centroids/` (and `Backups/`) in the repo root.
 - Compares k-means variants and split-based clustering (SKM Intra, Global, Local) against Repeated K-means, Random Swap, Random Split and Bisecting K-means.

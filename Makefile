@@ -59,7 +59,7 @@ CHECK_ALGOS  := km,skm-random,skm-intra,skm-global,skm-global-basic,skm-local,bi
 # Bisecting hangs on e02_k_equals_n (it picks a one-point cluster) until plan step 2.4.
 EDGE_ALGOS   := km,skm-random,skm-intra,skm-global,skm-global-basic,skm-local
 MAIN_SETS    := s01_blobs2d s02_blobs8d s03_overlap s04_unbalanced s05_k15
-EDGE_SETS    := e02_k_equals_n e03_duplicates e04_tiny e05_constant_dim e06_highdim e07_k2
+EDGE_SETS    := e01_k1 e02_k_equals_n e03_duplicates e04_tiny e05_constant_dim e06_highdim e07_k2
 GOLDEN_ALGOS := KM RKM RS SKM_Random SKM_Intra SKM_Global SKM_Global_Basic SKM_Local Bisecting_KM
 GOLDEN_EDGE  := $(filter-out Bisecting_KM,$(GOLDEN_ALGOS))
 GOLDEN_FILES := $(foreach s,$(MAIN_SETS),$(foreach a,$(GOLDEN_ALGOS),main/$(s)/$(a)_runs.csv)) \
@@ -146,11 +146,12 @@ check-outputs: $(BIN) testdata
 	$(call run_in,edge) --seed $(CHECK_SEED) -r 5 --algo $(EDGE_ALGOS) -o $(CHECK_OUT)/edge > $(NULLDEV)
 	$(call run_in,edge) --seed $(CHECK_SEED) --algo rkm,rs -o $(CHECK_OUT)/edge > $(NULLDEV)
 
-# Golden comparison, then smoke tests of the two default invocations.
+# Golden comparison, then smoke tests of the two default invocations (CLI with and without ground truth).
 check: check-outputs $(COMPARE)
 	$(call fixpath,$(COMPARE)) tests/golden $(CHECK_DIR) $(GOLDEN_FILES)
 	$(call run_in,main) > $(NULLDEV)
 	$(call run_in,main) -k 4 data/s01_blobs2d.txt gt/s01_blobs2d.txt > $(NULLDEV)
+	$(call run_in,main) -k 4 data/s01_blobs2d.txt > $(NULLDEV)
 
 $(GOLDEN_DIRS):
 	$(call MKDIR,$@)

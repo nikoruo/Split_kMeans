@@ -7,6 +7,14 @@
 * Version 1.0.0 - 26-10-2025 by Niko Ruohonen
 * - Initial release
 * --------------------------------------------------------------------
+* Unreleased (v2.0.0 refactor, docs/refactor-plan.md)
+* - 2.3: K=1 runs without a split (SKM variants and bisecting crashed with a heap
+*   overflow); the final k-means gives the dataset mean. SKM-Global and
+*   SKM-Global-Basic with K=2 now run global k-means after the initial split;
+*   before, they skipped it and reported SSE 1.7976931348623157e+308 (DBL_MAX).
+*   Golden: e04_tiny SSE DBL_MAX -> 0, e07_k2 SSE DBL_MAX -> 107718.06 (same as
+*   SKM-Intra); new edge case e01_k1 (SSE 14686.68 for every algorithm).
+* --------------------------------------------------------------------
 * Update 1.1...
 * - ...
 */
@@ -60,7 +68,7 @@
 *      --track-progress    Enable iteration stats and snapshots
 *      --log-level <1-3>   1 basic (default), 2 progress, 3 debug
 *      -o <dir>            Output folder (default: outputs/<timestamp>)
-*      [gt.txt]            Ground truth for CI calculation
+*      [gt.txt]            Ground truth for CI (optional; CI and success rate are NA without it)
 *      -h, --help          Display help
 *
 *    Examples:
@@ -111,6 +119,7 @@
 #include "rng.h"
 
 // General includes
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -139,6 +148,9 @@
 * Divide the result of (end - start) by this value to get milliseconds.
 */
 #define CLOCKS_PER_MS ((double)CLOCKS_PER_SEC / 1000.0)
+
+/** @brief CI value meaning "not available": no ground truth, or not computed yet. Printed as NA. */
+#define CI_NA SIZE_MAX
 
 //////////////
 // GLOBALS //
@@ -221,6 +233,7 @@ typedef struct
     size_t ciSum;        /**< Sum of Centroid Index (CI) values across runs. */
     double timeSum;      /**< Total time across runs in milliseconds. */
     double successRate;  /**< Success count across runs (used as count, averaged later). */
+    bool ciAvailable;    /**< False once a run had no CI (no ground truth); CI and success rate print as NA. */
 } Statistics;
 
 
@@ -250,7 +263,7 @@ void handleMemoryError(void* ptr)
  */
 void deinitDataPoint(DataPoint* point)
 {
-    //if (point == NULL) return;
+    if (point == NULL) return;
 
     if (point->attributes != NULL)
     {
@@ -266,7 +279,7 @@ void deinitDataPoint(DataPoint* point)
  */
 void freeDataPointArray(DataPoint* points, size_t size)
 {
-    //if (points == NULL) return;
+    if (points == NULL) return;
 
     for (size_t i = 0; i < size; ++i)
     {
@@ -280,8 +293,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
  */
  void freeDataPoints(DataPoints* dataPoints)
  {
-    //if (dataPoints == NULL) return;
-    //if (dataPoints->points == NULL) return;
+    if (dataPoints == NULL) return;
+    if (dataPoints->points == NULL) return;
 
     freeDataPointArray(dataPoints->points, dataPoints->size);
     dataPoints->points = NULL;
@@ -293,8 +306,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
   */
  void freeCentroids(Centroids* centroids)
  {
-     //if (centroids == NULL) return;
-     //if (centroids->points == NULL) return;
+     if (centroids == NULL) return;
+     if (centroids->points == NULL) return;
 
      freeDataPointArray(centroids->points, centroids->size);
      centroids->points = NULL;
@@ -310,7 +323,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
   */
  void freeClusteringResult(ClusteringResult* result, size_t numCentroids)
  {
-     //if (result == NULL) return;
+     if (result == NULL) return;
 
      if (result->partition != NULL)
      {
@@ -330,7 +343,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
   */
  char** createStringList(size_t size)
   {
-     // if (size == 0) return NULL;
+     if (size == 0) return NULL;
 
      char** list = calloc(size, sizeof(char*));
      handleMemoryError(list);
@@ -351,7 +364,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
   */
   void freeStringList(char** list, size_t size)
   {
-      //if (list == NULL) return;
+      if (list == NULL) return;
 
       for (size_t i = 0; i < size; ++i)
       {
@@ -365,11 +378,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
    */
   DataPoint allocateDataPoint(size_t dimensions)
   {
-      /*if (dimensions == 0)
-      {
-          fprintf(stderr, "Error: allocateDataPoint requires dimensions > 0\n");
-          exit(EXIT_FAILURE);
-      }*/
+      assert(dimensions > 0);
 
       DataPoint point;
       point.attributes = calloc(dimensions, sizeof(double)); /* zero-init for safe += use */
@@ -403,11 +412,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
    */
   Centroids allocateCentroids(size_t size, size_t dimensions)
   {
-      /*if (dimensions == 0 || size == 0)
-      {
-          fprintf(stderr, "Error: allocateCentroids requires dimensions AND size > 0\n");
-          exit(EXIT_FAILURE);
-      }*/
+      assert(dimensions > 0 && size > 0);
 
       Centroids centroids;
       centroids.size = size;
@@ -427,11 +432,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
    */
   ClusteringResult allocateClusteringResult(size_t numDataPoints, size_t numCentroids, size_t dimensions)
   {
-      /*if (numCentroids == 0 || dimensions == 0)
-      {
-          fprintf(stderr, "Error: allocateClusteringResult requires dimensions > 0 and numCentroids > 0\n");
-          exit(EXIT_FAILURE);
-      }*/
+      assert(numCentroids > 0 && dimensions > 0);
 
       ClusteringResult result;
       result.sse = DBL_MAX;
@@ -459,16 +460,29 @@ void freeDataPointArray(DataPoint* points, size_t size)
    */
   void initializeStatistics(Statistics* stats)
   {
-      /*if (stats == NULL)
-      {
-          fprintf(stderr, "Error: Null pointer passed to initializeStatistics\n");
-          exit(EXIT_FAILURE);
-      }*/
+      assert(stats != NULL);
 
       stats->sseSum = 0.0;
       stats->ciSum = 0;
       stats->timeSum = 0.0;
       stats->successRate = 0.0; /* used as count; averaged later */
+      stats->ciAvailable = true;
+  }
+
+  /**
+   * @brief Adds one run's SSE, CI and time to the totals; a CI of CI_NA marks CI as not available.
+   */
+  static void addRunStatistics(Statistics* stats, double sse, size_t ci, double ms)
+  {
+      stats->sseSum += sse;
+      stats->timeSum += ms;
+      if (ci == CI_NA)
+      {
+          stats->ciAvailable = false;
+          return;
+      }
+      stats->ciSum += ci;
+      if (ci == 0) stats->successRate++;
   }
 
   //////////////
@@ -878,8 +892,27 @@ void freeDataPointArray(DataPoint* points, size_t size)
       return (size_t)k;
   }
 
+  /** @brief Buffer size for formatCi: 20 digits of SIZE_MAX plus the terminator. */
+  #define CI_TEXT_SIZE 21
+
   /**
-   * @brief Appends a CSV row: ci;iteration;sse;ms.
+   * @brief Writes `ci` as decimal text, or "NA" for CI_NA, into `buffer`; returns `buffer`.
+   */
+  static const char* formatCi(size_t ci, char buffer[CI_TEXT_SIZE])
+  {
+      if (ci == CI_NA)
+      {
+          snprintf(buffer, CI_TEXT_SIZE, "NA");
+      }
+      else
+      {
+          snprintf(buffer, CI_TEXT_SIZE, "%zu", ci);
+      }
+      return buffer;
+  }
+
+  /**
+   * @brief Appends a CSV row: ci;iteration;sse;ms (ci is NA when not available).
    */
   void appendLogCsv(const char* filePath, size_t iteration, size_t ci, double sse, double ms)
   {
@@ -889,8 +922,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
           handleFileError(filePath);
           return;
       }
+      char ciText[CI_TEXT_SIZE];
       /* Columns: ci;iteration;sse;ms */
-      fprintf(file, "%zu;%zu;%.0f;%.0f\n", ci, iteration, sse, ms);
+      fprintf(file, "%s;%zu;%.0f;%.0f\n", formatCi(ci, ciText), iteration, sse, ms);
       fclose(file);
   }
 
@@ -906,7 +940,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
   /**
    * @brief Appends one row per run to `<outputDirectory>/<algorithmName>_runs.csv` (run;seed;sse;ci;ms).
    *
-   * The seed reproduces the run; SSE uses %.17g so it round-trips. Call outside timed code.
+   * The seed reproduces the run; SSE uses %.17g so it round-trips; ci is NA without ground truth. Call outside timed code.
    */
   void appendRunCsv(const char* outputDirectory, const char* algorithmName, size_t run, uint64_t seed, double sse, size_t ci, double ms)
   {
@@ -929,7 +963,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
       {
           fprintf(file, "run;seed;sse;ci;ms\n");
       }
-      fprintf(file, "%zu;%" PRIu64 ";%.17g;%zu;%.17g\n", run + 1, seed, sse, ci, ms);
+      char ciText[CI_TEXT_SIZE];
+      fprintf(file, "%zu;%" PRIu64 ";%.17g;%s;%.17g\n", run + 1, seed, sse, formatCi(ci, ciText), ms);
       fclose(file);
   }
 
@@ -1026,12 +1061,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
    */
   void deepCopyDataPoint(DataPoint* destination, const DataPoint* source)
   {
-      //if (destination == source) return;
-      /*if(destination == NULL || source == NULL)
-      {
-          fprintf(stderr, "Error: Null pointer passed to deepCopyDataPoint\n");
-          exit(EXIT_FAILURE);
-      }*/
+      if (destination == source) return;
+      assert(destination != NULL && source != NULL);
 
       /* Resize or allocate attributes buffer */
       double* newAttrs = (double*)realloc(destination->attributes, source->dimensions * sizeof(double));
@@ -1050,11 +1081,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
    */
   void deepCopyDataPoints(DataPoint* destination, const DataPoint* source, size_t size)
   {
-      /*if (destination == NULL || source == NULL)
-      {
-          fprintf(stderr, "Error: Null pointer passed to deepCopyDataPoints\n");
-          exit(EXIT_FAILURE);
-      }*/
+      assert(destination != NULL && source != NULL);
 
       for (size_t i = 0; i < size; ++i)
       {
@@ -1083,12 +1110,12 @@ void freeDataPointArray(DataPoint* points, size_t size)
           destination->size = 0;
       }
 
-      /*if (source->size == 0)
+      if (source->size == 0)
       {
           destination->points = NULL;
           destination->size = 0;
           return;
-      }*/
+      }
 
       destination->size = source->size;
 
@@ -1160,7 +1187,14 @@ void freeDataPointArray(DataPoint* points, size_t size)
       double avgTime = stats.timeSum / (double)loopCount;
       double succRate = (stats.successRate / (double)loopCount);
 
-      fprintf(file, "%s;%.2f;%.0f;%.2f;%.0f;%.2f\n", algorithm, avgCI, sse, relCI, avgTime, succRate);
+      if (stats.ciAvailable)
+      {
+          fprintf(file, "%s;%.2f;%.0f;%.2f;%.0f;%.2f\n", algorithm, avgCI, sse, relCI, avgTime, succRate);
+      }
+      else
+      {
+          fprintf(file, "%s;NA;%.0f;NA;%.0f;NA\n", algorithm, sse, avgTime);
+      }
 
       fclose(file);
   }
@@ -1280,6 +1314,15 @@ void freeDataPointArray(DataPoint* points, size_t size)
   {
       (void)scaling; // (NOT USED): could be used for scaling statistics if needed
 
+      if (!stats.ciAvailable)
+      {
+          printf("(%s) Average CI: NA and SSE: %.0f\n", algorithmName, stats.sseSum / loopCount / scaling);
+          printf("(%s) Relative CI: NA\n", algorithmName);
+          printf("(%s) Average time taken: %.0f ms\n", algorithmName, stats.timeSum / loopCount);
+          printf("(%s) Success rate: NA\n\n", algorithmName);
+          return;
+      }
+
       printf("(%s) Average CI: %.2f and SSE: %.0f\n", algorithmName, (double)stats.ciSum / loopCount, stats.sseSum / loopCount / scaling);
       printf("(%s) Relative CI: %.2f\n", algorithmName, (double)stats.ciSum / loopCount / numCentroids);
       printf("(%s) Average time taken: %.0f ms\n", algorithmName, stats.timeSum / loopCount);
@@ -1366,7 +1409,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
    *
    * @param centroids Centroids to save.
    * @param dataPoints Data points whose partitions to save.
-   * @param centroidIndex Index of the centroid set (0 = perfect).
+   * @param centroidIndex Index of the centroid set (0 = perfect; CI_NA saves nothing).
    * @param algorithmPrefix Prefix for output file names.
    * @param outputDirectory Directory where files are saved.
    * @param savedPerfect Pointer to a bool tracking if perfect example was saved.
@@ -1378,6 +1421,11 @@ void freeDataPointArray(DataPoint* points, size_t size)
       size_t centroidIndex, const char* algorithmPrefix, const char* outputDirectory,
       bool* savedPerfect, bool* savedFailed)
   {
+      if (centroidIndex == CI_NA)
+      {
+          return; // No ground truth: a run cannot be classed as perfect or failed
+      }
+
       if (centroidIndex != 0 && !(*savedFailed))
       {
           char centroidsFile[PATH_MAX];
@@ -1417,30 +1465,21 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @param dataPoints Source dataset; `dataPoints->size` must be > 0.
    * @param centroids Destination centroid container; must have at least K elements.
    * @return void
-   * @errors Exits if K is invalid, destination too small, or on allocation failure.
+   * @errors Asserts valid K and destination size; exits on allocation failure.
    * @note O(N) init + O(K) swaps.
    */
   void generateRandomCentroids(size_t numCentroids, const DataPoints* dataPoints, Centroids* centroids, Rng* rng)
   {
       const size_t N = dataPoints->size;
 
-      /*if (numCentroids == 0 || N == 0 || numCentroids > N)
-      {
-          fprintf(stderr, "Error: Invalid K (%zu) for dataset size (%zu)\n", numCentroids, N);
-          exit(EXIT_FAILURE);
-      }
-      if (centroids->size < numCentroids)
-      {
-          fprintf(stderr, "Error: centroids array too small (%zu < %zu)\n",
-              centroids->size, numCentroids);
-          exit(EXIT_FAILURE);
-      }*/
+      assert(numCentroids > 0 && numCentroids <= N);
+      assert(centroids->size >= numCentroids);
 
       /* Overflow guard for allocation */
-      /*if (N > SIZE_MAX / sizeof(size_t))
+      if (N > SIZE_MAX / sizeof(size_t))
       {
           handleMemoryError(NULL);
-      }*/
+      }
 
       size_t* indices = (size_t*)malloc(N * sizeof(size_t));
       handleMemoryError(indices);
@@ -1480,16 +1519,13 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @param dataPoints Input dataset (N points).
    * @param centroids Output container for K centroids (preallocated).
    * @return void
-   * @errors Exits on invalid K or allocation failure (via handleMemoryError).
+   * @errors Asserts valid K; exits on allocation failure (via handleMemoryError).
    * @note Maintains a distance cache for O(KN) seeding cost. (NOT-USED)
    */
   void generateKMeansPlusPlusCentroids(size_t numCentroids, const DataPoints* dataPoints, Centroids* centroids, Rng* rng)
   {
-      /*if (numCentroids == 0 || dataPoints->size == 0 || numCentroids > dataPoints->size)
-      {
-          fprintf(stderr, "Error: Invalid K (%zu) for dataset size (%zu)\n", numCentroids, dataPoints->size);
-          exit(EXIT_FAILURE);
-      }*/
+      assert(numCentroids > 0 && numCentroids <= dataPoints->size);
+      assert(centroids->size >= numCentroids);
 
       /* 1) Choose the first centroid at random */
       size_t firstIndex = rng_below(rng, dataPoints->size);
@@ -1557,13 +1593,11 @@ void freeDataPointArray(DataPoint* points, size_t size)
   /**
    * @brief Sums squared distances from each point to its assigned centroid.
    *
-   * Assumes every point has a valid `partition` in `[0, centroids->size)`. Exits if an
-   * invalid index is encountered to surface upstream assignment errors.
+   * Assumes every point has a valid `partition` in `[0, centroids->size)` (asserted).
    *
    * @param dataPoints Dataset whose partitions are already assigned.
    * @param centroids Centroid set referenced by partitions.
    * @return Total SSE across all points.
-   * @errors Exits on invalid partition index.
    */
   double calculateSSE(const DataPoints* dataPoints, const Centroids* centroids)
   {
@@ -1573,11 +1607,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       {
           size_t cIndex = dataPoints->points[i].partition;
 
-          /*if (cIndex >= centroids->size)
-          {
-              fprintf(stderr, "Error: Invalid partition index %zu for data point %zu\n", cIndex, i);
-              exit(EXIT_FAILURE);
-          }*/
+          assert(cIndex < centroids->size);
 
           sse += calculateSquaredEuclideanDistance(&dataPoints->points[i], &centroids->points[cIndex]);
       }
@@ -1594,7 +1624,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @param dataPoints Dataset used for the denominator and distances.
    * @param centroids Centroids referenced by point partitions.
    * @return Mean squared error (MSE).
-   * @errors Exits on invalid partition indices via calculateSSE.
+   * @errors Asserts valid partition indices via calculateSSE.
    * @note (NOT USED)
    */
   double calculateMSE(const DataPoints* dataPoints, const Centroids* centroids)
@@ -1642,16 +1672,12 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @param queryPoint Data point to classify; `dimensions` must match centroid dimensionality.
    * @param targetCentroids Centroids to compare against; `size` must be > 0.
    * @return Zero-based index of the nearest centroid.
-   * @errors Exits if no centroids exist or if dimensionality mismatches.
+   * @errors Asserts that centroids exist.
    * @note O(K·D) per call; distance squared avoids sqrt.
    */
   size_t findNearestCentroid(const DataPoint* queryPoint, const Centroids* targetCentroids)
   {
-      /*if (targetPoints->size == 0)
-      {
-          fprintf(stderr, "Error: Cannot find nearest centroid in an empty set of data\n");
-          exit(EXIT_FAILURE);
-      }*/
+      assert(targetCentroids->size > 0);
 
       size_t nearestCentroidId = 0;
       double minDistance = calculateSquaredEuclideanDistance(queryPoint, &targetCentroids->points[0]);
@@ -1674,20 +1700,16 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @brief Assigns each data point to its nearest centroid.
    *
    * Computes nearest-centroid labels for all points using squared Euclidean distance.
-   * Requires at least one centroid; exits when none exist.
+   * Requires at least one centroid.
    *
    * @param dataPoints Points to label; updated in-place.
    * @param centroids Current centroids; `size` must be > 0.
    * @return void
-   * @errors Exits if no centroids exist.
+   * @errors Asserts that points and centroids exist.
    */
   void partitionStep(DataPoints* dataPoints, const Centroids* centroids)
   {
-      /*if (dataPoints->size == 0 || centroids->size == 0)
-      {
-          fprintf(stderr, "Error: Cannot perform optimal partition with empty data or centroids\n");
-          exit(EXIT_FAILURE);
-      }*/
+      assert(dataPoints->size > 0 && centroids->size > 0);
 
       for (size_t i = 0; i < dataPoints->size; ++i)
       {
@@ -1705,7 +1727,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @param centroids Centroids to update in-place; `size` must be > 0.
    * @param dataPoints Dataset with assigned partitions.
    * @return void
-   * @errors Exits if a point has an out-of-range partition or dimensionality mismatch.
+   * @errors Asserts valid partitions and matching dimensionality.
    * @note O(N·D + K·D) work; uses a single contiguous buffer for sums.
    */
   void centroidStep(Centroids* centroids, const DataPoints* dataPoints)
@@ -1724,6 +1746,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       {
           const DataPoint* point = &dataPoints->points[i];
           const size_t clusterLabel = point->partition;
+          assert(clusterLabel < numClusters && point->dimensions == dimensions);
 
           for (size_t dim = 0; dim < dimensions; ++dim)
           {
@@ -1832,6 +1855,12 @@ void freeDataPointArray(DataPoint* points, size_t size)
       return groundTruth != NULL && groundTruth->size > 0;
   }
 
+  /** @brief CI against the ground truth, or CI_NA when there is none. */
+  static size_t centroidIndexOrNA(const Centroids* centroids, const Centroids* groundTruth)
+  {
+      return hasGroundTruth(groundTruth) ? calculateCentroidIndex(centroids, groundTruth) : CI_NA;
+  }
+
   /**
    * @brief Persists a snapshot of centroids and partitions for a given iteration.
    *
@@ -1875,7 +1904,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @brief Appends per-iteration metrics to `<outputDirectory>/<algo>_iteration_stats.txt`.
    *
    * Writes a header line once when the file is empty, then appends a row with
-   * iteration, K, SSE, CI, and split cluster id. Keeps a single growing log across runs.
+   * iteration, K, SSE, CI (NA without ground truth), and split cluster id. Keeps a single growing log across runs.
    *
    * @param dataPoints Dataset used to derive metrics (SSE via caller).
    * @param centroids Centroids at this iteration (for K and CI).
@@ -1919,9 +1948,10 @@ void freeDataPointArray(DataPoint* points, size_t size)
           fprintf(statsFile, "Iteration;NumCentroids;SSE;CI;SplitCluster;MS\n");
       }
 
-      size_t ci = calculateCentroidIndex(centroids, groundTruth);
-      fprintf(statsFile, "%zu;%zu;%.0f;%zu;%zu;%.0f\n",
-          iteration, centroids->size, sse, ci, splitCluster, elapsedMs);
+      size_t ci = centroidIndexOrNA(centroids, groundTruth);
+      char ciText[CI_TEXT_SIZE];
+      fprintf(statsFile, "%zu;%zu;%.0f;%s;%zu;%.0f\n",
+          iteration, centroids->size, sse, formatCi(ci, ciText), splitCluster, elapsedMs);
 
       fclose(statsFile);
   }
@@ -1975,7 +2005,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       if (createCsv)
       {
-          size_t currentCi = calculateCentroidIndex(centroids, groundTruth);
+          size_t currentCi = centroidIndexOrNA(centroids, groundTruth);
           double currentSse = calculateSSE(dataPoints, centroids);
           appendLogCsv(csvFile, iterationCount, currentCi, currentSse, elapsedMs);
       }
@@ -2172,7 +2202,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       bool trackProgress, clock_t start, bool createCsv, Rng* rng)
   {
       double bestSse = DBL_MAX;
-      size_t bestCI = SIZE_MAX;
+      size_t bestCI = CI_NA;
       size_t kMeansIterations = 2;
       size_t numCentroids = centroids->size;
       size_t dimensions = centroids->points[0].dimensions;
@@ -2231,12 +2261,13 @@ void freeDataPointArray(DataPoint* points, size_t size)
           {
               bestSse = resultSse;
 
-              size_t currentCi = calculateCentroidIndex(centroids, groundTruth);
+              size_t currentCi = centroidIndexOrNA(centroids, groundTruth);
               bestCI = currentCi;
 
               if (logLevel >= 2)
               {
-                  printf("(RS) Swap %zu: Best CI: %zu and Best SSE: %.5f\n", i + 1, currentCi, resultSse);
+                  char ciText[CI_TEXT_SIZE];
+                  printf("(RS) Swap %zu: Best CI: %s and Best SSE: %.5f\n", i + 1, formatCi(currentCi, ciText), resultSse);
               }
 
 			  //For all swaps in RS, we want to track progress p1/2
@@ -2524,10 +2555,10 @@ void freeDataPointArray(DataPoint* points, size_t size)
           }
       }
 
-      /*if (clusterSize < 2)
+      if (clusterSize < 2)
       {
-          return;
-      }*/
+          return calculateSSE(dataPoints, centroids);
+      }
 
       // Collect the indices of the points in the selected cluster
       size_t* clusterIndices = malloc(clusterSize * sizeof(size_t));
@@ -2712,7 +2743,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @param localMaxIterations Max iterations for the local k-means refinement.
    * @param groundTruth Optional reference (unused in computation).
    * @return ClusteringResult with `centroids[2]` and `sse` for the cluster’s points.
-   * @errors Exits on allocation failure.
+   * @errors Exits on allocation failure or when the cluster has fewer than 2 points.
    * @note Allocates `partition` sized to the cluster for symmetry; it is not populated here.
    */
   ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, size_t clusterLabel, size_t localMaxIterations, const Centroids* groundTruth, Rng* rng)
@@ -2726,11 +2757,11 @@ void freeDataPointArray(DataPoint* points, size_t size)
           }
       }
 
-      /*if (clusterSize < 2)
+      if (clusterSize < 2)
       {
-          printf("Not enough points to split the cluster\n");
+          fprintf(stderr, "Error: Bisecting cannot split cluster %zu with %zu point(s)\n", clusterLabel, clusterSize);
           exit(EXIT_FAILURE);
-      }*/
+      }
 
 
       DataPoints pointsInCluster = allocateDataPoints(clusterSize, dataPoints->points[0].dimensions);
@@ -2849,27 +2880,31 @@ void freeDataPointArray(DataPoint* points, size_t size)
    *
    * @param dataPoints Dataset; partitions updated in-place.
    * @param centroids Global centroids; grows until `maxCentroids`.
-   * @param maxCentroids Target number of centroids (K).
+   * @param maxCentroids Target number of centroids (K); K=1 skips the split.
    * @param maxIterations Max iterations for local/global k-means refinements.
    * @param groundTruth Optional reference centroids for logging (CI).
    * @param splitType Strategy selector: 0=Intra-cluster, 1=Global, 2=LocalRepartition.
    * @param outputDirectory Destination directory for logs.
    * @param trackProgress/start/createCsv Logging/timing controls and buffers.
-   * @return Final SSE after all splits and final refinement.
+   * @return Final SSE after all splits and final refinement; global types run the final k-means only when no global split ran (K <= 2).
    * @errors Exits on allocation failure in underlying helpers.
    */
   double runSseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, const Centroids* groundTruth, size_t splitType, const char* outputDirectory,
       bool trackProgress, clock_t start, bool createCsv, Rng* rng)
   {
       double finalResultSse = DBL_MAX;
+      bool refinedGlobally = false; // set when a global split (types 1 and 8) ran global k-means
 
-      double* clusterSSEs = malloc(maxCentroids * sizeof(double));
+      // The initial split always makes two clusters, so the arrays hold at least two
+      const size_t capacity = maxCentroids < 2 ? 2 : maxCentroids;
+
+      double* clusterSSEs = malloc(capacity * sizeof(double));
       handleMemoryError(clusterSSEs);
 
-      double* SseDrops = calloc(maxCentroids, sizeof(double));
+      double* SseDrops = calloc(capacity, sizeof(double));
       handleMemoryError(SseDrops);
 
-      bool* clustersAffected = calloc(maxCentroids, sizeof(bool));
+      bool* clustersAffected = calloc(capacity, sizeof(bool));
       handleMemoryError(clustersAffected);
 
       char csvFile[PATH_MAX] = "";
@@ -2881,20 +2916,26 @@ void freeDataPointArray(DataPoint* points, size_t size)
       handleLoggingAndTracking(start, trackProgress,
           dataPoints, centroids, groundTruth, 0, outputDirectory, createCsv, csvFile, SIZE_MAX, splitType);
 
-      //Only 1 cluster, so no need for decision making
-      size_t initialClusterToSplit = 0;
-      splitClusterIntraCluster(dataPoints, centroids, initialClusterToSplit, maxIterations, groundTruth, rng);
+      size_t iterationCount = 1; //Helper for tracking progress
 
-      handleLoggingAndTracking(start, trackProgress,
-          dataPoints, centroids, groundTruth, 1, outputDirectory, createCsv, csvFile, initialClusterToSplit, splitType);
-
-      for (size_t i = 0; i < centroids->size; ++i)
+      // K=1: no split; the final k-means below refines the single centroid
+      if (maxCentroids > 1)
       {
-          clusterSSEs[i] = calculateClusterSSE(dataPoints, centroids, i);
-          SseDrops[i] = tentativeSseDrop(dataPoints, i, maxIterations, clusterSSEs[i], rng);
-      }
+          //Only 1 cluster, so no need for decision making
+          size_t initialClusterToSplit = 0;
+          splitClusterIntraCluster(dataPoints, centroids, initialClusterToSplit, maxIterations, groundTruth, rng);
 
-      size_t iterationCount = 2; //Helper for tracking progress
+          handleLoggingAndTracking(start, trackProgress,
+              dataPoints, centroids, groundTruth, 1, outputDirectory, createCsv, csvFile, initialClusterToSplit, splitType);
+
+          for (size_t i = 0; i < centroids->size; ++i)
+          {
+              clusterSSEs[i] = calculateClusterSSE(dataPoints, centroids, i);
+              SseDrops[i] = tentativeSseDrop(dataPoints, i, maxIterations, clusterSSEs[i], rng);
+          }
+
+          iterationCount = 2;
+      }
 
       while (centroids->size < maxCentroids)
       {
@@ -2916,8 +2957,16 @@ void freeDataPointArray(DataPoint* points, size_t size)
 		  // 1: Global
 		  // 2: Local repartition
           if (splitType == 0) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth, rng);
-          else if (splitType == 1) finalResultSse = splitClusterGlobalV2(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth, rng);
-          else if (splitType == 8) finalResultSse = splitClusterGlobal(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth, rng);
+          else if (splitType == 1)
+          {
+              finalResultSse = splitClusterGlobalV2(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth, rng);
+              refinedGlobally = true;
+          }
+          else if (splitType == 8)
+          {
+              finalResultSse = splitClusterGlobal(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth, rng);
+              refinedGlobally = true;
+          }
           else if (splitType == 2) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth, rng);
 
           if (centroids->size < maxCentroids)
@@ -2957,7 +3006,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
                       }
                   }
 
-                  memset(clustersAffected, 0, (maxCentroids) * sizeof(bool));
+                  memset(clustersAffected, 0, capacity * sizeof(bool));
               }
           }
           handleLoggingAndTracking(start, trackProgress,
@@ -2984,7 +3033,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
       free(SseDrops);
       free(clustersAffected);
 
-      if (splitType != 1 && splitType != 8)
+      // Global splits end with global k-means; without one (K <= 2) run it here
+      if (!refinedGlobally)
       {
           finalResultSse = runKMeans(dataPoints, maxIterations, centroids, groundTruth);
           handleLoggingAndTracking(start, trackProgress,
@@ -3005,20 +3055,21 @@ void freeDataPointArray(DataPoint* points, size_t size)
    *
    * @param dataPoints Dataset; partitions updated in-place across splits.
    * @param centroids Global centroids; grown in-place up to maxCentroids.
-   * @param maxCentroids Target number of clusters (K); must be ≥ 2.
+   * @param maxCentroids Target number of clusters (K); K=1 skips the split.
    * @param maxIterations Max iterations for the local k-means and final global k-means.
    * @param groundTruth Optional reference centroids for CI in logs (may be NULL).
    * @param outputDirectory Destination directory for optional iteration logs/snapshots.
    * @param trackProgress/start/createCsv Logging/timing controls.
    * @param bisectingIterations Number of local k-means attempts per split; 0 treated as 1.
    * @return Final SSE after the concluding refinement step.
-   * @errors Exits on allocation failures via helpers. Validates K≥2; skips unsplittable clusters.
+   * @errors Exits on allocation failures via helpers.
    * @note Recomputes per-cluster SSE after each global reassignment for robust selection.
    */
   double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, const Centroids* groundTruth, const char* outputDirectory,
       bool trackProgress, clock_t start, bool createCsv, size_t bisectingIterations, Rng* rng)
   {
-      double* SseList = malloc(maxCentroids * sizeof(double));
+      // The initial split always makes two clusters, so the list holds at least two
+      double* SseList = malloc((maxCentroids < 2 ? 2 : maxCentroids) * sizeof(double));
       handleMemoryError(SseList);
       double bestSse = DBL_MAX;
 
@@ -3034,17 +3085,23 @@ void freeDataPointArray(DataPoint* points, size_t size)
       handleLoggingAndTracking(start, trackProgress,
           dataPoints, centroids, groundTruth, 0, outputDirectory, createCsv, csvFile, SIZE_MAX, 4);
 
-      //Step 0: Only 1 cluster, so no need for decision making
-      size_t initialClusterToSplit = 0;
-      splitClusterIntraCluster(dataPoints, centroids, initialClusterToSplit, maxIterations, groundTruth, rng);
+      size_t iterationCount = 1; //Helper for tracking progress
 
-      SseList[0] = calculateClusterSSE(dataPoints, centroids, 0);
-      SseList[1] = calculateClusterSSE(dataPoints, centroids, 1);
+      // K=1: no split; the final k-means below refines the single centroid
+      if (maxCentroids > 1)
+      {
+          //Step 0: Only 1 cluster, so no need for decision making
+          size_t initialClusterToSplit = 0;
+          splitClusterIntraCluster(dataPoints, centroids, initialClusterToSplit, maxIterations, groundTruth, rng);
 
-      handleLoggingAndTracking(start, trackProgress,
-          dataPoints, centroids, groundTruth, 1, outputDirectory, createCsv, csvFile, initialClusterToSplit, 4);
+          SseList[0] = calculateClusterSSE(dataPoints, centroids, 0);
+          SseList[1] = calculateClusterSSE(dataPoints, centroids, 1);
 
-      size_t iterationCount = 2; //Helper for tracking progress
+          handleLoggingAndTracking(start, trackProgress,
+              dataPoints, centroids, groundTruth, 1, outputDirectory, createCsv, csvFile, initialClusterToSplit, 4);
+
+          iterationCount = 2;
+      }
 
       //Repeat until we have K clusters
       while (centroids->size < maxCentroids)
@@ -3174,12 +3231,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
           end = clock();
           duration = ((double)(end - start)) / CLOCKS_PER_MS;
 
-          size_t centroidIndex = calculateCentroidIndex(&centroids, groundTruth);
+          size_t centroidIndex = centroidIndexOrNA(&centroids, groundTruth);
 
-          stats.sseSum += resultSse;
-          stats.ciSum += centroidIndex;
-          stats.timeSum += duration;
-          if (centroidIndex == 0) stats.successRate++;
+          addRunStatistics(&stats, resultSse, centroidIndex, duration);
 
           appendRunCsv(outputDirectory, "KM", i, runSeed, resultSse, centroidIndex, duration);
 
@@ -3240,7 +3294,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           Rng* rng = &runRng;
 
           double bestSse = DBL_MAX;
-          size_t bestCI = SIZE_MAX;
+          size_t bestCI = CI_NA;
 
           size_t iterationCount = 0; //Helper for tracking progress
           bool firstRun = true;
@@ -3264,7 +3318,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
                   if (!firstRun)
                   {
-                      size_t currentCi = calculateCentroidIndex(&centroids, groundTruth);
+                      size_t currentCi = centroidIndexOrNA(&centroids, groundTruth);
                       bestCI = currentCi;
 
                       if (trackProgress)
@@ -3295,12 +3349,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
           end = clock();
           duration = ((double)(end - start)) / CLOCKS_PER_MS;
 
-          size_t centroidIndex = calculateCentroidIndex(&bestCentroids, groundTruth);
+          size_t centroidIndex = centroidIndexOrNA(&bestCentroids, groundTruth);
 
-          stats.sseSum += bestSse;
-          stats.ciSum += centroidIndex;
-          stats.timeSum += duration;
-          if (centroidIndex == 0) stats.successRate++;
+          addRunStatistics(&stats, bestSse, centroidIndex, duration);
 
           appendRunCsv(outputDirectory, "RKM", i, runSeed, bestSse, centroidIndex, duration);
 
@@ -3365,12 +3416,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
           end = clock();
           duration = ((double)(end - start)) / CLOCKS_PER_MS;
 
-          size_t centroidIndex = calculateCentroidIndex(&centroids, groundTruth);
+          size_t centroidIndex = centroidIndexOrNA(&centroids, groundTruth);
 
-          stats.sseSum += resultSse;
-          stats.ciSum += centroidIndex;
-          stats.timeSum += duration;
-          if (centroidIndex == 0) stats.successRate++;
+          addRunStatistics(&stats, resultSse, centroidIndex, duration);
 
           appendRunCsv(outputDirectory, "RS", i, runSeed, resultSse, centroidIndex, duration);
 
@@ -3439,12 +3487,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
           end = clock();
           duration = ((double)(end - start)) / CLOCKS_PER_MS;
 
-          size_t centroidIndex = calculateCentroidIndex(&centroids, groundTruth);
+          size_t centroidIndex = centroidIndexOrNA(&centroids, groundTruth);
 
-          stats.sseSum += resultSse;
-          stats.ciSum += centroidIndex;
-          stats.timeSum += duration;
-          if (centroidIndex == 0) stats.successRate++;
+          addRunStatistics(&stats, resultSse, centroidIndex, duration);
 
           appendRunCsv(outputDirectory, "SKM_Random", i, runSeed, resultSse, centroidIndex, duration);
 
@@ -3516,12 +3561,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
           end = clock();
           duration = ((double)(end - start)) / CLOCKS_PER_MS;
 
-          size_t centroidIndex = calculateCentroidIndex(&centroids, groundTruth);
+          size_t centroidIndex = centroidIndexOrNA(&centroids, groundTruth);
 
-          stats.sseSum += resultSse;
-          stats.ciSum += centroidIndex;
-          stats.timeSum += duration;
-          if (centroidIndex == 0) stats.successRate++;
+          addRunStatistics(&stats, resultSse, centroidIndex, duration);
 
           appendRunCsv(outputDirectory, splitTypeName, i, runSeed, resultSse, centroidIndex, duration);
 
@@ -3591,12 +3633,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
           end = clock();
           duration = ((double)(end - start)) / CLOCKS_PER_MS;
 
-          size_t centroidIndex = calculateCentroidIndex(&centroids, groundTruth);
+          size_t centroidIndex = centroidIndexOrNA(&centroids, groundTruth);
 
-          stats.sseSum += resultSse;
-          stats.ciSum += centroidIndex;
-          stats.timeSum += duration;
-          if (centroidIndex == 0) stats.successRate++;
+          addRunStatistics(&stats, resultSse, centroidIndex, duration);
 
           appendRunCsv(outputDirectory, "Bisecting_KM", i, runSeed, resultSse, centroidIndex, duration);
 
@@ -3979,7 +4018,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       printf("Single dataset:\n");
       printf("  -k <K>              Number of clusters (required with a data file)\n");
       printf("  <data.txt>          Input data file (whitespace-separated doubles)\n");
-      printf("  [gt.txt]            Ground truth centroids for CI\n\n");
+      printf("  [gt.txt]            Ground truth centroids for CI (optional; without it CI and success rate are NA)\n\n");
 
       printf("Options:\n");
       printf("  --algo <list>       Comma-separated algorithms (default: skm-local):\n");
@@ -4048,22 +4087,24 @@ void freeDataPointArray(DataPoint* points, size_t size)
       {
           if (strcmp(argv[i], "-k") == 0)
           {
-              if (i + 1 >= argc)
+              uint64_t k = 0;
+              if (i + 1 >= argc || !parseUint64(argv[++i], &k) || k < 1 || (uint64_t)(size_t)k != k)
               {
-                  fprintf(stderr, "Error: -k requires a numeric argument\n");
+                  fprintf(stderr, "Error: -k requires a positive integer\n");
                   fprintf(stderr, "Use -h for help\n");
                   exit(EXIT_FAILURE);
               }
-              cliNumCentroids = (size_t)atol(argv[++i]);
+              cliNumCentroids = (size_t)k;
           }
           else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--runs") == 0)
           {
-              if (i + 1 >= argc)
+              uint64_t runs = 0;
+              if (i + 1 >= argc || !parseUint64(argv[++i], &runs) || (uint64_t)(size_t)runs != runs)
               {
-                  fprintf(stderr, "Error: -r/--runs requires a numeric argument\n");
+                  fprintf(stderr, "Error: -r/--runs requires a positive integer\n");
                   exit(EXIT_FAILURE);
               }
-              opt.runs = (size_t)atol(argv[++i]);
+              opt.runs = (size_t)runs;
               opt.runsGiven = true;
           }
           else if (strcmp(argv[i], "--seed") == 0)
@@ -4134,6 +4175,12 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       const bool cliMode = (cliDataFile != NULL);
+
+      if (opt.runs < 1 || opt.maxIterations < 1 || opt.maxSwaps < 1 || opt.maxRepeats < 1 || opt.bisectTries < 1)
+      {
+          fprintf(stderr, "Error: runs, iterations, swaps, repeats and bisecting tries must be at least 1\n");
+          exit(EXIT_FAILURE);
+      }
 
       if (cliMode)
       {
@@ -4280,10 +4327,23 @@ void freeDataPointArray(DataPoint* points, size_t size)
               continue;
           }
 
+          if (currentK > dataPoints.size)
+          {
+              fprintf(stderr, "Error: K (%zu) exceeds the number of data points (%zu) in %s\n",
+                  currentK, dataPoints.size, currentDataFile);
+              exit(EXIT_FAILURE);
+          }
+
           Centroids groundTruth = { NULL, 0 };
           if (currentGtFile[0] != '\0')
           {
               groundTruth = readCentroids(currentGtFile);
+              if (groundTruth.size > 0 && groundTruth.points[0].dimensions != dataPoints.points[0].dimensions)
+              {
+                  fprintf(stderr, "Error: Ground truth %s has %zu dimensions, data %s has %zu\n",
+                      currentGtFile, groundTruth.points[0].dimensions, currentDataFile, dataPoints.points[0].dimensions);
+                  exit(EXIT_FAILURE);
+              }
           }
 
           if (logLevel >= 2) printf("Starting process\n");

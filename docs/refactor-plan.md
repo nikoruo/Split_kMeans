@@ -2,7 +2,7 @@
 
 Goal: correct, reproducible, fast and maintainable split k-means experiments for the master's thesis.
 
-Rules: refactors keep golden outputs bit-identical. Algorithm changes are one commit each, with `make golden-update`, a changelog entry and before/after statistics.
+Rules: refactors keep golden outputs bit-identical. Algorithm changes are one commit each, with `make golden-update`, a changelog entry and before/after statistics. Code comments are unverified claims, not a source: the code defines current behavior, the primary literature or your decision defines intended behavior.
 
 Build target for the professor: `make && make check` in the repo root (Linux). Visual Studio project kept in `msvc/`. Supported platforms: Linux and Windows (MinGW-w64). macOS is not supported.
 
@@ -14,13 +14,13 @@ Default settings (professor's requirement): the exe runs with no arguments (batc
 - [x] 0.3 `.github/instructions/makefile.instructions.md`
 - [x] 0.4 `.github/agents/c-reviewer.agent.md`
 - [x] 0.5 `.github/agents/clustering-auditor.agent.md`
-- [x] 0.6 `.github/prompts/verify.prompt.md`
-- [x] 0.7 `.github/prompts/plan-step.prompt.md`
+- [x] 0.6 `.github/prompts/verify.prompt.md` (now the skill `.github/skills/verify/SKILL.md`)
+- [x] 0.7 `.github/prompts/plan-step.prompt.md` (now the skill `.github/skills/plan-step/SKILL.md`)
 - [x] 0.8 `docs/refactor-plan.md`
 - [x] 0.9 `.gitignore`: `university/` ignored except the `*.ps1` conversion scripts (copyrighted PDFs and renders)
 - [x] 0.10 Clustering auditor: local sources ranked, quote-and-page rule, variant map, verified facts
 - [x] 0.11 `.github/agents/literature.agent.md`: answers from the local literature with quotes; edits only `university/thesis-notes.txt`
-- [x] 0.12 `.github/prompts/experiment.prompt.md`: release build, log level 1, fixed seed, pilot run first, SSE/CI summary (usable after 1.6 and 1.6b)
+- [x] 0.12 `.github/prompts/experiment.prompt.md` (now the skill `.github/skills/experiment/SKILL.md`): release build, log level 1, fixed seed, pilot run first, SSE/CI summary (usable after 1.6 and 1.6b)
 - [x] 0.13 c-reviewer: checks for log-level tests in per-point loops, output in timed code, randomness outside `Rng*`
 - [x] 0.14 plan-step: Phase 6 steps run the clustering auditor first and cite the paper in the changelog
 - [x] 0.15 `.github/copilot-instructions.md`: literature paths and ranking, SSE and CI only, empty-cluster rule
@@ -39,10 +39,10 @@ Default settings (professor's requirement): the exe runs with no arguments (batc
 - [x] 1.9 CI: `WERROR=1`, gcc and clang, `make check`; fix the remaining warnings (`set_numeric_locale_finnish` non-static, unused loop counter in `runBisectingKMeans`, gcc `-Wformat-truncation` on the output-path `snprintf` calls in `writeCentroidsToFile` and `writeResultsToFile`); keep the default-settings smoke tests; delete `ci-fixtures/` and point the workflow at generated data (you approved). Done: `set_numeric_locale_finnish` moved to `src/locale_utils.c`; the truncation checks also cover `writeDataPointPartitionsToFile`; `handleMemoryError` takes `void*` (gcc 16 `-Wmaybe-uninitialized` at -O0); the old CLI smoke test with `-k 1` is gone (K=1 crashes until 2.3)
 
 ## Phase 2: Crashes, undefined behavior, validation (golden files identical)
-- [ ] 2.1 Boundary validation always on (N, D, K <= N, GT dimensions, parameters >= 1); per-point checks become `assert`s; fix the two commented checks that do not compile before re-enabling them
-- [ ] 2.2 Optional ground truth: CI and success rate reported as NA without it
-- [ ] 2.3 K edge cases: K=1 no split (`build/testdata/edge/e01_k1` crashes today); arrays sized max(K,2); SKM-Global K=2 runs global k-means
-- [ ] 2.4 Split selection: only clusters with >= 2 points; clear error otherwise; k-means++ fallback; then add `bisecting` to the edge check runs (`EDGE_ALGOS` in the Makefile; today it loops forever on `e02_k_equals_n` when it picks a one-point cluster) and add its 6 edge golden files
+- [x] 2.1 Boundary validation always on (N, D, K <= N, GT dimensions, parameters >= 1); per-point checks become `assert`s; fix the two commented checks that do not compile before re-enabling them. Done: `-k` and `-r` parse strictly; internal checks are `assert`s; the free-function NULL guards, the `deepCopyCentroids` empty-source guard and the `generateRandomCentroids` overflow guard are live again; `findNearestCentroid` uses `targetCentroids`; `splitClusterGlobal` returns the current SSE for a cluster under 2 points; `tentativeSplitterForBisecting` exits with an error there instead of hanging. Known: SKM-Local hangs on `e04_tiny` with K=3 (duplicate points, also at HEAD; see 2.4 and 6.6)
+- [x] 2.2 Optional ground truth: CI and success rate reported as NA without it. Done: `CI_NA` sentinel and `centroidIndexOrNA`; NA in `<Algo>_runs.csv`, the summary CSV (average CI, relative CI, success rate), the console statistics, `_log.csv`, `_iteration_stats.txt` and the RS level-2 line; no perfect/failed snapshots without CI; `make check` smoke-tests `-k 4 data.txt` without ground truth (all algorithms crashed before). Side effect: RS and RKM `_log.csv` rows written before the first CI is known now say NA instead of 18446744073709551615 (2.5 fixes `bestCI`)
+- [x] 2.3 K edge cases: K=1 no split (`build/testdata/edge/e01_k1` crashes today); arrays sized max(K,2); SKM-Global K=2 runs global k-means. Done: `runSseSplit` and `runBisectingKMeans` skip the initial split for K=1 (it overflowed the K-sized arrays); SKM-Global and SKM-Global-Basic run the final global k-means when no global split ran, so K=2 no longer reports SSE `DBL_MAX`; `e01_k1` moved from `pending` to `edge` (8 new golden files, 101 in total); golden update changed only `e04_tiny` and `e07_k2` SKM_Global and SKM_Global_Basic; changelog entry in the `src/main.c` update log. This step is an algorithm change: commit it on its own
+- [ ] 2.4 Split selection: only clusters with >= 2 points; clear error otherwise; k-means++ fallback; then add `bisecting` to the edge check runs (`EDGE_ALGOS` in the Makefile; today it loops forever on `e02_k_equals_n` when it picks a one-point cluster) and add its 6 edge golden files. Covers every split helper: `splitClusterIntraCluster`, `splitClusterGlobalV2` (its doc promises a too-small guard the code lacks), `splitClusterGlobal` (the 2.1 guard returns without splitting, so `runSseSplit` picks the same cluster again and loops), `tentativeSseDrop`, `tentativeSplitterForBisecting`, `runRandomSplit`
 - [ ] 2.5 RKM: correct `bestCI`; relabel points with best centroids before snapshot
 - [ ] 2.6 Parser: check `strtod` endptr, reject NaN/Inf, detect long lines; remove `getNumDimensions`
 - [ ] 2.7 Paths: checked path-join; `list_files` in `platform.c`; `*.txt` only; same sort on all OSes (the `d_type` fix lands in 1.5); delete the unused `STAT`, `MKDIR_OK`, `PRAGMA_MSVC` macros
@@ -56,7 +56,7 @@ Default settings (professor's requirement): the exe runs with no arguments (batc
 - [ ] 3.5 Strict CLI: `--max-swaps`, `--repeats`, `--bisect-tries`, `--init`, `-o`, `--batch`, `--version`, each defaulting to today's value; output folder created after validation; RKM and RS keep 1 run by default
 - [ ] 3.6 Batch pairing stays by sorted position (ground-truth names differ, for example `birch1.txt` with `b1-gt.txt`); print the data, ground-truth and K file names on the level-1 Dataset line; warn when the ground-truth centroid count differs from K
 - [ ] 3.7 Subcommands: `ci`, `sse`, `gt-from-partition`
-- [ ] 3.8 Remove the items you marked delete in the Unused code review (`deepCopyDataPoints`, the `groundTruth` parameters, `ClusteringResult.centroidIndex` and `.partition`); `enum Algorithm`; fix docs
+- [ ] 3.8 Remove the items you marked delete in the Unused code review (`deepCopyDataPoints`, the `groundTruth` parameters, `ClusteringResult.centroidIndex` and `.partition`); `enum Algorithm`; fix docs: check every doc comment against the code (parameters that do not exist, `(NOT USED)` tags, `@return` and `@errors` promises, claims about result quality) and rewrite or remove the wrong ones
 
 ## Phase 4: Split into modules (bit-identical)
 - [ ] 4.1 Modules: util, platform, rng, dataset, metrics, kmeans, split, baselines, algorithms, tracking, experiment, cli, main
@@ -75,13 +75,13 @@ Default settings (professor's requirement): the exe runs with no arguments (batc
 ## Phase 6: Algorithm fixes (one commit each; `splitClusterGlobal` stays unchanged as the basic comparison)
 References (see the clustering auditor for paths): Fränti, Kaukoranta & Nevalainen 1997 §2.4 (local repartitioning), Fränti 2018 Random Swap p.5 to 7, CBModules `src/modules/split.c`, course slides (`4. RandomSwap` slide 11, `17, Clustering-Part2b` slides 17 to 37); Rantinoja 2023 as a secondary source. `Remapping` recomputes the centroid of every cluster it changes (6.1), `SplitPartition` reuses the precalculated tentative centroids (6.2), `SplitCluster` refuses clusters with at most one unique vector (6.6).
 - [ ] 6.1 SKM-Local: both passes stay; they read one fixed set of centroids; afterwards recompute centroids once for the split cluster, the new cluster and every cluster that lost or gained points (no second pass); recompute SSE and the tentative SSE drop for those clusters only; an emptied cluster keeps its centroid with SSE 0 and drop 0 (level-3 warning); level-3 counters for touched clusters and moved points per pass (expect about 4 to 6 touched clusters per split in 2-D, Fränti 2018 p.15)
-- [ ] 6.1b `--repartition both|inward` (default `both`): `inward` skips Pass 1, as in 1997 §2.4 and CBModules `Remapping`; golden case for `inward`; compare both with the experiment prompt (100 runs: SSE, CI, success rate, time, touched clusters per split) (depends on 6.1, 3.5)
+- [ ] 6.1b `--repartition both|inward` (default `both`): `inward` skips Pass 1, as in 1997 §2.4 and CBModules `Remapping`; golden case for `inward`; compare both with the experiment skill (100 runs: SSE, CI, success rate, time, touched clusters per split) (depends on 6.1, 3.5)
 - [ ] 6.2 SSE-split: apply the evaluated tentative split, not a re-split
 - [ ] 6.3 Bisecting: keep the selection (largest-SSE cluster, best try by SSE; same as Rantinoja §3.2); split only the chosen cluster instead of the global `partitionStep`; use the tries for the first split too; keep and document the final k-means
 - [ ] 6.4 Random Swap per Fränti 2018 p.5 to 7: the first comparison is against the initial solution's SSE (random representatives + optimal partition); update the affected centroids after the local repartition (step 4; today commented out); then 2 k-means iterations
 - [ ] 6.5 Split algorithms start from K=1 with the dataset mean (1997 §2; low impact: the first split overwrites this centroid, so only the random stream and the first snapshot change)
 - [ ] 6.6 Distinct-coordinate seeds for local 2-means
-- [ ] 6.7 100-run comparison (SSE, CI, relative CI, success rate, time) and changelog
+- [ ] 6.7 100-run comparison (SSE, CI, relative CI, success rate, time) and changelog; include `skm-global` and `skm-global-basic`, so the "worse results" claim in the `splitClusterGlobal` doc is measured, not assumed
 
 ## Phase 7: Docs, CI, re-validation
 - [ ] 7.1 Rewrite `README.md`, including a table of the default settings
@@ -96,7 +96,7 @@ Nothing here is deleted until you write delete in the Decision column. Blank mea
 |---|---|---|---|---|
 | generateKMeansPlusPlusCentroids | line 1435 | toggle-only, commented alternative in three wrappers | keep (you confirmed) | keep |
 | splitClusterGlobalV2 (runs for splitType 1) | line 2350 | runs only with splitType 1, not in the default run; the thesis variant 1 | keep (you confirmed) | keep |
-| splitClusterGlobal (basic global) | line 2454 | no call site; its doc says it gives worse results; the comparison for the thesis | keep (you confirmed); runnable as `skm-global-basic` from 1.6 | keep |
+| splitClusterGlobal (basic global) | line 2454 | runs as `skm-global-basic`; its doc claims worse results (unverified, measured in 6.7); the comparison for the thesis | keep (you confirmed); runnable as `skm-global-basic` from 1.6 | keep |
 | calculateEuclideanDistance | line 494 | no call site | keep (you confirmed) | keep |
 | calculateMSE | line 1552 | no call site | keep (you confirmed) | keep |
 | deepCopyDataPoints | line 1003 | no call site | delete (you confirmed); removed in 3.8 | delete |
