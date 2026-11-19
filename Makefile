@@ -157,7 +157,7 @@ golden-update: check-outputs $(COMPARE) | $(GOLDEN_DIRS)
 	$(call fixpath,$(COMPARE)) --update tests/golden $(CHECK_DIR) $(GOLDEN_FILES)
 
 bench:
-	$(error make bench arrives in plan step 5.7)
+	$(error make bench arrives in plan step 5.1)
 
 clean:
 	$(call RMDIR,build)
