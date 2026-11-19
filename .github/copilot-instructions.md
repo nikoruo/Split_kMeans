@@ -14,7 +14,7 @@
 
 ## Build and test
 - Primary build: `make` in the repo root (GNU Make 4.3+, gcc or clang; on Windows, `mingw32-make` from MinGW-w64).
-- Supported platforms: Linux and Windows (MinGW-w64). macOS is not supported.
+- Supported platforms: Linux and Windows (MinGW-w64 and Visual Studio 2026; both Windows builds are first-class and must give identical SSE and CI). macOS is not supported.
 - Tests: `make check`. Sanitizers: `make asan check`, `make ubsan check`.
 - Warning-free requirement: `make WERROR=1` must pass on gcc, clang and MinGW-w64. MSVC must build with `/W4`.
 - Visual Studio project lives in `msvc/` and must keep building.

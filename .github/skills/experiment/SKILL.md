@@ -1,6 +1,6 @@
 ---
 name: experiment
-description: "Run a thesis experiment with Split_kMeans (for example the --repartition comparison of step 6.1b, the 6.7 comparison or the 7.3 re-validation) and summarize SSE, CI, relative CI, success rate and time. Does not edit source files."
+description: "Run a thesis experiment with Split_kMeans (for example a milestone run M0 to M4, the --repartition comparison of step 6.1b, the 6.7 comparison or the 9.4 re-validation) and summarize SSE, CI, relative CI, success rate and time. Does not edit source files."
 disable-model-invocation: true
 argument-hint: "Experiment: algorithms, options, datasets, runs, seed"
 ---
