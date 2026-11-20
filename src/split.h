@@ -17,23 +17,41 @@
 typedef struct
 {
     double sse;
-    DataPoint* centroids;
+    Centroids centroids;
 } ClusteringResult;
 
+/* Owns membership and local-label scratch; rebuild after the dataset's partitions change. */
+typedef struct
+{
+    size_t* indices;
+    size_t* localPartitions;
+    size_t* offsets;
+    size_t* sizes;
+    size_t pointCount;
+    size_t capacity;
+    size_t clusterCount;
+    const Dataset* dataset;
+} ClusterIndex;
+
+ClusterIndex allocateClusterIndex(size_t pointCount, size_t capacity);
+void freeClusterIndex(ClusterIndex* index);
+size_t rebuildClusterIndex(ClusterIndex* index, const Dataset* dataPoints, size_t numClusters);
+
 ClusteringResult allocateClusteringResult(size_t numCentroids, size_t dimensions);
-void freeClusteringResult(ClusteringResult* result, size_t numCentroids);
-void splitClusterIntraCluster(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit,
-                              size_t localMaxIterations, Tracker* tracker, Rng* rng);
-double splitClusterGlobalV2(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit,
-                            size_t localMaxIterations, Tracker* tracker, Rng* rng);
-double splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit,
-                          size_t globalMaxIterations, Tracker* tracker, Rng* rng);
-void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, bool* clustersAffected);
-double tentativeSseDrop(DataPoints* dataPoints, size_t clusterLabel, size_t localMaxIterations,
+void freeClusteringResult(ClusteringResult* result);
+/* Split helpers require current membership and capacity for one more centroid. */
+void splitClusterIntraCluster(Dataset* dataPoints, const ClusterIndex* index, Centroids* centroids,
+                              size_t clusterToSplit, size_t localMaxIterations, Tracker* tracker, Rng* rng);
+double splitClusterGlobalV2(Dataset* dataPoints, const ClusterIndex* index, Centroids* centroids,
+                            size_t clusterToSplit, size_t localMaxIterations, Tracker* tracker, Rng* rng);
+double splitClusterGlobal(Dataset* dataPoints, const ClusterIndex* index, Centroids* centroids,
+                          size_t clusterToSplit, size_t globalMaxIterations, Tracker* tracker, Rng* rng);
+void localRepartition(Dataset* dataPoints, Centroids* centroids, size_t clusterToSplit, bool* clustersAffected);
+double tentativeSseDrop(Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel, size_t localMaxIterations,
                         double originalClusterSSE, Rng* rng);
-ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, size_t clusterLabel, size_t localMaxIterations,
-                                               Tracker* tracker, Rng* rng);
-size_t countClusterSizes(const DataPoints* dataPoints, size_t numClusters, size_t* sizes);
+ClusteringResult tentativeSplitterForBisecting(Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel,
+                                               size_t localMaxIterations, Tracker* tracker, Rng* rng);
+size_t countClusterSizes(const Dataset* dataPoints, size_t numClusters, size_t* sizes);
 void requireSplittableCluster(size_t splittable, size_t numClusters, Algorithm splitType);
 
 #endif /* SPLIT_H */

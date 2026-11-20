@@ -234,7 +234,7 @@ static void printStatistics(const char* algorithmName, Statistics stats, size_t 
  * `groundTruth` may be empty (CI is then NA); K must be 1..N (main checks it). Exits on allocation or file errors.
  * KM tracking: one row per k-means iteration (runKMeansWithTracking).
  */
-void runKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations,
+void runKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations,
                         size_t firstRun, size_t loopCount, size_t scaling, const char* fileName,
                         const char* outputDirectory, const TrackOptions* track, InitMethod init, uint64_t seed)
 {
@@ -259,7 +259,7 @@ void runKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, si
 
         resetPartitions(dataPoints);
 
-        Centroids centroids = allocateCentroids(numCentroids, dataPoints->points[0].dimensions);
+        Centroids centroids = allocateCentroids(numCentroids, dataPoints->dimensions);
 
         trackerBeginRun(&tracker, i);
 
@@ -294,7 +294,7 @@ void runKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, si
  * are then relabelled with the best centroids for the snapshots. Tracking: one row per repeat with the best SSE
  * and CI so far (CI only when tracking), snapshots at the improvements.
  */
-void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids,
+void runRepeatedKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
                                 size_t maxIterations, size_t maxRepeats, size_t firstRun, size_t loopCount,
                                 size_t scaling, const char* fileName, const char* outputDirectory,
                                 const TrackOptions* track, InitMethod init, uint64_t seed)
@@ -322,14 +322,14 @@ void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundT
         double bestSse = DBL_MAX;
         size_t bestCI = CI_NA;
 
-        Centroids bestCentroids = allocateCentroids(numCentroids, dataPoints->points[0].dimensions);
+        Centroids bestCentroids = allocateCentroids(numCentroids, dataPoints->dimensions);
 
         trackerBeginRun(&tracker, i);
 
         for (size_t j = 0; j < maxRepeats; ++j)
         {
             if (logLevel >= 3) printf("Repeat %zu\n", j + 1);
-            Centroids centroids = allocateCentroids(numCentroids, dataPoints->points[0].dimensions);
+            Centroids centroids = allocateCentroids(numCentroids, dataPoints->dimensions);
             initialCentroids(init, numCentroids, dataPoints, &centroids, rng);
             double resultSse = runKMeans(dataPoints, maxIterations, &centroids, &tracker, KM_STAGE_NONE);
 
@@ -378,7 +378,7 @@ void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundT
  * Each run starts from initial centroids by `init` and their optimal partition and makes `maxSwaps` trial swaps
  * (randomSwap). Tracking: the initial solution and every improvement, with its swap number.
  */
-void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxSwaps,
+void runRandomSwapAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxSwaps,
                             size_t firstRun, size_t loopCount, size_t scaling, const char* fileName,
                             const char* outputDirectory, const TrackOptions* track, InitMethod init, uint64_t seed)
 {
@@ -402,7 +402,7 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth
         rng_seed(&runRng, runSeed);
         Rng* rng = &runRng;
 
-        Centroids centroids = allocateCentroids(numCentroids, dataPoints->points[0].dimensions);
+        Centroids centroids = allocateCentroids(numCentroids, dataPoints->dimensions);
 
         trackerBeginRun(&tracker, i);
 
@@ -437,7 +437,7 @@ void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth
  * Each run starts from one random data point and calls runRandomSplit (a random cluster with at least 2 points
  * is split by local 2-means until K, then a final k-means).
  */
-void runRandomSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids,
+void runRandomSplitAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
                              size_t maxIterations, size_t firstRun, size_t loopCount, size_t scaling,
                              const char* fileName, const char* outputDirectory, const TrackOptions* track,
                              uint64_t seed)
@@ -464,7 +464,8 @@ void runRandomSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTrut
 
         resetPartitions(dataPoints);
 
-        Centroids centroids = allocateCentroids(1, dataPoints->points[0].dimensions);
+        Centroids centroids = allocateCentroids(numCentroids, dataPoints->dimensions);
+        centroids.size = 1;
 
         trackerBeginRun(&tracker, i);
 
@@ -499,7 +500,7 @@ void runRandomSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTrut
  * Each run starts from one random data point and calls runSseSplit with `splitType` (SKM-Intra, SKM-Global,
  * SKM-Global-Basic or SKM-Local).
  */
-void runSseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids,
+void runSseSplitAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
                           size_t maxIterations, size_t firstRun, size_t loopCount, size_t scaling, const char* fileName,
                           const char* outputDirectory, Algorithm splitType, const TrackOptions* track, uint64_t seed)
 {
@@ -527,7 +528,8 @@ void runSseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, 
 
         resetPartitions(dataPoints);
 
-        Centroids centroids = allocateCentroids(1, dataPoints->points[0].dimensions);
+        Centroids centroids = allocateCentroids(numCentroids, dataPoints->dimensions);
+        centroids.size = 1;
 
         trackerBeginRun(&tracker, i);
 
@@ -560,7 +562,7 @@ void runSseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, 
  *
  * Each run starts from one random data point and calls runBisectingKMeans with `bisectingIterations` tries per split.
  */
-void runBisectingKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids,
+void runBisectingKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
                                  size_t maxIterations, size_t firstRun, size_t loopCount, size_t scaling,
                                  const char* fileName, const char* outputDirectory, const TrackOptions* track,
                                  size_t bisectingIterations, uint64_t seed)
@@ -587,7 +589,8 @@ void runBisectingKMeansAlgorithm(DataPoints* dataPoints, const Centroids* ground
 
         resetPartitions(dataPoints);
 
-        Centroids centroids = allocateCentroids(1, dataPoints->points[0].dimensions);
+        Centroids centroids = allocateCentroids(numCentroids, dataPoints->dimensions);
+        centroids.size = 1;
 
         trackerBeginRun(&tracker, i);
 

@@ -37,24 +37,24 @@ void writeDatasetInfo(const char* datasetDirectory, const char* dataFile, const 
                       size_t d);
 void textLine(const char* text, size_t index, char* line, size_t size);
 
-void runKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations,
+void runKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations,
                         size_t firstRun, size_t loopCount, size_t scaling, const char* fileName,
                         const char* outputDirectory, const TrackOptions* track, InitMethod init, uint64_t seed);
-void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids,
+void runRepeatedKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
                                 size_t maxIterations, size_t maxRepeats, size_t firstRun, size_t loopCount,
                                 size_t scaling, const char* fileName, const char* outputDirectory,
                                 const TrackOptions* track, InitMethod init, uint64_t seed);
-void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxSwaps,
+void runRandomSwapAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxSwaps,
                             size_t firstRun, size_t loopCount, size_t scaling, const char* fileName,
                             const char* outputDirectory, const TrackOptions* track, InitMethod init, uint64_t seed);
-void runRandomSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids,
+void runRandomSplitAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
                              size_t maxIterations, size_t firstRun, size_t loopCount, size_t scaling,
                              const char* fileName, const char* outputDirectory, const TrackOptions* track,
                              uint64_t seed);
-void runSseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids,
+void runSseSplitAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
                           size_t maxIterations, size_t firstRun, size_t loopCount, size_t scaling, const char* fileName,
                           const char* outputDirectory, Algorithm splitType, const TrackOptions* track, uint64_t seed);
-void runBisectingKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids,
+void runBisectingKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
                                  size_t maxIterations, size_t firstRun, size_t loopCount, size_t scaling,
                                  const char* fileName, const char* outputDirectory, const TrackOptions* track,
                                  size_t bisectingIterations, uint64_t seed);

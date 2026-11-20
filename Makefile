@@ -45,6 +45,7 @@ DEP       := $(OBJ:.o=.d)
 GEN_DATA      := $(BUILD_DIR)/gen_data$(EXE)
 COMPARE       := $(BUILD_DIR)/compare_runs$(EXE)
 UNIT          := $(BUILD_DIR)/test_unit$(EXE)
+BENCH_RUNNER  := $(BUILD_DIR)/bench$(EXE)
 UNIT_OBJECTS  := $(addprefix $(BUILD_DIR)/,algorithms.o baselines.o dataset.o kmeans.o metrics.o platform.o rng.o split.o tracking.o util.o)
 TEST_DIR      := build/testdata
 TESTDATA_DIRS := $(foreach g,main edge pending,$(foreach d,data gt centroids,$(TEST_DIR)/$(g)/$(d)))
@@ -58,6 +59,13 @@ UNIT_DIR     := $(CHECK_DIR)/unit
 # CHECK_BIN runs the checks with another binary, for example the Visual Studio Release build.
 CHECK_BIN    ?=
 TEST_BIN     := $(if $(CHECK_BIN),$(CHECK_BIN),$(BIN))
+BENCH_ROOT   ?= build/bench
+ifeq ($(OS),Windows_NT)
+  BENCH_DEFAULT_REF := build/msvc/x64/Release/Split_kMeans.exe
+  BENCH_REF  ?= $(BENCH_DEFAULT_REF)
+else
+  BENCH_REF  ?= -
+endif
 # run_in starts three folders below the repo root, so relative paths get a ../../../ prefix.
 from_run_dir = $(if $(or $(filter /%,$1),$(findstring :,$1)),$1,../../../$1)
 CHECK_OUT    := $(call from_run_dir,$(CHECK_DIR))
@@ -153,6 +161,9 @@ $(COMPARE): tests/compare_runs.c | $(BUILD_DIR)
 $(UNIT): tests/test_unit.c $(UNIT_OBJECTS) | $(BUILD_DIR)
 	$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) -Isrc $^ -o $@ $(ALL_LDFLAGS) $(ALL_LDLIBS)
 
+$(BENCH_RUNNER): tests/bench.c src/platform.c src/platform.h | $(BUILD_DIR)
+	$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) -Isrc tests/bench.c src/platform.c -o $@ $(ALL_LDFLAGS) $(ALL_LDLIBS)
+
 $(TESTDATA_DIRS):
 	$(call MKDIR,$@)
 
@@ -211,8 +222,18 @@ golden-update: check-outputs $(COMPARE) | $(GOLDEN_DIRS)
 	$(call run_in,main) report --no-time -o $(CHECK_OUT)/report $(CHECK_OUT)/main > $(NULLDEV)
 	$(call fixpath,$(COMPARE)) --update --whole tests/golden $(CHECK_DIR) $(REPORT_FILES)
 
-bench:
-	$(error make bench arrives in plan step 5.1)
+bench: $(BIN) $(BENCH_RUNNER)
+	$(if $(filter release,$(CONFIG)),,$(error bench requires a release build; run make bench separately))
+	$(call fixpath,$(BENCH_RUNNER)) "$(call fixpath,$(BIN))" "$(call fixpath,$(BENCH_REF))" "$(call fixpath,$(BENCH_ROOT))" $(NULLDEV)
+
+ifeq ($(OS),Windows_NT)
+ifeq ($(subst \,/,$(BENCH_REF)),$(BENCH_DEFAULT_REF))
+$(BENCH_DEFAULT_REF): $(SRC) $(wildcard src/*.h) msvc/Split_kMeans.vcxproj Split_kMeans.sln
+	@echo Build Visual Studio 2026 Release x64 before running make bench.
+	@exit 1
+bench: $(BENCH_DEFAULT_REF)
+endif
+endif
 
 # Removes the Makefile configurations only; the Visual Studio output in build/msvc stays.
 clean:
@@ -231,13 +252,15 @@ help:
 	@echo   run            build and run from the repo root, arguments via ARGS="..."
 	@echo   check          tests, combine with a configuration: make asan check
 	@echo   golden-update  regenerate golden files, algorithm-change commits only
-	@echo   bench          benchmark run
+	@echo   bench          benchmark release builds on local real datasets
 	@echo   testdata       generate the synthetic test datasets in build/testdata
 	@echo   clean          remove the Makefile builds and test data; build/msvc stays
 	@echo Variables:
 	@echo   CC=gcc or clang, WERROR=1
 	@echo   CHECK_ROOT=dir  check output root, default build; dir/check is deleted first, no spaces
 	@echo   CHECK_BIN=exe   run check with another binary, for example build/msvc/x64/Release/Split_kMeans.exe
+	@echo   BENCH_ROOT=dir  benchmark output root, default build/bench; each run gets a new folder
+	@echo   BENCH_REF=exe   compare another release binary; Windows defaults to Visual Studio, - disables
 	@echo   CFLAGS, CPPFLAGS, LDFLAGS, LDLIBS are appended to the defaults
 
 -include $(DEP)

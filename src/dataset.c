@@ -14,113 +14,59 @@
 #include <stdlib.h>
 #include <string.h>
 
-/**
- * @brief Deinitializes a data point: frees its attributes and resets fields.
- */
-void deinitDataPoint(DataPoint* point)
+static void checkShape(size_t size, size_t dimensions)
 {
-    if (point == NULL) return;
-
-    if (point->attributes != NULL)
+    assert(size > 0 && dimensions > 0);
+    if (size == 0 || dimensions == 0 || size > SIZE_MAX / dimensions || size * dimensions > SIZE_MAX / sizeof(double) ||
+        size > SIZE_MAX / sizeof(size_t))
     {
-        free(point->attributes);
-        point->attributes = NULL;
+        fprintf(stderr, "Error: Invalid dataset dimensions or size exceeds addressable memory\n");
+        exit(EXIT_FAILURE);
     }
-    point->dimensions = 0;
-    point->partition = SIZE_MAX;
 }
 
-/**
- * @brief Frees an array of DataPoint elements and the array itself.
- */
-void freeDataPointArray(DataPoint* points, size_t size)
+void freeDataset(Dataset* dataset)
 {
-    if (points == NULL) return;
-
-    for (size_t i = 0; i < size; ++i)
-    {
-        deinitDataPoint(&points[i]);
-    }
-    free(points);
+    if (dataset == NULL) return;
+    free(dataset->coordinates);
+    free(dataset->partitions);
+    *dataset = (Dataset){0};
 }
 
-/**
- * @brief Releases owned `points` array (and its elements) and resets the container.
- */
-void freeDataPoints(DataPoints* dataPoints)
-{
-    if (dataPoints == NULL) return;
-    if (dataPoints->points == NULL) return;
-
-    freeDataPointArray(dataPoints->points, dataPoints->size);
-    dataPoints->points = NULL;
-    dataPoints->size = 0;
-}
-
-/**
- * @brief Releases owned centroid array (and its elements) and resets the container.
- */
 void freeCentroids(Centroids* centroids)
 {
     if (centroids == NULL) return;
-    if (centroids->points == NULL) return;
-
-    freeDataPointArray(centroids->points, centroids->size);
-    centroids->points = NULL;
-    centroids->size = 0;
+    free(centroids->coordinates);
+    *centroids = (Centroids){0};
 }
 
-/**
- * @brief Creates a point with `dimensions` doubles, zero-initialized.
- */
-DataPoint allocateDataPoint(size_t dimensions)
+Dataset allocateDataset(size_t size, size_t dimensions)
 {
-    assert(dimensions > 0);
-
-    DataPoint point;
-    point.attributes = calloc(dimensions, sizeof(double)); /* zero-init for safe += use */
-    handleMemoryError(point.attributes);
-    point.dimensions = dimensions;
-    point.partition = SIZE_MAX; // Initialize partition to default value, here SIZE_MAX. Cant use -1 as its size_t
-
-    return point;
-}
-
-/**
- * @brief Allocates an array of `size` points, each with `dimensions` zeroed attributes.
- */
-DataPoints allocateDataPoints(size_t size, size_t dimensions)
-{
-    DataPoints dataPoints;
-    dataPoints.points = malloc(size * sizeof(DataPoint));
-    handleMemoryError(dataPoints.points);
-    dataPoints.size = size;
-
-    for (size_t i = 0; i < size; ++i)
+    checkShape(size, dimensions);
+    Dataset dataset = {0};
+    dataset.coordinates = calloc(size * dimensions, sizeof(double));
+    handleMemoryError(dataset.coordinates);
+    dataset.partitions = malloc(size * sizeof(size_t));
+    if (dataset.partitions == NULL)
     {
-        dataPoints.points[i] = allocateDataPoint(dimensions);
+        free(dataset.coordinates);
+        handleMemoryError(NULL);
     }
-
-    return dataPoints;
+    dataset.size = size;
+    dataset.dimensions = dimensions;
+    for (size_t i = 0; i < size; ++i) dataset.partitions[i] = SIZE_MAX;
+    return dataset;
 }
 
-/**
- * @brief Allocates a centroid array of `size` points with `dimensions` attributes each.
- */
 Centroids allocateCentroids(size_t size, size_t dimensions)
 {
-    assert(dimensions > 0 && size > 0);
-
+    checkShape(size, dimensions);
     Centroids centroids;
+    centroids.coordinates = calloc(size * dimensions, sizeof(double));
+    handleMemoryError(centroids.coordinates);
     centroids.size = size;
-    centroids.points = malloc(size * sizeof(DataPoint));
-    handleMemoryError(centroids.points);
-
-    for (size_t i = 0; i < size; ++i)
-    {
-        centroids.points[i] = allocateDataPoint(dimensions);
-    }
-
+    centroids.capacity = size;
+    centroids.dimensions = dimensions;
     return centroids;
 }
 
@@ -132,13 +78,12 @@ Centroids allocateCentroids(size_t size, size_t dimensions)
  * Returns an empty container if the file has no data rows.
  *
  * @param filename Path to a space/tab-delimited text file of doubles.
- * @return DataPoints with size equal to the number of data rows; each point owns its attributes
- *         (length == expectedDims), dimensions set to expectedDims, and partition = SIZE_MAX.
+ * @return Dataset with one row per data point and partitions initialized to SIZE_MAX.
  * @errors Exits on file open/read failures, allocation failures, inconsistent column counts,
  *         values that are not finite numbers, and lines longer than LINE_BUFSZ - 1 characters.
  * @note Parsing uses strtod and the current locale (the program never changes it, so dot decimals).
  */
-DataPoints readDataPoints(const char* filename)
+Dataset readDataset(const char* filename)
 {
     FILE* file;
     if (FOPEN(file, filename, "r") != 0)
@@ -205,17 +150,14 @@ DataPoints readDataPoints(const char* filename)
     if (lineCount == 0)
     {
         fclose(file);
-        DataPoints empty = {NULL, 0};
+        Dataset empty = {0};
         return empty;
     }
 
-    // Second pass: parse into structures
+    // Second pass: parse into the flat dataset
     rewind(file);
 
-    DataPoints dataPoints;
-    dataPoints.size = lineCount;
-    dataPoints.points = malloc(lineCount * sizeof(DataPoint));
-    handleMemoryError(dataPoints.points);
+    Dataset dataPoints = allocateDataset(lineCount, expectedDims);
 
     char line[LINE_BUFSZ];
     size_t currentPoint = 0;
@@ -256,18 +198,11 @@ DataPoints readDataPoints(const char* filename)
         if (expectedDims != SIZE_MAX && tokenCount != expectedDims)
         {
             fclose(file);
-            freeDataPointArray(dataPoints.points, currentPoint);
+            freeDataset(&dataPoints);
             fprintf(stderr, "Error: Inconsistent column count in '%s' line %zu (expected %zu, got %zu)\n", filename,
                     lineNumber, expectedDims, tokenCount);
             exit(EXIT_FAILURE);
         }
-
-        // Initialize point and allocate attributes
-        DataPoint* point = &dataPoints.points[currentPoint];
-        point->attributes = malloc(expectedDims * sizeof(double));
-        handleMemoryError(point->attributes);
-        point->dimensions = expectedDims;
-        point->partition = SIZE_MAX;
 
         // Parse values
         char* context = NULL;
@@ -275,12 +210,12 @@ DataPoints readDataPoints(const char* filename)
         size_t dim = 0;
         while (token != NULL && dim < expectedDims)
         {
-            if (!parseFiniteDouble(token, &point->attributes[dim]))
+            if (!parseFiniteDouble(token, &datasetRow(&dataPoints, currentPoint)[dim]))
             {
                 fclose(file);
                 fprintf(stderr, "Error: '%s' in '%s' line %zu, column %zu is not a finite number\n", token, filename,
                         lineNumber, dim + 1);
-                freeDataPointArray(dataPoints.points, currentPoint + 1);
+                freeDataset(&dataPoints);
                 exit(EXIT_FAILURE);
             }
             ++dim;
@@ -291,7 +226,7 @@ DataPoints readDataPoints(const char* filename)
         if (dim != expectedDims)
         {
             fclose(file);
-            freeDataPointArray(dataPoints.points, currentPoint + 1);
+            freeDataset(&dataPoints);
             fprintf(stderr, "Error: Row truncated in '%s' (expected %zu values, got %zu)\n", filename, expectedDims,
                     dim);
             exit(EXIT_FAILURE);
@@ -305,7 +240,7 @@ DataPoints readDataPoints(const char* filename)
     if (currentPoint != lineCount)
     {
         fprintf(stderr, "Error: Expected to read %zu points but read %zu points\n", lineCount, currentPoint);
-        freeDataPointArray(dataPoints.points, currentPoint);
+        freeDataset(&dataPoints);
         exit(EXIT_FAILURE);
     }
 
@@ -316,37 +251,35 @@ DataPoints readDataPoints(const char* filename)
  * @brief Reads centroids from a whitespace-delimited text file.
  *
  * Treats each non-empty row as one centroid; columns are coordinates. Reuses the
- * allocation from `readDataPoints` and returns it as `Centroids` (ownership transfers
+ * allocation from `readDataset` and returns it as `Centroids` (ownership transfers
  * to the returned object; free with `freeCentroids`).
  *
  * @param filename Path to a space/tab-separated text file of doubles.
- * @return Centroids with `size == rows` and each centroid’s `dimensions == columns`.
- * @errors The errors of readDataPoints (open and read errors, inconsistent column counts, values that are not
+ * @return Centroids with `size == rows` and `dimensions == columns`.
+ * @errors The errors of readDataset (open and read errors, inconsistent column counts, values that are not
  *         finite numbers, overlong lines). Prints the size at log level 2 and every centroid at level 3.
  * @note Skips whitespace-only lines; parsing uses the current C locale for `strtod`.
  */
-Centroids readCentroids(const char* filename, int currentLogLevel)
+Centroids readCentroids(const char* filename)
 {
-    DataPoints points = readDataPoints(filename);
+    Dataset points = readDataset(filename);
+    Centroids centroids = {points.coordinates, points.size, points.size, points.dimensions};
+    free(points.partitions);
 
-    Centroids centroids;
-    centroids.size = points.size;
-    centroids.points = points.points;
-
-    if (currentLogLevel >= 2 && centroids.size > 0)
+    if (logLevel >= 2 && centroids.size > 0)
     {
         printf("Read %zu centroids from %s, each with %zu dimensions\n", centroids.size, filename,
-               centroids.points[0].dimensions);
+               centroids.dimensions);
     }
 
-    if (currentLogLevel >= 3)
+    if (logLevel >= 3)
     {
         for (size_t i = 0; i < centroids.size; ++i)
         {
-            printf("Centroid %zu (dimensions: %zu) attributes: ", i, points.points[i].dimensions);
-            for (size_t j = 0; j < points.points[i].dimensions; ++j)
+            printf("Centroid %zu (dimensions: %zu) attributes: ", i, centroids.dimensions);
+            for (size_t j = 0; j < centroids.dimensions; ++j)
             {
-                printf("%.0f ", points.points[i].attributes[j]);
+                printf("%.0f ", centroidRow(&centroids, i)[j]);
             }
             printf("\n");
         }
@@ -409,80 +342,31 @@ size_t readKFromFile(const char* path)
     return (size_t)k;
 }
 
-/**
- * @brief Deep-copies coordinates and metadata from source into destination.
- *
- * Resizes `destination->attributes` as needed and copies `source->attributes`,
- * `dimensions`, and `partition`. Safe for repeated calls on the same destination.
- *
- * @param destination Target point; must be a valid object. `attributes` may be NULL or allocated.
- * @param source Source point to copy from.
- * @return void
- * @errors Exits on allocation failure via handleMemoryError.
- * @note No-op if `destination == source`. Uses `realloc` to minimize churn.
- */
-void deepCopyDataPoint(DataPoint* destination, const DataPoint* source)
-{
-    if (destination == source) return;
-    assert(destination != NULL && source != NULL);
-
-    /* Resize or allocate attributes buffer */
-    double* newAttrs = (double*)realloc(destination->attributes, source->dimensions * sizeof(double));
-    handleMemoryError(newAttrs);
-
-    destination->attributes = newAttrs;
-    destination->dimensions = source->dimensions;
-    destination->partition = source->partition;
-
-    memcpy(destination->attributes, source->attributes, source->dimensions * sizeof(double));
-}
-
-/**
- * @brief Replaces destination with a deep copy of source centroids.
- *
- * Frees any existing centroids in `destination`, then allocates and copies all
- * centroid points and their attributes from `source`. Supports empty `source`.
- *
- * @param source Centroid set to copy from.
- * @param destination Target centroid set to overwrite.
- * @return void
- * @errors Exits on allocation failure via handleMemoryError.
- * @note `destination` assumes ownership of newly allocated memory.
- */
+/* Reuses destination capacity when possible; an empty source clears it. */
 void deepCopyCentroids(const Centroids* source, Centroids* destination)
 {
-    if (destination->points != NULL)
-    {
-        freeDataPointArray(destination->points, destination->size);
-        destination->points = NULL;
-        destination->size = 0;
-    }
-
+    if (source == destination) return;
     if (source->size == 0)
     {
-        destination->points = NULL;
-        destination->size = 0;
+        freeCentroids(destination);
         return;
     }
-
-    destination->size = source->size;
-
-    size_t dimensions = source->points[0].dimensions;
-    destination->points = allocateDataPoints(destination->size, dimensions).points;
-
-    for (size_t i = 0; i < destination->size; ++i)
+    if (destination->capacity < source->size || destination->dimensions != source->dimensions)
     {
-        deepCopyDataPoint(&destination->points[i], &source->points[i]);
+        freeCentroids(destination);
+        *destination = allocateCentroids(source->size, source->dimensions);
     }
+    destination->size = source->size;
+    copyCoordinates(destination->coordinates, source->coordinates, source->size * source->dimensions);
 }
 
 /**
  * @brief Sets all data point partitions to 0.
  */
-void resetPartitions(DataPoints* dataPoints)
+void resetPartitions(Dataset* dataPoints)
 {
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
-        dataPoints->points[i].partition = 0;
+        dataPoints->partitions[i] = 0;
     }
 }

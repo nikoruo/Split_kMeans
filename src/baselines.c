@@ -31,37 +31,39 @@
  * @note O(N·D). The centroids are not updated here (the step-4 update is commented out, 6.4); the two k-means
  * iterations follow.
  */
-void localRepartitionForRS(DataPoints* dataPoints, Centroids* centroids, size_t removed)
+void localRepartitionForRS(Dataset* dataPoints, Centroids* centroids, size_t removed)
 {
     // from removed -> to existing
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
-        if (dataPoints->points[i].partition == removed)
+        if (dataPoints->partitions[i] == removed)
         {
-            size_t nearestCentroid = findNearestCentroid(&dataPoints->points[i], centroids);
-            dataPoints->points[i].partition = nearestCentroid;
+            size_t nearestCentroid = findNearestCentroid(datasetRowConst(dataPoints, i), centroids);
+            dataPoints->partitions[i] = nearestCentroid;
         }
     }
 
     // from existing -> to created
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
-        if (dataPoints->points[i].partition != removed)
+        if (dataPoints->partitions[i] != removed)
         {
-            size_t currentPartition = dataPoints->points[i].partition;
+            size_t currentPartition = dataPoints->partitions[i];
 
             // Calculate distance to the current centroid
-            double distanceToCurrent =
-                calculateSquaredEuclideanDistance(&dataPoints->points[i], &centroids->points[currentPartition]);
+            double distanceToCurrent = calculateSquaredEuclideanDistance(datasetRowConst(dataPoints, i),
+                                                                          centroidRowConst(centroids, currentPartition),
+                                                                          dataPoints->dimensions);
 
             // Calculate distance to the removed centroid
-            double distanceToRemoved =
-                calculateSquaredEuclideanDistance(&dataPoints->points[i], &centroids->points[removed]);
+            double distanceToRemoved = calculateSquaredEuclideanDistance(datasetRowConst(dataPoints, i),
+                                                                          centroidRowConst(centroids, removed),
+                                                                          dataPoints->dimensions);
 
             // Assign to the closer centroid
             if (distanceToRemoved < distanceToCurrent)
             {
-                dataPoints->points[i].partition = removed;
+                dataPoints->partitions[i] = removed;
             }
         }
     }
@@ -82,12 +84,13 @@ void localRepartitionForRS(DataPoints* dataPoints, Centroids* centroids, size_t 
  * @param maxSwaps Number of trial swaps.
  * @return The best SSE found.
  */
-double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps, Tracker* tracker, Rng* rng)
+double randomSwap(Dataset* dataPoints, Centroids* centroids, size_t maxSwaps, Tracker* tracker, Rng* rng)
 {
     double bestSse = DBL_MAX;
     size_t kMeansIterations = 2;
     size_t numCentroids = centroids->size;
-    size_t dimensions = centroids->points[0].dimensions;
+    size_t dimensions = centroids->dimensions;
+    assert(dataPoints->dimensions == dimensions);
 
     size_t totalAttributes = numCentroids * dimensions;
 
@@ -104,24 +107,15 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps,
         if (logLevel >= 3) printf("Swap %zu\n", i + 1);
 
         // Backup
-        size_t offset = 0;
-        for (size_t j = 0; j < numCentroids; ++j)
-        {
-            memcpy(&backupAttributes[offset], centroids->points[j].attributes, dimensions * sizeof(double));
-            offset += dimensions;
-        }
-
-        for (size_t j = 0; j < dataPoints->size; ++j)
-        {
-            backupPartitions[j] = dataPoints->points[j].partition;
-        }
+        memcpy(backupAttributes, centroids->coordinates, totalAttributes * sizeof(double));
+        memcpy(backupPartitions, dataPoints->partitions, dataPoints->size * sizeof(size_t));
 
         // Swap
         size_t randomCentroidId = rng_below(rng, centroids->size);
         size_t randomDataPointId = rng_below(rng, dataPoints->size);
 
-        memcpy(centroids->points[randomCentroidId].attributes, dataPoints->points[randomDataPointId].attributes,
-               dimensions * sizeof(double));
+        copyCoordinates(centroidRow(centroids, randomCentroidId), datasetRowConst(dataPoints, randomDataPointId),
+                        dimensions);
 
         localRepartitionForRS(dataPoints, centroids, randomCentroidId);
 
@@ -149,17 +143,8 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps,
         }
         else
         {
-            offset = 0;
-            for (size_t j = 0; j < numCentroids; ++j)
-            {
-                memcpy(centroids->points[j].attributes, &backupAttributes[offset], dimensions * sizeof(double));
-                offset += dimensions;
-            }
-
-            for (size_t j = 0; j < dataPoints->size; ++j)
-            {
-                dataPoints->points[j].partition = backupPartitions[j];
-            }
+            memcpy(centroids->coordinates, backupAttributes, totalAttributes * sizeof(double));
+            memcpy(dataPoints->partitions, backupPartitions, dataPoints->size * sizeof(size_t));
 
             // Alternative (v1): one row per swap; a rejected swap repeats the best solution so far
             // trackerAddRow(tracker, i + 1, bestSse, bestCI);
@@ -193,18 +178,18 @@ double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps,
  * @return SSE after the final k-means.
  * @errors Exits on allocation failures via helpers.
  */
-double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
+double runBisectingKMeans(Dataset* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
                           size_t bisectingIterations, Tracker* tracker, Rng* rng)
 {
+    assert(centroids->capacity >= maxCentroids);
     // The initial split always makes two clusters, so the list holds at least two
     double* SseList = malloc((maxCentroids < 2 ? 2 : maxCentroids) * sizeof(double));
     handleMemoryError(SseList);
-    size_t* clusterSizes = malloc((maxCentroids < 2 ? 2 : maxCentroids) * sizeof(size_t));
-    handleMemoryError(clusterSizes);
+    ClusterIndex membership = {0};
+    if (maxCentroids > 1) membership = allocateClusterIndex(dataPoints->size, maxCentroids);
     double bestSse = DBL_MAX;
 
-    DataPoint newCentroid1 = allocateDataPoint(dataPoints->points[0].dimensions);
-    DataPoint newCentroid2 = allocateDataPoint(dataPoints->points[0].dimensions);
+    Centroids newCentroids = allocateCentroids(2, dataPoints->dimensions);
     trackerRecord(tracker, 0, "start", dataPoints, centroids, SIZE_MAX);
 
     size_t iterationCount = 1; // Helper for tracking progress
@@ -214,7 +199,8 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
     {
         // Step 0: Only 1 cluster, so no need for decision making
         size_t initialClusterToSplit = 0;
-        splitClusterIntraCluster(dataPoints, centroids, initialClusterToSplit, maxIterations, tracker, rng);
+        rebuildClusterIndex(&membership, dataPoints, centroids->size);
+        splitClusterIntraCluster(dataPoints, &membership, centroids, initialClusterToSplit, maxIterations, tracker, rng);
 
         SseList[0] = calculateClusterSSE(dataPoints, centroids, 0);
         SseList[1] = calculateClusterSSE(dataPoints, centroids, 1);
@@ -228,14 +214,14 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
     while (centroids->size < maxCentroids)
     {
         // Step 1: Choose the cluster to split (the highest SSE among clusters with at least 2 points)
-        requireSplittableCluster(countClusterSizes(dataPoints, centroids->size, clusterSizes), centroids->size,
-                                 ALGO_BISECTING);
+        size_t splittable = rebuildClusterIndex(&membership, dataPoints, centroids->size);
+        requireSplittableCluster(splittable, centroids->size, ALGO_BISECTING);
         size_t clusterToSplit = SIZE_MAX;
         double maxSSE = 0.0;
 
         for (size_t j = 0; j < centroids->size; ++j)
         {
-            if (clusterSizes[j] >= 2 && (clusterToSplit == SIZE_MAX || SseList[j] > maxSSE))
+            if (membership.sizes[j] >= 2 && (clusterToSplit == SIZE_MAX || SseList[j] > maxSSE))
             {
                 maxSSE = SseList[j];
                 clusterToSplit = j;
@@ -246,7 +232,7 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
         for (size_t j = 0; j < bisectingIterations; ++j)
         {
             ClusteringResult curr =
-                tentativeSplitterForBisecting(dataPoints, clusterToSplit, maxIterations, tracker, rng);
+                tentativeSplitterForBisecting(dataPoints, &membership, clusterToSplit, maxIterations, tracker, rng);
 
             if (logLevel >= 3) printf("(Bisecting) Cluster %zu, try %zu: SSE %.0f\n", clusterToSplit, j + 1, curr.sse);
 
@@ -256,22 +242,24 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
                 bestSse = curr.sse;
 
                 // Save the two new centroids
-                deepCopyDataPoint(&newCentroid1, &curr.centroids[0]);
-                deepCopyDataPoint(&newCentroid2, &curr.centroids[1]);
+                copyCoordinates(centroidRow(&newCentroids, 0), centroidRowConst(&curr.centroids, 0),
+                                dataPoints->dimensions);
+                copyCoordinates(centroidRow(&newCentroids, 1), centroidRowConst(&curr.centroids, 1),
+                                dataPoints->dimensions);
             }
 
-            freeClusteringResult(&curr, 2);
+            freeClusteringResult(&curr);
         }
 
         // Replace the old centroid with the new centroid1
-        deepCopyDataPoint(&centroids->points[clusterToSplit], &newCentroid1);
+        copyCoordinates(centroidRow(centroids, clusterToSplit), centroidRowConst(&newCentroids, 0),
+                        dataPoints->dimensions);
 
         // Increase the size of the centroids array and add the new centroid2
-        centroids->points = realloc(centroids->points, (centroids->size + 1) * sizeof(DataPoint));
-        handleMemoryError(centroids->points);
-        centroids->points[centroids->size] = allocateDataPoint(newCentroid2.dimensions);
-        deepCopyDataPoint(&centroids->points[centroids->size], &newCentroid2);
+        assert(centroids->size < centroids->capacity);
         centroids->size++;
+        copyCoordinates(centroidRow(centroids, centroids->size - 1), centroidRowConst(&newCentroids, 1),
+                        dataPoints->dimensions);
 
         trackerSplitSnapshot(tracker, dataPoints, centroids, clusterToSplit);
 
@@ -296,9 +284,8 @@ double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t m
 
     // Cleanup
     free(SseList);
-    free(clusterSizes);
-    deinitDataPoint(&newCentroid1);
-    deinitDataPoint(&newCentroid2);
+    freeClusterIndex(&membership);
+    freeCentroids(&newCentroids);
 
     return finalResultSse;
 }

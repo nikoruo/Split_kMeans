@@ -30,12 +30,13 @@
  * @errors Asserts valid K and destination size; exits on allocation failure.
  * @note O(N) init + O(K) swaps.
  */
-void generateRandomCentroids(size_t numCentroids, const DataPoints* dataPoints, Centroids* centroids, Rng* rng)
+void generateRandomCentroids(size_t numCentroids, const Dataset* dataPoints, Centroids* centroids, Rng* rng)
 {
     const size_t N = dataPoints->size;
 
     assert(numCentroids > 0 && numCentroids <= N);
     assert(centroids->size >= numCentroids);
+    assert(centroids->dimensions == dataPoints->dimensions);
 
     /* Overflow guard for allocation */
     if (N > SIZE_MAX / sizeof(size_t))
@@ -64,7 +65,7 @@ void generateRandomCentroids(size_t numCentroids, const DataPoints* dataPoints, 
     for (size_t i = 0; i < numCentroids; ++i)
     {
         size_t idx = indices[i];
-        deepCopyDataPoint(&centroids->points[i], &dataPoints->points[idx]);
+        copyCoordinates(centroidRow(centroids, i), datasetRowConst(dataPoints, idx), dataPoints->dimensions);
     }
 
     free(indices);
@@ -78,14 +79,15 @@ void generateRandomCentroids(size_t numCentroids, const DataPoints* dataPoints, 
  * positive distance, that is when the data have fewer than K distinct points (it looped forever before 3.5).
  * Requires 0 < K <= N and room for K centroids. O(K·N·D) with a distance cache.
  */
-void generateKMeansPlusPlusCentroids(size_t numCentroids, const DataPoints* dataPoints, Centroids* centroids, Rng* rng)
+void generateKMeansPlusPlusCentroids(size_t numCentroids, const Dataset* dataPoints, Centroids* centroids, Rng* rng)
 {
     assert(numCentroids > 0 && numCentroids <= dataPoints->size);
     assert(centroids->size >= numCentroids);
+    assert(centroids->dimensions == dataPoints->dimensions);
 
     /* 1) Choose the first centroid at random */
     size_t firstIndex = rng_below(rng, dataPoints->size);
-    deepCopyDataPoint(&centroids->points[0], &dataPoints->points[firstIndex]);
+    copyCoordinates(centroidRow(centroids, 0), datasetRowConst(dataPoints, firstIndex), dataPoints->dimensions);
 
     /* Distance cache: squared distance to the nearest chosen centroid so far */
     double* dist2 = malloc(sizeof(double) * dataPoints->size);
@@ -94,7 +96,8 @@ void generateKMeansPlusPlusCentroids(size_t numCentroids, const DataPoints* data
     // Initialise the cache with distances to the first centroid
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
-        dist2[i] = calculateSquaredEuclideanDistance(&dataPoints->points[i], &centroids->points[0]);
+        dist2[i] = calculateSquaredEuclideanDistance(datasetRowConst(dataPoints, i), centroidRowConst(centroids, 0),
+                                                     dataPoints->dimensions);
     }
 
     size_t chosen = 1;
@@ -133,7 +136,8 @@ void generateKMeansPlusPlusCentroids(size_t numCentroids, const DataPoints* data
         if (dist2[picked] == 0.0) continue;
 
         // 4. Add the selected point as the next centroid
-        deepCopyDataPoint(&centroids->points[chosen++], &dataPoints->points[picked]);
+        copyCoordinates(centroidRow(centroids, chosen), datasetRowConst(dataPoints, picked), dataPoints->dimensions);
+        ++chosen;
 
         /* 5. Update the distance cache:
          *    for every data point, keep the minimum distance to any
@@ -141,7 +145,8 @@ void generateKMeansPlusPlusCentroids(size_t numCentroids, const DataPoints* data
          *    (i.e. become smaller) are updated. */
         for (size_t i = 0; i < dataPoints->size; ++i)
         {
-            double d = calculateSquaredEuclideanDistance(&dataPoints->points[i], &centroids->points[chosen - 1]);
+            double d = calculateSquaredEuclideanDistance(datasetRowConst(dataPoints, i),
+                                                         centroidRowConst(centroids, chosen - 1), dataPoints->dimensions);
             if (d < dist2[i])
             {
                 dist2[i] = d;
@@ -153,7 +158,7 @@ void generateKMeansPlusPlusCentroids(size_t numCentroids, const DataPoints* data
 }
 
 /** @brief Initial centroids of KM, RKM and RS: K distinct random data points, or k-means++ with --init kmeans++. */
-void initialCentroids(InitMethod init, size_t numCentroids, const DataPoints* dataPoints, Centroids* centroids,
+void initialCentroids(InitMethod init, size_t numCentroids, const Dataset* dataPoints, Centroids* centroids,
                       Rng* rng)
 {
     if (init == INIT_KMEANSPP)
@@ -177,14 +182,44 @@ void initialCentroids(InitMethod init, size_t numCentroids, const DataPoints* da
  * @return void
  * @errors Asserts that points and centroids exist.
  */
-void partitionStep(DataPoints* dataPoints, const Centroids* centroids)
+void partitionStep(Dataset* dataPoints, const Centroids* centroids)
 {
     assert(dataPoints->size > 0 && centroids->size > 0);
+    assert(dataPoints->dimensions == centroids->dimensions);
 
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
-        size_t nearestCentroidId = findNearestCentroid(&dataPoints->points[i], centroids);
-        dataPoints->points[i].partition = nearestCentroidId;
+        size_t nearestCentroidId = findNearestCentroid(datasetRowConst(dataPoints, i), centroids);
+        dataPoints->partitions[i] = nearestCentroidId;
+    }
+}
+
+static inline void accumulatePoint(const double* point, size_t clusterLabel, size_t dimensions, double* sums,
+                                   size_t* counts)
+{
+    for (size_t dim = 0; dim < dimensions; ++dim)
+    {
+        sums[clusterLabel * dimensions + dim] += point[dim];
+    }
+    counts[clusterLabel]++;
+}
+
+static void updateCentroids(Centroids* centroids, const double* sums, const size_t* counts)
+{
+    for (size_t clusterLabel = 0; clusterLabel < centroids->size; ++clusterLabel)
+    {
+        if (counts[clusterLabel] > 0)
+        {
+            for (size_t dim = 0; dim < centroids->dimensions; ++dim)
+            {
+                centroidRow(centroids, clusterLabel)[dim] =
+                    sums[clusterLabel * centroids->dimensions + dim] / counts[clusterLabel];
+            }
+        }
+        else if (logLevel >= 3)
+        {
+            fprintf(stderr, "Warning: Cluster %zu has no points assigned.\n", clusterLabel);
+        }
     }
 }
 
@@ -201,10 +236,11 @@ void partitionStep(DataPoints* dataPoints, const Centroids* centroids)
  * @errors Asserts valid partitions and matching dimensionality.
  * @note O(N·D + K·D) work; uses a single contiguous buffer for sums.
  */
-void centroidStep(Centroids* centroids, const DataPoints* dataPoints)
+void centroidStep(Centroids* centroids, const Dataset* dataPoints)
 {
     const size_t numClusters = centroids->size;
-    const size_t dimensions = dataPoints->points[0].dimensions;
+    const size_t dimensions = dataPoints->dimensions;
+    assert(centroids->dimensions == dimensions);
 
     // Use a single allocation for the sums
     double* sums = calloc(numClusters * dimensions, sizeof(double));
@@ -215,36 +251,84 @@ void centroidStep(Centroids* centroids, const DataPoints* dataPoints)
     // Accumulate sums and counts for each cluster
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
-        const DataPoint* point = &dataPoints->points[i];
-        const size_t clusterLabel = point->partition;
-        assert(clusterLabel < numClusters && point->dimensions == dimensions);
+        const double* point = datasetRowConst(dataPoints, i);
+        const size_t clusterLabel = dataPoints->partitions[i];
+        assert(clusterLabel < numClusters);
 
-        for (size_t dim = 0; dim < dimensions; ++dim)
-        {
-            sums[clusterLabel * dimensions + dim] += point->attributes[dim];
-        }
-        counts[clusterLabel]++;
+        accumulatePoint(point, clusterLabel, dimensions, sums, counts);
     }
 
     // Update the centroids
-    for (size_t clusterLabel = 0; clusterLabel < numClusters; ++clusterLabel)
-    {
-        if (counts[clusterLabel] > 0)
-        {
-            for (size_t dim = 0; dim < dimensions; ++dim)
-            {
-                centroids->points[clusterLabel].attributes[dim] =
-                    sums[clusterLabel * dimensions + dim] / counts[clusterLabel];
-            }
-        }
-        else if (logLevel >= 3)
-        {
-            fprintf(stderr, "Warning: Cluster %zu has no points assigned.\n", clusterLabel);
-        }
-    }
+    updateCentroids(centroids, sums, counts);
 
     free(sums);
     free(counts);
+}
+
+/* Separate indexed kernels keep view checks out of the dense hot loops. */
+static void partitionView(DatasetView* view, const Centroids* centroids)
+{
+    for (size_t i = 0; i < view->size; ++i)
+    {
+        view->partitions[i] = findNearestCentroid(datasetViewRow(view, i), centroids);
+    }
+}
+
+static void centroidStepView(Centroids* centroids, const DatasetView* view)
+{
+    const size_t numClusters = centroids->size;
+    const size_t dimensions = view->source->dimensions;
+    double* sums = calloc(numClusters * dimensions, sizeof(double));
+    size_t* counts = calloc(numClusters, sizeof(size_t));
+    handleMemoryError(sums);
+    handleMemoryError(counts);
+
+    for (size_t i = 0; i < view->size; ++i)
+    {
+        size_t label = view->partitions[i];
+        assert(label < numClusters);
+        accumulatePoint(datasetViewRow(view, i), label, dimensions, sums, counts);
+    }
+    updateCentroids(centroids, sums, counts);
+    free(sums);
+    free(counts);
+}
+
+static double calculateSSEView(const DatasetView* view, const Centroids* centroids)
+{
+    double sse = 0.0;
+    for (size_t i = 0; i < view->size; ++i)
+    {
+        size_t label = view->partitions[i];
+        assert(label < centroids->size);
+        sse += calculateSquaredEuclideanDistance(datasetViewRow(view, i), centroidRowConst(centroids, label),
+                                                 view->source->dimensions);
+    }
+    return sse;
+}
+
+static bool updateKMeansBest(double sse, double* bestSse, size_t iteration, const Centroids* centroids,
+                             const Centroids* groundTruth)
+{
+    if (logLevel >= 3)
+    {
+        if (hasGroundTruth(groundTruth) && centroids->size == groundTruth->size)
+        {
+            size_t centroidIndex = calculateCentroidIndex(centroids, groundTruth);
+            printf("(runKMeans)After iteration %zu: CI = %zu and SSE = %.0f\n", iteration + 1, centroidIndex, sse);
+        }
+        else
+        {
+            printf("(runKMeans)After iteration %zu: SSE = %.0f\n", iteration + 1, sse);
+        }
+    }
+    if (sse < *bestSse)
+    {
+        if (logLevel >= 3) printf("Best SSE so far: %.5f\n", sse);
+        *bestSse = sse;
+        return true;
+    }
+    return false;
 }
 
 /**
@@ -258,7 +342,7 @@ void centroidStep(Centroids* centroids, const DataPoints* dataPoints)
  * @param stage Which k-means this is for --track-inner; KM_STAGE_NONE logs no rows.
  * @return Best SSE observed during the run.
  */
-double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage)
+double runKMeans(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage)
 {
     double bestSse = DBL_MAX;
     double sse = DBL_MAX;
@@ -273,31 +357,28 @@ double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids
 
         trackerInnerRow(tracker, stage, iteration + 1, centroids, sse);
 
-        if (logLevel >= 3)
-        {
-            // CI only for full-size solutions: local 2-means and partial global steps do not match the ground truth
-            if (hasGroundTruth(groundTruth) && centroids->size == groundTruth->size)
-            {
-                size_t centroidIndex = calculateCentroidIndex(centroids, groundTruth);
-                printf("(runKMeans)After iteration %zu: CI = %zu and SSE = %.0f\n", iteration + 1, centroidIndex, sse);
-            }
-            else
-            {
-                printf("(runKMeans)After iteration %zu: SSE = %.0f\n", iteration + 1, sse);
-            }
-        }
-
-        if (sse < bestSse)
-        {
-            if (logLevel >= 3) printf("Best SSE so far: %.5f\n", sse);
-            bestSse = sse;
-        }
-        else
-        {
-            break; // Exit the loop if the SSE does not improve
-        }
+        if (!updateKMeansBest(sse, &bestSse, iteration, centroids, groundTruth)) break;
     }
 
+    return bestSse;
+}
+
+double runKMeansView(DatasetView* view, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage,
+                     bool prePartition)
+{
+    assert(view->size > 0 && centroids->size > 0 && view->source->dimensions == centroids->dimensions);
+    double bestSse = DBL_MAX;
+    const Centroids* groundTruth = tracker != NULL ? tracker->groundTruth : NULL;
+    if (prePartition) partitionView(view, centroids);
+
+    for (size_t iteration = 0; iteration < iterations; ++iteration)
+    {
+        partitionView(view, centroids);
+        centroidStepView(centroids, view);
+        double sse = calculateSSEView(view, centroids);
+        trackerInnerRow(tracker, stage, iteration + 1, centroids, sse);
+        if (!updateKMeansBest(sse, &bestSse, iteration, centroids, groundTruth)) break;
+    }
     return bestSse;
 }
 
@@ -312,7 +393,7 @@ double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids
  * @param tracker Rows, snapshots and the ground truth for the level-3 CI.
  * @return Best SSE observed during the run.
  */
-double runKMeansWithTracking(DataPoints* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker)
+double runKMeansWithTracking(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker)
 {
     double bestSse = DBL_MAX;
     double sse = DBL_MAX;

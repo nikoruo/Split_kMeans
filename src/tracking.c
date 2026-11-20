@@ -135,11 +135,11 @@ static void writeCentroidsToFile(const char* filename, const Centroids* centroid
 
     for (size_t i = 0; i < centroids->size; ++i)
     {
-        const DataPoint* c = &centroids->points[i];
-        for (size_t j = 0; j < c->dimensions; ++j)
+        const double* c = centroidRowConst(centroids, i);
+        for (size_t j = 0; j < centroids->dimensions; ++j)
         {
             if (j) fputc(' ', centroidFile);
-            fprintf(centroidFile, "%f", c->attributes[j]);
+            fprintf(centroidFile, "%f", c[j]);
         }
         fputc('\n', centroidFile);
     }
@@ -150,7 +150,7 @@ static void writeCentroidsToFile(const char* filename, const Centroids* centroid
 /**
  * @brief Writes one partition label per line to outputDirectory/filename.
  *
- * Serializes `dataPoints->points[i].partition` for all points in order, using the
+ * Serializes `dataPoints->partitions[i]` for all points in order, using the
  * current C locale. Labels are zero-based; unassigned points may appear as `SIZE_MAX`.
  *
  * @param filename Target file name (no path).
@@ -160,7 +160,7 @@ static void writeCentroidsToFile(const char* filename, const Centroids* centroid
  * @errors Exits on open failure via handleFileError. Write errors are not checked.
  * @note Output intended for debugging/postprocessing; format is line-oriented text.
  */
-static void writeDataPointPartitionsToFile(const char* filename, const DataPoints* dataPoints,
+static void writeDataPointPartitionsToFile(const char* filename, const Dataset* dataPoints,
                                            const char* outputDirectory)
 {
     char outputFilePath[PATH_MAX];
@@ -174,7 +174,7 @@ static void writeDataPointPartitionsToFile(const char* filename, const DataPoint
 
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
-        fprintf(file, "%zu\n", dataPoints->points[i].partition);
+        fprintf(file, "%zu\n", dataPoints->partitions[i]);
     }
 
     fclose(file);
@@ -214,7 +214,7 @@ void algorithmFilePath(Algorithm algorithm, const char* outputDirectory, const c
  * @param savedFailed Pointer to a bool tracking if failed example was saved.
  * @errors Exits when a file cannot be opened (via writeCentroidsToFile and writeDataPointPartitionsToFile).
  */
-void saveExampleSnapshots(const Centroids* centroids, const DataPoints* dataPoints, size_t centroidIndex,
+void saveExampleSnapshots(const Centroids* centroids, const Dataset* dataPoints, size_t centroidIndex,
                           const char* algorithmPrefix, const char* outputDirectory, bool* savedPerfect,
                           bool* savedFailed)
 {
@@ -255,7 +255,7 @@ void saveExampleSnapshots(const Centroids* centroids, const DataPoints* dataPoin
  * names sort in order. Phases: start, split (after the two-way split), step, final (after the final k-means).
  * Centroids: one space-separated row per centroid; partitions: one 0-based label per line.
  */
-static void saveIterationState(const DataPoints* dataPoints, const Centroids* centroids, size_t run, size_t iteration,
+static void saveIterationState(const Dataset* dataPoints, const Centroids* centroids, size_t run, size_t iteration,
                                const char* phase, const char* outputDirectory, const char* algorithmName)
 {
     char centroidsFileName[PATH_MAX];
@@ -321,7 +321,7 @@ static void writeIterationStats(const Centroids* centroids, size_t ci, size_t ru
 /**
  * @brief Writes the iteration stats row and the snapshot files of the current state (`run` 1-based).
  */
-static void trackProgressState(const DataPoints* dataPoints, const Centroids* centroids, double sse, size_t ci,
+static void trackProgressState(const Dataset* dataPoints, const Centroids* centroids, double sse, size_t ci,
                                size_t run, size_t iteration, const char* phase, size_t clusterToSplit,
                                Algorithm splitType, const char* outputDirectory, double elapsedMs)
 {
@@ -531,7 +531,7 @@ static bool trackerSnapshotWanted(const Tracker* tracker, size_t count)
  * ground truth. `phase` names the snapshot (start, step or final); `splitCluster` is the cluster split at this count,
  * SIZE_MAX when none.
  */
-size_t trackerRecord(Tracker* tracker, size_t count, const char* phase, const DataPoints* dataPoints,
+size_t trackerRecord(Tracker* tracker, size_t count, const char* phase, const Dataset* dataPoints,
                      const Centroids* centroids, size_t splitCluster)
 {
     tracker->nextCount = count + 1;
@@ -563,7 +563,7 @@ size_t trackerRecord(Tracker* tracker, size_t count, const char* phase, const Da
 
 /** @brief When selected, writes the snapshot files and iteration stats of the state at `count`, without a `_log.csv`
  * row. */
-void trackerSnapshot(Tracker* tracker, size_t count, const char* phase, const DataPoints* dataPoints,
+void trackerSnapshot(Tracker* tracker, size_t count, const char* phase, const Dataset* dataPoints,
                      const Centroids* centroids, size_t splitCluster)
 {
     if (!trackerSnapshotWanted(tracker, count))
@@ -586,7 +586,7 @@ void trackerSnapshot(Tracker* tracker, size_t count, const char* phase, const Da
  *
  * Phase "split" at the count of the split being made. NULL tracker: no-op.
  */
-void trackerSplitSnapshot(Tracker* tracker, const DataPoints* dataPoints, const Centroids* centroids,
+void trackerSplitSnapshot(Tracker* tracker, const Dataset* dataPoints, const Centroids* centroids,
                           size_t splitCluster)
 {
     if (tracker != NULL && tracker->options->snapshots.split)

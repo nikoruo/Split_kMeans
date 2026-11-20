@@ -19,19 +19,12 @@
 #include <string.h>
 
 /**
- * @brief Frees the centroid array of a clustering result (including each centroid's attributes) and resets the pointer.
- *
- * Does not free the `ClusteringResult` object itself. `numCentroids` is the number of centroids in `result->centroids`.
+ * @brief Frees the owned centroid buffer of a clustering result.
  */
-void freeClusteringResult(ClusteringResult* result, size_t numCentroids)
+void freeClusteringResult(ClusteringResult* result)
 {
     if (result == NULL) return;
-
-    if (result->centroids != NULL)
-    {
-        freeDataPointArray(result->centroids, numCentroids);
-        result->centroids = NULL;
-    }
+    freeCentroids(&result->centroids);
 }
 
 /**
@@ -43,14 +36,117 @@ ClusteringResult allocateClusteringResult(size_t numCentroids, size_t dimensions
 
     ClusteringResult result;
     result.sse = DBL_MAX;
-    result.centroids = malloc(numCentroids * sizeof(DataPoint));
-    handleMemoryError(result.centroids);
-    for (size_t i = 0; i < numCentroids; ++i)
-    {
-        result.centroids[i] = allocateDataPoint(dimensions);
-    }
+    result.centroids = allocateCentroids(numCentroids, dimensions);
 
     return result;
+}
+
+ClusterIndex allocateClusterIndex(size_t pointCount, size_t capacity)
+{
+    const size_t limit = SIZE_MAX / sizeof(size_t);
+    if (pointCount == 0 || capacity == 0 || pointCount > (limit - 1) / 2 ||
+        capacity > (limit - 1 - 2 * pointCount) / 2)
+    {
+        fprintf(stderr, "Error: Invalid cluster index size\n");
+        exit(EXIT_FAILURE);
+    }
+
+    ClusterIndex index = {0};
+    index.indices = malloc((2 * pointCount + 2 * capacity + 1) * sizeof(size_t));
+    handleMemoryError(index.indices);
+    index.localPartitions = index.indices + pointCount;
+    index.offsets = index.localPartitions + pointCount;
+    index.sizes = index.offsets + capacity + 1;
+    index.pointCount = pointCount;
+    index.capacity = capacity;
+    return index;
+}
+
+void freeClusterIndex(ClusterIndex* index)
+{
+    if (index == NULL) return;
+    free(index->indices);
+    *index = (ClusterIndex){0};
+}
+
+size_t rebuildClusterIndex(ClusterIndex* index, const Dataset* dataPoints, size_t numClusters)
+{
+    assert(dataPoints->size == index->pointCount);
+    assert(numClusters > 0 && numClusters <= index->capacity);
+
+    size_t splittable = countClusterSizes(dataPoints, numClusters, index->sizes);
+    index->offsets[0] = 0;
+    for (size_t c = 0; c < numClusters; ++c)
+    {
+        index->offsets[c + 1] = index->offsets[c] + index->sizes[c];
+        index->sizes[c] = index->offsets[c];
+    }
+    /* Stable slices preserve the original point and random-seed order. */
+    for (size_t i = 0; i < dataPoints->size; ++i)
+    {
+        size_t label = dataPoints->partitions[i];
+        index->indices[index->sizes[label]++] = i;
+    }
+    for (size_t c = 0; c < numClusters; ++c)
+    {
+        index->sizes[c] = index->offsets[c + 1] - index->offsets[c];
+    }
+    index->clusterCount = numClusters;
+    index->dataset = dataPoints;
+    return splittable;
+}
+
+static DatasetView clusterView(const Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel)
+{
+    assert(index->dataset == dataPoints && clusterLabel < index->clusterCount);
+    assert(index->sizes[clusterLabel] >= 2);
+
+    DatasetView view;
+    view.source = dataPoints;
+    view.size = index->sizes[clusterLabel];
+    view.indices = index->indices + index->offsets[clusterLabel];
+    view.partitions = index->localPartitions;
+    for (size_t i = 0; i < view.size; ++i)
+    {
+        view.partitions[i] = dataPoints->partitions[view.indices[i]];
+    }
+    return view;
+}
+
+static ClusteringResult localTwoMeans(Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel,
+                                      size_t iterations, Tracker* tracker, KMeansStage stage, bool prePartition,
+                                      size_t newCluster, Rng* rng)
+{
+    DatasetView view = clusterView(dataPoints, index, clusterLabel);
+    size_t c1 = rng_below(rng, view.size);
+    size_t c2 = c1;
+    while (c2 == c1)
+    {
+        c2 = rng_below(rng, view.size);
+    }
+
+    ClusteringResult result = allocateClusteringResult(2, dataPoints->dimensions);
+    copyCoordinates(centroidRow(&result.centroids, 0), datasetViewRow(&view, c1), dataPoints->dimensions);
+    copyCoordinates(centroidRow(&result.centroids, 1), datasetViewRow(&view, c2), dataPoints->dimensions);
+    result.sse = runKMeansView(&view, iterations, &result.centroids, tracker, stage, prePartition);
+
+    if (newCluster != SIZE_MAX)
+    {
+        for (size_t i = 0; i < view.size; ++i)
+        {
+            dataPoints->partitions[view.indices[i]] = view.partitions[i] == 0 ? clusterLabel : newCluster;
+        }
+    }
+    return result;
+}
+
+static void appendSplitCentroids(Centroids* centroids, size_t clusterToSplit, const Centroids* local)
+{
+    assert(centroids->size < centroids->capacity && local->size == 2);
+    assert(centroids->dimensions == local->dimensions);
+    copyCoordinates(centroidRow(centroids, clusterToSplit), centroidRowConst(local, 0), centroids->dimensions);
+    ++centroids->size;
+    copyCoordinates(centroidRow(centroids, centroids->size - 1), centroidRowConst(local, 1), centroids->dimensions);
 }
 
 /**
@@ -69,90 +165,14 @@ ClusteringResult allocateClusteringResult(size_t numCentroids, size_t dimensions
  * log.
  * @errors Exits on allocation failure. Asserts that the cluster has at least 2 points.
  */
-void splitClusterIntraCluster(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit,
-                              size_t localMaxIterations, Tracker* tracker, Rng* rng)
+void splitClusterIntraCluster(Dataset* dataPoints, const ClusterIndex* index, Centroids* centroids,
+                              size_t clusterToSplit, size_t localMaxIterations, Tracker* tracker, Rng* rng)
 {
-    size_t clusterSize = 0;
-    for (size_t i = 0; i < dataPoints->size; ++i)
-    {
-        if (dataPoints->points[i].partition == clusterToSplit)
-        {
-            clusterSize++;
-        }
-    }
-
-    // The selection only picks clusters with at least 2 points
-    assert(clusterSize >= 2);
-
-    // Collect indices of points in the cluster
-    size_t* clusterIndices = malloc(clusterSize * sizeof(size_t));
-    handleMemoryError(clusterIndices);
-
-    size_t index = 0;
-    for (size_t i = 0; i < dataPoints->size; ++i)
-    {
-        if (dataPoints->points[i].partition == clusterToSplit)
-        {
-            clusterIndices[index++] = i;
-        }
-    }
-
-    // Random centroids
-    size_t c1 = rng_below(rng, clusterSize);
-    size_t c2 = c1;
-    while (c2 == c1)
-    {
-        c2 = rng_below(rng, clusterSize);
-    }
-
-    size_t datapoint1 = clusterIndices[c1];
-    size_t datapoint2 = clusterIndices[c2];
-
-    // Initialize local centroids
-    Centroids localCentroids = allocateCentroids(2, dataPoints->points[0].dimensions);
-
-    deepCopyDataPoint(&localCentroids.points[0], &dataPoints->points[datapoint1]);
-    deepCopyDataPoint(&localCentroids.points[1], &dataPoints->points[datapoint2]);
-
-    // Prepare data points in the cluster
-    DataPoints pointsInCluster;
-    pointsInCluster.size = clusterSize;
-    pointsInCluster.points = malloc(clusterSize * sizeof(DataPoint));
-    handleMemoryError(pointsInCluster.points);
-    for (size_t i = 0; i < clusterSize; ++i)
-    {
-        pointsInCluster.points[i] = dataPoints->points[clusterIndices[i]];
-    }
-
-    // partition step
-    partitionStep(&pointsInCluster, &localCentroids);
-
-    // Run local k-means
-    runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, tracker, KM_STAGE_SPLIT);
-
-    // Update partitions
-    for (size_t i = 0; i < clusterSize; ++i)
-    {
-        size_t originalIndex = clusterIndices[i];
-        dataPoints->points[originalIndex].partition =
-            (pointsInCluster.points[i].partition == 0) ? clusterToSplit : centroids->size;
-    }
-
-    // Update centroids
-    // #1
-    deepCopyDataPoint(&centroids->points[clusterToSplit], &localCentroids.points[0]);
-
-    // #2
-    centroids->size++;
-    centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint));
-    handleMemoryError(centroids->points);
-    centroids->points[centroids->size - 1] = allocateDataPoint(dataPoints->points[0].dimensions);
-    deepCopyDataPoint(&centroids->points[centroids->size - 1], &localCentroids.points[1]);
-
-    // Cleanup
-    free(clusterIndices);
-    free(pointsInCluster.points);
-    freeCentroids(&localCentroids);
+    assert(centroids->size < centroids->capacity && centroids->dimensions == dataPoints->dimensions);
+    ClusteringResult result = localTwoMeans(dataPoints, index, clusterToSplit, localMaxIterations, tracker,
+                                            KM_STAGE_SPLIT, true, centroids->size, rng);
+    appendSplitCentroids(centroids, clusterToSplit, &result.centroids);
+    freeClusteringResult(&result);
 }
 
 /**
@@ -170,91 +190,19 @@ void splitClusterIntraCluster(DataPoints* dataPoints, Centroids* centroids, size
  * truth for the level-3 log.
  * @return SSE after the global k-means.
  */
-double splitClusterGlobalV2(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit,
-                            size_t localMaxIterations, Tracker* tracker, Rng* rng)
+double splitClusterGlobalV2(Dataset* dataPoints, const ClusterIndex* index, Centroids* centroids,
+                            size_t clusterToSplit, size_t localMaxIterations, Tracker* tracker, Rng* rng)
 {
-    size_t clusterSize = 0;
-    for (size_t i = 0; i < dataPoints->size; ++i)
-    {
-        if (dataPoints->points[i].partition == clusterToSplit)
-        {
-            clusterSize++;
-        }
-    }
-
-    // The selection only picks clusters with at least 2 points
-    assert(clusterSize >= 2);
-
-    // Collect indices of points in the cluster
-    size_t* clusterIndices = malloc(clusterSize * sizeof(size_t));
-    handleMemoryError(clusterIndices);
-
-    size_t index = 0;
-    for (size_t i = 0; i < dataPoints->size; ++i)
-    {
-        if (dataPoints->points[i].partition == clusterToSplit)
-        {
-            clusterIndices[index++] = i;
-        }
-    }
-
-    // Random centroids
-    size_t c1 = rng_below(rng, clusterSize);
-    size_t c2 = c1;
-    while (c2 == c1)
-    {
-        c2 = rng_below(rng, clusterSize);
-    }
-
-    size_t datapoint1 = clusterIndices[c1];
-    size_t datapoint2 = clusterIndices[c2];
-
-    // Initialize local centroids
-    Centroids localCentroids = allocateCentroids(2, dataPoints->points[0].dimensions);
-
-    deepCopyDataPoint(&localCentroids.points[0], &dataPoints->points[datapoint1]);
-    deepCopyDataPoint(&localCentroids.points[1], &dataPoints->points[datapoint2]);
-
-    // Prepare data points in the cluster
-    DataPoints pointsInCluster;
-    pointsInCluster.size = clusterSize;
-    pointsInCluster.points = malloc(clusterSize * sizeof(DataPoint));
-    handleMemoryError(pointsInCluster.points);
-    for (size_t i = 0; i < clusterSize; ++i)
-    {
-        pointsInCluster.points[i] = dataPoints->points[clusterIndices[i]];
-    }
-
-    // Run local k-means
-    runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, tracker, KM_STAGE_SPLIT);
-
-    // Update partitions
-    for (size_t i = 0; i < clusterSize; ++i)
-    {
-        size_t originalIndex = clusterIndices[i];
-        dataPoints->points[originalIndex].partition =
-            (pointsInCluster.points[i].partition == 0) ? clusterToSplit : centroids->size;
-    }
-
-    // Update centroids
-    // #1
-    deepCopyDataPoint(&centroids->points[clusterToSplit], &localCentroids.points[0]);
-
-    // #2
-    centroids->size++;
-    centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint));
-    handleMemoryError(centroids->points);
-    centroids->points[centroids->size - 1] = allocateDataPoint(dataPoints->points[0].dimensions);
-    deepCopyDataPoint(&centroids->points[centroids->size - 1], &localCentroids.points[1]);
+    assert(centroids->size < centroids->capacity && centroids->dimensions == dataPoints->dimensions);
+    ClusteringResult result = localTwoMeans(dataPoints, index, clusterToSplit, localMaxIterations, tracker,
+                                            KM_STAGE_SPLIT, false, centroids->size, rng);
+    appendSplitCentroids(centroids, clusterToSplit, &result.centroids);
 
     trackerSplitSnapshot(tracker, dataPoints, centroids, clusterToSplit);
 
     double sse = runKMeans(dataPoints, localMaxIterations, centroids, tracker, KM_STAGE_GLOBAL);
 
-    // Cleanup
-    free(clusterIndices);
-    free(pointsInCluster.points);
-    freeCentroids(&localCentroids);
+    freeClusteringResult(&result);
 
     return sse;
 }
@@ -277,34 +225,14 @@ double splitClusterGlobalV2(DataPoints* dataPoints, Centroids* centroids, size_t
  * @note Runs as --algo skm-global-basic, the basic comparison for SKM-Global: global k-means starts right after
  *       the two random seeds, without the local 2-means. Whether this gives worse results is measured in 6.7.
  */
-double splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit,
-                          size_t globalMaxIterations, Tracker* tracker, Rng* rng)
+double splitClusterGlobal(Dataset* dataPoints, const ClusterIndex* index, Centroids* centroids,
+                          size_t clusterToSplit, size_t globalMaxIterations, Tracker* tracker, Rng* rng)
 {
-    size_t clusterSize = 0;
-
-    for (size_t i = 0; i < dataPoints->size; ++i)
-    {
-        if (dataPoints->points[i].partition == clusterToSplit)
-        {
-            clusterSize++;
-        }
-    }
-
-    // The selection only picks clusters with at least 2 points
+    assert(centroids->size < centroids->capacity && centroids->dimensions == dataPoints->dimensions);
+    assert(index->dataset == dataPoints && clusterToSplit < index->clusterCount);
+    size_t clusterSize = index->sizes[clusterToSplit];
     assert(clusterSize >= 2);
-
-    // Collect the indices of the points in the selected cluster
-    size_t* clusterIndices = malloc(clusterSize * sizeof(size_t));
-    handleMemoryError(clusterIndices);
-
-    size_t index = 0;
-    for (size_t i = 0; i < dataPoints->size; ++i)
-    {
-        if (dataPoints->points[i].partition == clusterToSplit)
-        {
-            clusterIndices[index++] = i;
-        }
-    }
+    const size_t* clusterIndices = index->indices + index->offsets[clusterToSplit];
 
     // Select two random points from the cluster to be the new centroids
     size_t c1 = rng_below(rng, clusterSize);
@@ -319,22 +247,18 @@ double splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t c
     size_t datapoint2 = clusterIndices[c2];
 
     // Add the first new centroid (overwrite the current centroid at clusterToSplit)
-    deepCopyDataPoint(&centroids->points[clusterToSplit], &dataPoints->points[datapoint1]);
+    copyCoordinates(centroidRow(centroids, clusterToSplit), datasetRowConst(dataPoints, datapoint1),
+                    dataPoints->dimensions);
 
     // Add the second new centroid to the global centroids list
     centroids->size++;
-    centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint));
-    handleMemoryError(centroids->points);
-    centroids->points[centroids->size - 1] = allocateDataPoint(dataPoints->points[0].dimensions);
-    deepCopyDataPoint(&centroids->points[centroids->size - 1], &dataPoints->points[datapoint2]);
+    copyCoordinates(centroidRow(centroids, centroids->size - 1), datasetRowConst(dataPoints, datapoint2),
+                    dataPoints->dimensions);
 
     trackerSplitSnapshot(tracker, dataPoints, centroids, clusterToSplit);
 
     // Run global k-means, this time including the new centroids
     double resultSse = runKMeans(dataPoints, globalMaxIterations, centroids, tracker, KM_STAGE_GLOBAL);
-
-    // Cleanup
-    free(clusterIndices);
 
     return resultSse;
 }
@@ -353,22 +277,22 @@ double splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t c
  * @param clustersAffected Output array (size >= number of clusters) marking touched clusters.
  * @note O(N·D); indices are not checked.
  */
-void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, bool* clustersAffected)
+void localRepartition(Dataset* dataPoints, Centroids* centroids, size_t clusterToSplit, bool* clustersAffected)
 {
     size_t newClusterIndex = centroids->size - 1;
 
     // new clusters -> old clusters
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
-        if (dataPoints->points[i].partition == clusterToSplit || dataPoints->points[i].partition == newClusterIndex)
+        if (dataPoints->partitions[i] == clusterToSplit || dataPoints->partitions[i] == newClusterIndex)
         {
-            size_t nearestCentroid = findNearestCentroid(&dataPoints->points[i], centroids);
+            size_t nearestCentroid = findNearestCentroid(datasetRowConst(dataPoints, i), centroids);
 
-            if (dataPoints->points[i].partition != nearestCentroid)
+            if (dataPoints->partitions[i] != nearestCentroid)
             {
-                clustersAffected[dataPoints->points[i].partition] = true; // Mark the old cluster as affected
+                clustersAffected[dataPoints->partitions[i]] = true; // Mark the old cluster as affected
                 clustersAffected[nearestCentroid] = true;                 // Mark the new cluster as affected
-                dataPoints->points[i].partition = nearestCentroid;
+                dataPoints->partitions[i] = nearestCentroid;
             }
         }
     }
@@ -376,27 +300,30 @@ void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clust
     // old clusters -> new clusters
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
-        size_t currentCluster = dataPoints->points[i].partition;
+        size_t currentCluster = dataPoints->partitions[i];
 
         // skip new cluster -> old cluster
         if (currentCluster == clusterToSplit || currentCluster == newClusterIndex) continue;
 
         // Calculate distance to the current centroid
-        double currentDistance =
-            calculateSquaredEuclideanDistance(&dataPoints->points[i], &centroids->points[currentCluster]);
+        double currentDistance = calculateSquaredEuclideanDistance(datasetRowConst(dataPoints, i),
+                                                                    centroidRowConst(centroids, currentCluster),
+                                                                    dataPoints->dimensions);
 
         // Calculate distance to the cluster to be split
-        double distanceToSplit =
-            calculateSquaredEuclideanDistance(&dataPoints->points[i], &centroids->points[clusterToSplit]);
+        double distanceToSplit = calculateSquaredEuclideanDistance(datasetRowConst(dataPoints, i),
+                                                                    centroidRowConst(centroids, clusterToSplit),
+                                                                    dataPoints->dimensions);
 
         // Calculate distance to the new cluster
-        double distanceToNew =
-            calculateSquaredEuclideanDistance(&dataPoints->points[i], &centroids->points[newClusterIndex]);
+        double distanceToNew = calculateSquaredEuclideanDistance(datasetRowConst(dataPoints, i),
+                                                                  centroidRowConst(centroids, newClusterIndex),
+                                                                  dataPoints->dimensions);
 
         if (distanceToSplit < currentDistance || distanceToNew < currentDistance)
         {
             clustersAffected[currentCluster] = true; // Mark the old cluster as affected
-            dataPoints->points[i].partition = distanceToSplit <= distanceToNew ? clusterToSplit : newClusterIndex;
+            dataPoints->partitions[i] = distanceToSplit <= distanceToNew ? clusterToSplit : newClusterIndex;
         }
     }
 }
@@ -404,7 +331,7 @@ void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clust
 /**
  * @brief Estimates SSE improvement from splitting one cluster with local k-means.
  *
- * Copies the points of `clusterLabel`, initializes two seeds from that set,
+ * Views the points of `clusterLabel`, initializes two seeds from that set,
  * runs k-means with K=2 locally, and returns the decrease relative to the
  * original single-cluster SSE (`originalClusterSSE - localSseAfterSplit`).
  *
@@ -415,56 +342,15 @@ void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clust
  * @return SSE drop (non-negative when the split helps); 0 for a cluster with fewer than 2 points.
  * @errors Exits on allocation failure.
  */
-double tentativeSseDrop(DataPoints* dataPoints, size_t clusterLabel, size_t localMaxIterations,
+double tentativeSseDrop(Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel, size_t localMaxIterations,
                         double originalClusterSSE, Rng* rng)
 {
-    size_t clusterSize = 0;
-    for (size_t i = 0; i < dataPoints->size; ++i)
-    {
-        if (dataPoints->points[i].partition == clusterLabel)
-        {
-            clusterSize++;
-        }
-    }
-
-    if (clusterSize < 2)
-    {
-        return 0.0;
-    }
-
-    DataPoints pointsInCluster = allocateDataPoints(clusterSize, dataPoints->points[0].dimensions);
-
-    size_t index = 0;
-    for (size_t i = 0; i < dataPoints->size; ++i)
-    {
-        if (dataPoints->points[i].partition == clusterLabel)
-        {
-            deepCopyDataPoint(&pointsInCluster.points[index], &dataPoints->points[i]);
-            index++;
-        }
-    }
-
-    // Random centroids
-    size_t c1 = rng_below(rng, clusterSize);
-    size_t c2 = c1;
-    while (c2 == c1)
-    {
-        c2 = rng_below(rng, clusterSize);
-    }
-
-    Centroids localCentroids = allocateCentroids(2, dataPoints->points[0].dimensions);
-
-    deepCopyDataPoint(&localCentroids.points[0], &pointsInCluster.points[c1]);
-    deepCopyDataPoint(&localCentroids.points[1], &pointsInCluster.points[c2]);
-
-    // k-means
-    double resultSse = runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, NULL, KM_STAGE_NONE);
-
-    double sseDrop = originalClusterSSE - resultSse;
-
-    freeDataPoints(&pointsInCluster);
-    freeCentroids(&localCentroids);
-
+    assert(index->dataset == dataPoints && clusterLabel < index->clusterCount);
+    if (index->sizes[clusterLabel] < 2) return 0.0;
+    ClusteringResult result = localTwoMeans(dataPoints, index, clusterLabel, localMaxIterations, NULL, KM_STAGE_NONE,
+                                            false, SIZE_MAX, rng);
+    double sseDrop = originalClusterSSE - result.sse;
+    freeClusteringResult(&result);
     return sseDrop;
 }
 
@@ -478,73 +364,26 @@ double tentativeSseDrop(DataPoints* dataPoints, size_t clusterLabel, size_t loca
  * @param clusterLabel Cluster id to bisect.
  * @param localMaxIterations Max iterations for the local k-means refinement.
  * @param tracker Optional: `_inner.csv` rows of the try (stage try) and the ground truth for the level-3 log.
- * @return ClusteringResult with `centroids[2]` and `sse` for the cluster’s points.
+ * @return ClusteringResult with two centroids and the SSE for the cluster's points.
  * @errors Exits on allocation failure. Asserts that the cluster has at least 2 points.
  */
-ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, size_t clusterLabel, size_t localMaxIterations,
-                                               Tracker* tracker, Rng* rng)
+ClusteringResult tentativeSplitterForBisecting(Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel,
+                                               size_t localMaxIterations, Tracker* tracker, Rng* rng)
 {
-    size_t clusterSize = 0;
-    for (size_t i = 0; i < dataPoints->size; ++i)
-    {
-        if (dataPoints->points[i].partition == clusterLabel)
-        {
-            clusterSize++;
-        }
-    }
-
-    // The selection only picks clusters with at least 2 points
-    assert(clusterSize >= 2);
-
-    DataPoints pointsInCluster = allocateDataPoints(clusterSize, dataPoints->points[0].dimensions);
-
-    size_t index = 0;
-    for (size_t i = 0; i < dataPoints->size; ++i)
-    {
-        if (dataPoints->points[i].partition == clusterLabel)
-        {
-            deepCopyDataPoint(&pointsInCluster.points[index], &dataPoints->points[i]);
-            index++;
-        }
-    }
-
-    // Random centroids
-    size_t c1 = rng_below(rng, clusterSize);
-    size_t c2 = c1;
-    while (c2 == c1)
-    {
-        c2 = rng_below(rng, clusterSize);
-    }
-
-    Centroids localCentroids = allocateCentroids(2, dataPoints->points[0].dimensions);
-    deepCopyDataPoint(&localCentroids.points[0], &pointsInCluster.points[c1]);
-    deepCopyDataPoint(&localCentroids.points[1], &pointsInCluster.points[c2]);
-
-    ClusteringResult localResult = allocateClusteringResult(2, dataPoints->points[0].dimensions);
-
-    // k-means
-    localResult.sse = runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, tracker, KM_STAGE_TRY);
-
-    deepCopyDataPoint(&localResult.centroids[0], &localCentroids.points[0]);
-    deepCopyDataPoint(&localResult.centroids[1], &localCentroids.points[1]);
-
-    freeDataPoints(&pointsInCluster);
-    freeCentroids(&localCentroids);
-    ;
-
-    return localResult;
+    return localTwoMeans(dataPoints, index, clusterLabel, localMaxIterations, tracker, KM_STAGE_TRY, false, SIZE_MAX,
+                         rng);
 }
 
 /**
  * @brief Counts the points of clusters 0..numClusters-1 into `sizes`; returns how many have at least 2 points.
  */
-size_t countClusterSizes(const DataPoints* dataPoints, size_t numClusters, size_t* sizes)
+size_t countClusterSizes(const Dataset* dataPoints, size_t numClusters, size_t* sizes)
 {
     memset(sizes, 0, numClusters * sizeof(size_t));
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
-        assert(dataPoints->points[i].partition < numClusters);
-        sizes[dataPoints->points[i].partition]++;
+        assert(dataPoints->partitions[i] < numClusters);
+        sizes[dataPoints->partitions[i]]++;
     }
 
     size_t splittable = 0;

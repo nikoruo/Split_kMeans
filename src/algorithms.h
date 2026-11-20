@@ -34,9 +34,10 @@ extern const AlgorithmOption algorithmOptions[]; /* ALGORITHM_COUNT entries, che
 struct Tracker;
 
 const char* getAlgorithmName(Algorithm algorithm);
-double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
+/* Split runners require centroid capacity of at least maxCentroids. */
+double runRandomSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
                       struct Tracker* tracker, Rng* rng);
-double runSseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
+double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
                    Algorithm splitType, struct Tracker* tracker, Rng* rng);
 
 #endif /* ALGORITHMS_H */
