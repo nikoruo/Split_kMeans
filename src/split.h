@@ -31,8 +31,8 @@ double splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t c
 void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, bool* clustersAffected);
 double tentativeSseDrop(DataPoints* dataPoints, size_t clusterLabel, size_t localMaxIterations,
                         double originalClusterSSE, Rng* rng);
-ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, size_t clusterLabel,
-                                               size_t localMaxIterations, Tracker* tracker, Rng* rng);
+ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, size_t clusterLabel, size_t localMaxIterations,
+                                               Tracker* tracker, Rng* rng);
 size_t countClusterSizes(const DataPoints* dataPoints, size_t numClusters, size_t* sizes);
 void requireSplittableCluster(size_t splittable, size_t numClusters, Algorithm splitType);
 
