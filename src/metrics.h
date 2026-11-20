@@ -16,46 +16,46 @@
 /**
  * @brief Squared Euclidean distance between two points.
  */
-  static inline double calculateSquaredEuclideanDistance(const DataPoint* point1, const DataPoint* point2)
-  {
-      const size_t dims = point1->dimensions;
-      const double* a = point1->attributes;
-      const double* b = point2->attributes;
+static inline double calculateSquaredEuclideanDistance(const DataPoint* point1, const DataPoint* point2)
+{
+    const size_t dims = point1->dimensions;
+    const double* a = point1->attributes;
+    const double* b = point2->attributes;
 
-      double sum = 0.0;
-      for (size_t i = 0; i < dims; ++i)
-      {
-          const double diff = a[i] - b[i];
-          sum += diff * diff;
-      }
-      return sum;
-  }
+    double sum = 0.0;
+    for (size_t i = 0; i < dims; ++i)
+    {
+        const double diff = a[i] - b[i];
+        sum += diff * diff;
+    }
+    return sum;
+}
 
 /**
-   * @brief Index of the nearest centroid by squared Euclidean distance; the first one on ties.
-   *
-   * Requires at least one centroid (asserted) and the same dimensionality as the point (not checked). O(K·D).
-   */
-  static inline size_t findNearestCentroid(const DataPoint* queryPoint, const Centroids* targetCentroids)
-  {
-      assert(targetCentroids->size > 0);
+ * @brief Index of the nearest centroid by squared Euclidean distance; the first one on ties.
+ *
+ * Requires at least one centroid (asserted) and the same dimensionality as the point (not checked). O(K·D).
+ */
+static inline size_t findNearestCentroid(const DataPoint* queryPoint, const Centroids* targetCentroids)
+{
+    assert(targetCentroids->size > 0);
 
-      size_t nearestCentroidId = 0;
-      double minDistance = calculateSquaredEuclideanDistance(queryPoint, &targetCentroids->points[0]);
+    size_t nearestCentroidId = 0;
+    double minDistance = calculateSquaredEuclideanDistance(queryPoint, &targetCentroids->points[0]);
 
-      for (size_t i = 1; i < targetCentroids->size; ++i)
-      {
-          double d = calculateSquaredEuclideanDistance(queryPoint, &targetCentroids->points[i]);
+    for (size_t i = 1; i < targetCentroids->size; ++i)
+    {
+        double d = calculateSquaredEuclideanDistance(queryPoint, &targetCentroids->points[i]);
 
-          if (d < minDistance)
-          {
-              minDistance = d;
-              nearestCentroidId = i;
-          }
-      }
+        if (d < minDistance)
+        {
+            minDistance = d;
+            nearestCentroidId = i;
+        }
+    }
 
-      return nearestCentroidId;
-  }
+    return nearestCentroidId;
+}
 
 double calculateEuclideanDistance(const DataPoint* point1, const DataPoint* point2);
 double calculateSSE(const DataPoints* dataPoints, const Centroids* centroids);
