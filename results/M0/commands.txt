@@ -1,0 +1,32 @@
+Milestone M0 (docs/refactor-plan.md), run 2026-11-20 10:11 to 11:10 (58.4 min wall time)
+Commit: b225b9b (working tree clean; src, tests and Makefile unchanged since 04b9db6)
+Build: MinGW-w64 gcc 16.2.0 (WinLibs, x86_64-ucrt-posix-seh), mingw32-make release:
+  gcc -DNDEBUG -std=c11 -Wall -Wextra -Wpedantic -O3
+Machine: 12th Gen Intel Core i7-12800H, Windows 11 Enterprise, on AC power
+Seed: 20261119 (run i uses rng_derive_seed(20261119, i)); log level 1; CLI mode, no tracking
+Run folder: %TEMP%\skm_M0_20261120_101150 (local; snapshots and per-dataset summary CSVs)
+Kept here: <dataset>/<Algo>_runs.csv (run;seed;sse;ci;ms) and summary.csv (computed from them;
+  v1 columns from university/excels/out/csv/seminaari_SRandCI_KM/01_Taul1.csv).
+Times are not used: they come from clock(), which the monotonic stopwatch replaces in step 3.1 (M1 gives the first trustworthy times).
+M1, M2 and M3a must reproduce the SSE and CI of the main group (s1, s4, a3, unbalance, dim064, worms_2d) exactly.
+
+Commands (repo root; <run folder> as above), wall time and exit code:
+main  build/release/split_kmeans.exe --seed 20261119 --log-level 1 --algo km,skm-intra,skm-global,skm-local,bisecting -r 100 -o <run folder> -k 15 data/s1.txt gt/s1-cb.txt  wall 4,0 s  exit 0  [10.11.54]
+main  build/release/split_kmeans.exe --seed 20261119 --log-level 1 --algo rkm,rs -o <run folder> -k 15 data/s1.txt gt/s1-cb.txt  wall 4,2 s  exit 0  [10.11.59]
+main  build/release/split_kmeans.exe --seed 20261119 --log-level 1 --algo km,skm-intra,skm-global,skm-local,bisecting -r 100 -o <run folder> -k 15 data/s4.txt gt/s4-cb.txt  wall 7,9 s  exit 0  [10.12.06]
+main  build/release/split_kmeans.exe --seed 20261119 --log-level 1 --algo rkm,rs -o <run folder> -k 15 data/s4.txt gt/s4-cb.txt  wall 16,1 s  exit 0  [10.12.22]
+main  build/release/split_kmeans.exe --seed 20261119 --log-level 1 --algo km,skm-intra,skm-global,skm-local,bisecting -r 100 -o <run folder> -k 50 data/a3.txt gt/a3-ga-cb.txt  wall 28,0 s  exit 0  [10.12.50]
+main  build/release/split_kmeans.exe --seed 20261119 --log-level 1 --algo rkm,rs -o <run folder> -k 50 data/a3.txt gt/a3-ga-cb.txt  wall 22,8 s  exit 0  [10.13.13]
+main  build/release/split_kmeans.exe --seed 20261119 --log-level 1 --algo km,skm-intra,skm-global,skm-local,bisecting -r 100 -o <run folder> -k 8 data/unbalance.txt gt/unbalance-gt.txt  wall 3,1 s  exit 0  [10.13.16]
+main  build/release/split_kmeans.exe --seed 20261119 --log-level 1 --algo rkm,rs -o <run folder> -k 8 data/unbalance.txt gt/unbalance-gt.txt  wall 5,2 s  exit 0  [10.13.22]
+main  build/release/split_kmeans.exe --seed 20261119 --log-level 1 --algo km,skm-intra,skm-global,skm-local,bisecting -r 100 -o <run folder> -k 16 data/dim064.txt gt/dim064.txt  wall 3,1 s  exit 0  [10.13.25]
+main  build/release/split_kmeans.exe --seed 20261119 --log-level 1 --algo rkm,rs -o <run folder> -k 16 data/dim064.txt gt/dim064.txt  wall 5,4 s  exit 0  [10.13.30]
+main  build/release/split_kmeans.exe --seed 20261119 --log-level 1 --algo km,skm-intra,skm-local,bisecting -r 10 -o <run folder> -k 35 data/worms_2d.txt gt/worms_2d-gt.txt  wall 39,3 s  exit 0  [10.14.09]
+hard  build/release/split_kmeans.exe --seed 20261119 --log-level 1 --algo skm-intra,skm-local -r 100 -o <run folder> -k 100 data/birch1.txt gt/b1-gt.txt  wall 194,8 s  exit 0  [10.17.24]
+hard  build/release/split_kmeans.exe --seed 20261119 --log-level 1 --algo skm-global -r 10 -o <run folder> -k 100 data/birch1.txt gt/b1-gt.txt  wall 869,9 s  exit 0  [10.31.54]
+hard  build/release/split_kmeans.exe --seed 20261119 --log-level 1 --algo skm-intra,skm-local -r 100 -o <run folder> -k 100 data/birch2.txt gt/b2-gt.txt  wall 58,9 s  exit 0  [10.32.53]
+hard  build/release/split_kmeans.exe --seed 20261119 --log-level 1 --algo skm-global -r 10 -o <run folder> -k 100 data/birch2.txt gt/b2-gt.txt  wall 72,4 s  exit 0  [10.34.05]
+hard  build/release/split_kmeans.exe --seed 20261119 --log-level 1 --algo skm-intra,skm-local -r 100 -o <run folder> -k 100 data/birch3.txt gt/b3-gt.txt  wall 328,3 s  exit 0  [10.39.34]
+hard  build/release/split_kmeans.exe --seed 20261119 --log-level 1 --algo skm-global -r 10 -o <run folder> -k 100 data/birch3.txt gt/b3-gt.txt  wall 168,7 s  exit 0  [10.42.22]
+hard  build/release/split_kmeans.exe --seed 20261119 --log-level 1 --algo skm-intra,skm-local -r 100 -o <run folder> -k 25 data/worms_64d.txt gt/worms_64d-gt.txt  wall 1 486,7 s  exit 0  [11.07.09]
+hard  build/release/split_kmeans.exe --seed 20261119 --log-level 1 --algo skm-global -r 10 -o <run folder> -k 25 data/worms_64d.txt gt/worms_64d-gt.txt  wall 184,2 s  exit 0  [11.10.13]
