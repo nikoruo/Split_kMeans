@@ -6,6 +6,7 @@
 #include "platform.h"
 
 #include "util.h"
+#include "metrics.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -182,3 +183,19 @@ char* removeExtension(const char* filename)
 
     return baseFileName;
 }
+
+/**
+   * @brief Writes `ci` as decimal text, or "NA" for CI_NA, into `buffer`; returns `buffer`.
+   */
+  const char* formatCi(size_t ci, char buffer[CI_TEXT_SIZE])
+  {
+      if (ci == CI_NA)
+      {
+          snprintf(buffer, CI_TEXT_SIZE, "NA");
+      }
+      else
+      {
+          snprintf(buffer, CI_TEXT_SIZE, "%zu", ci);
+      }
+      return buffer;
+  }

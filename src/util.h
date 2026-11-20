@@ -10,6 +10,7 @@
 #include <stdio.h>
 
 #define LINE_BUFSZ 16384
+#define CI_TEXT_SIZE 21
 
 extern int logLevel;
 
@@ -23,6 +24,7 @@ void freeStringList(char** list, size_t size);
 /* Closes the stream and exits on read errors or overlong lines. */
 char* readDataLine(char* buffer, size_t size, FILE* file, const char* filename, size_t lineNumber);
 bool parseFiniteDouble(const char* token, double* value);
+const char* formatCi(size_t ci, char buffer[CI_TEXT_SIZE]);
 bool fileExists(const char* filePath);
 void joinPath(char* out, size_t size, const char* dir, const char* name);
 /* The returned buffer is overwritten by the next call. */

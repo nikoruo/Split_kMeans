@@ -149,7 +149,7 @@ $(GEN_DATA): tests/gen_data.c src/rng.c src/rng.h | $(BUILD_DIR)
 $(COMPARE): tests/compare_runs.c | $(BUILD_DIR)
 	$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) tests/compare_runs.c -o $@ $(ALL_LDFLAGS) $(ALL_LDLIBS)
 
-$(UNIT): tests/test_unit.c $(BUILD_DIR)/dataset.o $(BUILD_DIR)/metrics.o $(BUILD_DIR)/util.o | $(BUILD_DIR)
+$(UNIT): tests/test_unit.c $(BUILD_DIR)/dataset.o $(BUILD_DIR)/metrics.o $(BUILD_DIR)/rng.o $(BUILD_DIR)/util.o | $(BUILD_DIR)
 	$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) -Isrc $^ -o $@ $(ALL_LDFLAGS) $(ALL_LDLIBS)
 
 $(TESTDATA_DIRS):

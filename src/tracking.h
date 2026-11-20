@@ -84,7 +84,7 @@ typedef struct
 } TrackOptions;
 
 /* Owns row buffers; its options and ground truth must outlive the tracker. */
-typedef struct
+typedef struct Tracker
 {
     const Centroids* groundTruth;
     const char* outputDirectory;
@@ -107,5 +107,9 @@ typedef struct
 size_t trackerRecord(Tracker* tracker, size_t count, const char* phase, const DataPoints* dataPoints,
                      const Centroids* centroids, size_t splitCluster);
 void trackerInnerRow(Tracker* tracker, KMeansStage stage, size_t iteration, const Centroids* centroids, double sse);
+void trackerAddRow(Tracker* tracker, size_t count, double sse, size_t ci);
+size_t trackerCi(Tracker* tracker, const Centroids* centroids);
+void trackerSplitSnapshot(Tracker* tracker, const DataPoints* dataPoints, const Centroids* centroids,
+                          size_t splitCluster);
 
 #endif /* TRACKING_H */

@@ -5,6 +5,9 @@
 #ifndef ALGORITHMS_H
 #define ALGORITHMS_H
 
+#include "dataset.h"
+#include "rng.h"
+
 /** @brief The algorithms; getAlgorithmName gives the output file prefix, `--algo` the command-line names. */
 typedef enum
 {
@@ -18,5 +21,13 @@ typedef enum
     ALGO_RKM = 7,             /**< rkm: repeated k-means. */
     ALGO_SKM_GLOBAL_BASIC = 8 /**< skm-global-basic: two random points, then global k-means (splitClusterGlobal). */
 } Algorithm;
+
+struct Tracker;
+
+const char* getAlgorithmName(Algorithm algorithm);
+double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
+                      struct Tracker* tracker, Rng* rng);
+double runSseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
+                   Algorithm splitType, struct Tracker* tracker, Rng* rng);
 
 #endif /* ALGORITHMS_H */
