@@ -8,11 +8,13 @@
 #include "util.h"
 #include "metrics.h"
 
+#include <inttypes.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
 int logLevel = 1;
+bool decimalComma = false;
 
 /**
  * @brief Aborts the process if an allocation returned NULL.
@@ -198,4 +200,69 @@ char* removeExtension(const char* filename)
           snprintf(buffer, CI_TEXT_SIZE, "%zu", ci);
       }
       return buffer;
+  }
+
+/**
+   * @brief Writes `value` with `decimals` fixed decimals into `buffer` and returns it (Excel-facing files).
+   *
+   * The program never calls setlocale, so printf writes a decimal point; with --decimal-comma it becomes a comma.
+   */
+  const char* formatFixed(double value, int decimals, char buffer[NUMBER_TEXT_SIZE])
+  {
+      snprintf(buffer, NUMBER_TEXT_SIZE, "%.*f", decimals, value);
+      if (decimalComma)
+      {
+          char* point = strchr(buffer, '.');
+          if (point != NULL)
+          {
+              *point = ',';
+          }
+      }
+      return buffer;
+  }
+
+/** @brief Parses a decimal unsigned 64-bit integer; false on anything else. */
+  bool parseUint64(const char* text, uint64_t* out)
+  {
+      if (text[0] < '0' || text[0] > '9')
+      {
+          return false;
+      }
+      char* end = NULL;
+      errno = 0;
+      const unsigned long long value = strtoull(text, &end, 10);
+      if (errno != 0 || *end != '\0')
+      {
+          return false;
+      }
+      *out = (uint64_t)value;
+      return true;
+  }
+
+/** @brief Reads the value after option `argv[*i]` as an integer of at least `minimum` and advances `*i`; exits otherwise. */
+  size_t countOption(int argc, char* argv[], int* i, uint64_t minimum)
+  {
+      const char* name = argv[*i];
+      uint64_t value = 0;
+      if (*i + 1 >= argc || !parseUint64(argv[*i + 1], &value) || value < minimum || (uint64_t)(size_t)value != value)
+      {
+          fprintf(stderr, "Error: %s requires an integer of at least %" PRIu64 "\n", name, minimum);
+          fprintf(stderr, "Use -h for help\n");
+          exit(EXIT_FAILURE);
+      }
+      ++*i;
+      return (size_t)value;
+  }
+
+/** @brief Returns the value after option `argv[*i]` and advances `*i`; exits when it is missing. */
+  const char* textOption(int argc, char* argv[], int* i)
+  {
+      if (*i + 1 >= argc)
+      {
+          fprintf(stderr, "Error: %s requires a value\n", argv[*i]);
+          fprintf(stderr, "Use -h for help\n");
+          exit(EXIT_FAILURE);
+      }
+      ++*i;
+      return argv[*i];
   }

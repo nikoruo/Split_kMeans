@@ -25,11 +25,7 @@ License: AGPL-3.0-only (see LICENSE)
 
 ## Changelog
 
-### v1.0.0 - 26-10-2025 by Niko Ruohonen
-- Initial release
-- Implements K-means, RKM, Random Swap, Random Split, SKM (3 variants), Bisecting K-means
-- CLI and Batch modes
-- Cross-platform support (Windows MSVC, MinGW, Linux, macOS)
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## Features
 

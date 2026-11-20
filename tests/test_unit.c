@@ -4,9 +4,12 @@
 
 #define _CRT_SECURE_NO_WARNINGS
 #include "platform.h"
+#include "baselines.h"
 #include "dataset.h"
+#include "kmeans.h"
 #include "metrics.h"
 #include "rng.h"
+#include "split.h"
 #include "util.h"
 
 #include <stdbool.h>
@@ -102,6 +105,58 @@ static void testRng(void)
         require(a == b && a < 7, "bounded random selection is not reproducible or is out of range");
     }
     require(rng_derive_seed(20261119, 3) != rng_derive_seed(20261119, 4), "run seeds are not independent");
+}
+
+static void testKMeans(void)
+{
+    DataPoints points = allocateDataPoints(3, 1);
+    Centroids centroids = allocateCentroids(3, 1);
+    points.points[0].attributes[0] = 0.0;
+    points.points[1].attributes[0] = 2.0;
+    points.points[2].attributes[0] = 10.0;
+    centroids.points[0].attributes[0] = 0.0;
+    centroids.points[1].attributes[0] = 10.0;
+    centroids.points[2].attributes[0] = 100.0;
+
+    double sse = runKMeans(&points, 10, &centroids, NULL, KM_STAGE_NONE);
+    require(sse == 2.0 && centroids.points[0].attributes[0] == 1.0 &&
+                centroids.points[1].attributes[0] == 10.0 && centroids.points[2].attributes[0] == 100.0,
+            "k-means result or empty-centroid retention is incorrect");
+    freeCentroids(&centroids);
+    freeDataPoints(&points);
+}
+
+static void testRepartition(void)
+{
+    DataPoints points = allocateDataPoints(4, 1);
+    Centroids centroids = allocateCentroids(3, 1);
+    const double values[] = {0.0, 4.0, 6.0, 10.0};
+    for (size_t i = 0; i < points.size; ++i)
+    {
+        points.points[i].attributes[0] = values[i];
+        points.points[i].partition = i == 0 ? 0 : 1;
+    }
+    centroids.points[0].attributes[0] = 0.0;
+    centroids.points[1].attributes[0] = 10.0;
+    centroids.points[2].attributes[0] = 5.0;
+
+    bool affected[] = {false, false, false};
+    localRepartition(&points, &centroids, 0, affected);
+    require(points.points[0].partition == 0 && points.points[1].partition == 2 &&
+                points.points[2].partition == 2 && points.points[3].partition == 1 && affected[1],
+            "split local repartition is incorrect");
+    size_t sizes[3];
+    require(countClusterSizes(&points, 3, sizes) == 1 && sizes[0] == 1 && sizes[1] == 1 && sizes[2] == 2,
+            "splittable cluster counts are incorrect");
+
+    points.points[1].partition = 2;
+    points.points[2].partition = 1;
+    localRepartitionForRS(&points, &centroids, 2);
+    require(points.points[0].partition == 0 && points.points[1].partition == 2 &&
+                points.points[2].partition == 2 && points.points[3].partition == 1,
+            "Random Swap local repartition is incorrect");
+    freeCentroids(&centroids);
+    freeDataPoints(&points);
 }
 
 static void expectReadFailure(const char* executable, const char* mode, const char* path, const char* errorPath,
@@ -209,6 +264,8 @@ int main(int argc, char* argv[])
     testDatasetParser(argv[0], argv[1]);
     testMetrics();
     testRng();
-    puts("test_unit: parser, metric and RNG cases passed");
+    testKMeans();
+    testRepartition();
+    puts("test_unit: parser, metrics, RNG, k-means and repartition cases passed");
     return EXIT_SUCCESS;
 }

@@ -151,7 +151,7 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
-  <!-- Writes IntDir\build_info.h only when its text changes, so main.c recompiles after a commit -->
+  <!-- Writes IntDir\build_info.h only when its text changes, so its users recompile after a commit -->
   <Target Name="SkmBuildInfo" BeforeTargets="ClCompile">
     <Exec Command="git rev-parse --short HEAD" WorkingDirectory="$(SolutionDir)" ConsoleToMSBuild="true" IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low">
       <Output TaskParameter="ConsoleOutput" PropertyName="SkmCommit" />

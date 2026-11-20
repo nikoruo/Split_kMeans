@@ -19,8 +19,17 @@ typedef enum
     ALGO_SKM_RANDOM = 5,      /**< skm-random: a random cluster is split by local 2-means. */
     ALGO_KM = 6,              /**< km: k-means. */
     ALGO_RKM = 7,             /**< rkm: repeated k-means. */
-    ALGO_SKM_GLOBAL_BASIC = 8 /**< skm-global-basic: two random points, then global k-means (splitClusterGlobal). */
+    ALGO_SKM_GLOBAL_BASIC = 8, /**< skm-global-basic: two random points, then global k-means (splitClusterGlobal). */
+    ALGORITHM_COUNT
 } Algorithm;
+
+typedef struct
+{
+    const char* name;
+    Algorithm id;
+} AlgorithmOption;
+
+extern const AlgorithmOption algorithmOptions[ALGORITHM_COUNT];
 
 struct Tracker;
 
