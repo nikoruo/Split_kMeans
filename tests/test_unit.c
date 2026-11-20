@@ -40,7 +40,7 @@ static void closeFixture(FILE* file)
 
 static void testNumbers(void)
 {
-    const char* invalid[] = { "", "1,5", "abc", "1.5x", "nan", "inf", "1e999" };
+    const char* invalid[] = {"", "1,5", "abc", "1.5x", "nan", "inf", "1e999"};
     double value = 0.0;
     require(parseFiniteDouble("-1.25", &value) && value == -1.25, "finite decimal rejected");
     require(parseFiniteDouble("5e-400", &value), "finite underflow rejected");
@@ -54,12 +54,12 @@ static void testNumbers(void)
     }
 }
 
-static void expectReadFailure(const char* executable, const char* mode, const char* path,
-                              const char* errorPath, const char* expected)
+static void expectReadFailure(const char* executable, const char* mode, const char* path, const char* errorPath,
+                              const char* expected)
 {
     char command[3 * PATH_MAX + 128];
-    int length = snprintf(command, sizeof(command), "cd . && \"%s\" %s \"%s\" 2> \"%s\"",
-                          executable, mode, path, errorPath);
+    int length =
+        snprintf(command, sizeof(command), "cd . && \"%s\" %s \"%s\" 2> \"%s\"", executable, mode, path, errorPath);
     require(length >= 0 && (size_t)length < sizeof(command), "test command too long");
     int status = system(command);
     require(status != -1 && status != 0, "invalid input did not fail");
@@ -71,8 +71,8 @@ static void expectReadFailure(const char* executable, const char* mode, const ch
     require(!ferror(errors), "could not read parser error");
     output[bytes] = '\0';
     closeFixture(errors);
-    if (strstr(output, "Error:") == NULL || strstr(output, path) == NULL ||
-        strstr(output, expected) == NULL || strstr(output, "Sanitizer") != NULL)
+    if (strstr(output, "Error:") == NULL || strstr(output, path) == NULL || strstr(output, expected) == NULL ||
+        strstr(output, "Sanitizer") != NULL)
     {
         fprintf(stderr, "test_unit: unexpected parser error for %s:\n%s", path, output);
         exit(EXIT_FAILURE);
@@ -92,17 +92,16 @@ static void testDatasetParser(const char* executable, const char* directory)
     require(fputs(" \t\n1.25\t-2\n5e-400 4.5e1\n", file) >= 0, "could not write fixture");
     closeFixture(file);
     DataPoints points = readDataPoints(path);
-    require(points.size == 2 && points.points[0].dimensions == 2 &&
-            points.points[0].partition == SIZE_MAX &&
-            points.points[0].attributes[0] == 1.25 && points.points[0].attributes[1] == -2.0 &&
-            points.points[1].attributes[1] == 45.0, "valid dataset parsed incorrectly");
+    require(points.size == 2 && points.points[0].dimensions == 2 && points.points[0].partition == SIZE_MAX &&
+                points.points[0].attributes[0] == 1.25 && points.points[0].attributes[1] == -2.0 &&
+                points.points[1].attributes[1] == 45.0,
+            "valid dataset parsed incorrectly");
     freeDataPoints(&points);
     Centroids centroids = readCentroids(path, 1);
-    require(centroids.size == 2 && centroids.points[1].attributes[1] == 45.0,
-            "valid centroid file parsed incorrectly");
+    require(centroids.size == 2 && centroids.points[1].attributes[1] == 45.0, "valid centroid file parsed incorrectly");
     freeCentroids(&centroids);
 
-    const char* invalid[] = { "1,5", "abc", "1.5x", "nan", "inf", "1e999" };
+    const char* invalid[] = {"1,5", "abc", "1.5x", "nan", "inf", "1e999"};
     for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i)
     {
         file = writeFixture(path);

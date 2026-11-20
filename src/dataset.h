@@ -15,9 +15,9 @@
  */
 typedef struct
 {
-    double* attributes;  /**< Coordinates of the data point; length == dimensions. */
-    size_t dimensions;   /**< Number of dimensions (length of the attributes array). */
-    size_t partition;    /**< Zero-based cluster label; SIZE_MAX means unassigned. */
+    double* attributes; /**< Coordinates of the data point; length == dimensions. */
+    size_t dimensions;  /**< Number of dimensions (length of the attributes array). */
+    size_t partition;   /**< Zero-based cluster label; SIZE_MAX means unassigned. */
 } DataPoint;
 
 /**
@@ -28,8 +28,8 @@ typedef struct
  */
 typedef struct
 {
-    DataPoint* points;   /**< Array of DataPoint structures (size elements). */
-    size_t size;         /**< Number of data points. */
+    DataPoint* points; /**< Array of DataPoint structures (size elements). */
+    size_t size;       /**< Number of data points. */
 } DataPoints;
 
 /**
@@ -40,8 +40,8 @@ typedef struct
  */
 typedef struct
 {
-    DataPoint* points;   /**< Array of centroid points (size elements). */
-    size_t size;         /**< Number of centroids (K). */
+    DataPoint* points; /**< Array of centroid points (size elements). */
+    size_t size;       /**< Number of centroids (K). */
 } Centroids;
 
 /* The caller owns the allocated points and releases them with the matching free functions. */
