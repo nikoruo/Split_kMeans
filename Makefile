@@ -45,6 +45,7 @@ DEP       := $(OBJ:.o=.d)
 GEN_DATA      := $(BUILD_DIR)/gen_data$(EXE)
 COMPARE       := $(BUILD_DIR)/compare_runs$(EXE)
 UNIT          := $(BUILD_DIR)/test_unit$(EXE)
+UNIT_OBJECTS  := $(addprefix $(BUILD_DIR)/,algorithms.o baselines.o dataset.o kmeans.o metrics.o platform.o rng.o split.o tracking.o util.o)
 TEST_DIR      := build/testdata
 UNIT_DIR      := $(TEST_DIR)/unit
 TESTDATA_DIRS := $(foreach g,main edge pending,$(foreach d,data gt centroids,$(TEST_DIR)/$(g)/$(d)))
@@ -109,7 +110,7 @@ ALL_LDFLAGS  := $(BASE_LDFLAGS) $(LDFLAGS)
 ALL_LDLIBS   := $(BASE_LDLIBS) $(LDLIBS)
 
 # --- Build information for run_config.txt: git commit and compile command ----
-# build_info.h is rewritten only when its text changes, so main.c recompiles after a commit or a flag change.
+# build_info.h is rewritten only when its text changes, so its users recompile after a commit or a flag change.
 BUILD_INFO := $(BUILD_DIR)/build_info.h
 hash := \#
 define newline
@@ -149,7 +150,7 @@ $(GEN_DATA): tests/gen_data.c src/rng.c src/rng.h | $(BUILD_DIR)
 $(COMPARE): tests/compare_runs.c | $(BUILD_DIR)
 	$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) tests/compare_runs.c -o $@ $(ALL_LDFLAGS) $(ALL_LDLIBS)
 
-$(UNIT): tests/test_unit.c $(BUILD_DIR)/dataset.o $(BUILD_DIR)/metrics.o $(BUILD_DIR)/rng.o $(BUILD_DIR)/util.o | $(BUILD_DIR)
+$(UNIT): tests/test_unit.c $(UNIT_OBJECTS) | $(BUILD_DIR)
 	$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) -Isrc $^ -o $@ $(ALL_LDFLAGS) $(ALL_LDLIBS)
 
 $(TESTDATA_DIRS):

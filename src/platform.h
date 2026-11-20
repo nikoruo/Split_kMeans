@@ -52,6 +52,7 @@
 * Common includes
 * -------------------------------------------------------------------- */
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 #include <stdio.h>   /* needed for snprintf/fprintf used in this header */
 
@@ -203,6 +204,9 @@ size_t list_files(const char* dir, char*** out);
  * folder cannot be read. The caller frees each name and the array. Exits on allocation failure.
  */
 size_t list_dirs(const char* dir, char*** out);
+
+/* Creates a directory and its missing parents; returns false with errno set on failure. */
+bool platform_make_directories(const char* path);
 
 /**
  * @brief Monotonic wall-clock ticks from an arbitrary origin; only differences are meaningful.

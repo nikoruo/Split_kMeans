@@ -8,11 +8,14 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdint.h>
 
 #define LINE_BUFSZ 16384
 #define CI_TEXT_SIZE 21
+#define NUMBER_TEXT_SIZE 330
 
 extern int logLevel;
+extern bool decimalComma;
 
 void handleMemoryError(void* ptr);
 void handleFileError(const char* filename);
@@ -24,7 +27,11 @@ void freeStringList(char** list, size_t size);
 /* Closes the stream and exits on read errors or overlong lines. */
 char* readDataLine(char* buffer, size_t size, FILE* file, const char* filename, size_t lineNumber);
 bool parseFiniteDouble(const char* token, double* value);
+bool parseUint64(const char* text, uint64_t* out);
+size_t countOption(int argc, char* argv[], int* i, uint64_t minimum);
+const char* textOption(int argc, char* argv[], int* i);
 const char* formatCi(size_t ci, char buffer[CI_TEXT_SIZE]);
+const char* formatFixed(double value, int decimals, char buffer[NUMBER_TEXT_SIZE]);
 bool fileExists(const char* filePath);
 void joinPath(char* out, size_t size, const char* dir, const char* name);
 /* The returned buffer is overwritten by the next call. */
