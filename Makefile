@@ -44,7 +44,9 @@ DEP       := $(OBJ:.o=.d)
 
 GEN_DATA      := $(BUILD_DIR)/gen_data$(EXE)
 COMPARE       := $(BUILD_DIR)/compare_runs$(EXE)
+UNIT          := $(BUILD_DIR)/test_unit$(EXE)
 TEST_DIR      := build/testdata
+UNIT_DIR      := $(TEST_DIR)/unit
 TESTDATA_DIRS := $(foreach g,main edge pending,$(foreach d,data gt centroids,$(TEST_DIR)/$(g)/$(d)))
 
 # --- Regression tests: fixed seed, golden <Algo>_runs.csv per dataset --------
@@ -147,7 +149,13 @@ $(GEN_DATA): tests/gen_data.c src/rng.c src/rng.h | $(BUILD_DIR)
 $(COMPARE): tests/compare_runs.c | $(BUILD_DIR)
 	$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) tests/compare_runs.c -o $@ $(ALL_LDFLAGS) $(ALL_LDLIBS)
 
+$(UNIT): tests/test_unit.c $(BUILD_DIR)/dataset.o $(BUILD_DIR)/util.o | $(BUILD_DIR)
+	$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) -Isrc $^ -o $@ $(ALL_LDFLAGS) $(ALL_LDLIBS)
+
 $(TESTDATA_DIRS):
+	$(call MKDIR,$@)
+
+$(UNIT_DIR):
 	$(call MKDIR,$@)
 
 # Integer-only synthetic datasets for the regression tests
@@ -181,7 +189,8 @@ check-variants: check-outputs
 
 # Golden comparison (also of the tracking variants and of the report), then smoke tests of the two
 # default invocations (CLI with and without ground truth) and of the subcommands.
-check: check-variants $(COMPARE)
+check: check-variants $(COMPARE) $(UNIT) | $(UNIT_DIR)
+	$(call fixpath,$(UNIT)) $(call fixpath,$(UNIT_DIR))
 	$(call fixpath,$(COMPARE)) tests/golden $(CHECK_DIR) $(GOLDEN_FILES)
 	$(call fixpath,$(COMPARE)) tests/golden $(CHECK_DIR)/notrack $(GOLDEN_EDGE)
 	$(call fixpath,$(COMPARE)) tests/golden $(CHECK_DIR)/snapshots $(GOLDEN_EDGE)
