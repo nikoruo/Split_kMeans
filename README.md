@@ -53,6 +53,7 @@ See [CHANGELOG.md](CHANGELOG.md).
 - Portability
   - Linux (GNU Make, gcc or clang) and Windows (MinGW-w64 with mingw32-make, or Visual Studio 2026).
   - RNG: seeded PCG32 (`src/rng.c`), identical sequences on every platform for the same seed.
+  - Datasets and centroids use flat row-major coordinate buffers; dataset labels are stored separately. Split algorithms use indexed cluster views without copying coordinates.
 
 ## Project layout
 
@@ -111,6 +112,11 @@ Tests
 - The check runs write to `build/check`. Inside a OneDrive folder the tracking files hit sharing violations, so pass an output root outside it, for example `mingw32-make check CHECK_ROOT=C:/Temp` (its `check` subfolder is deleted first; no spaces in the path).
 - `CHECK_BIN=<exe>` runs the same checks with another binary, for example the Visual Studio Release build: `mingw32-make check CHECK_BIN=build/msvc/x64/Release/Split_kMeans.exe`. Both Windows builds must match the same golden files.
 - `make clean` removes the Makefile builds and the test data; the Visual Studio output in `build/msvc` stays.
+
+Benchmark
+- `make bench` runs fixed CLI jobs on the local s1, dim064, worms_2d and birch1 datasets, with seed 20261119, log level 1 and no tracking. RS uses 300 swaps and RKM 25 repeats; the selected algorithms and run counts are in `tests/bench.c`.
+- On Windows, build Visual Studio 2026 Release x64 first; the default reference is rejected if it is missing or older than the sources or project. The benchmark alternates the MinGW and Visual Studio binaries for four rounds and fails if any run's seed, SSE or CI differs. On Linux it benchmarks the Makefile build alone. `BENCH_REF=<exe>` selects another release binary (the caller must check its freshness); `BENCH_REF=-` disables comparison.
+- Each benchmark creates a new folder under `build/bench`; `BENCH_ROOT=<dir>` selects another root, for example one outside OneDrive. `summary.csv` gives the minimum of four times per run; the raw run files and `run_config.txt` retain all timings and build details. Use an idle, plugged-in machine for comparable timing.
 
 Notes
 - Uses C11 (`-std=c11`) and `-ffp-contract=off` (no fused multiply-add, so every compiler rounds the same way); the Visual Studio project uses `/fp:precise` without `/fp:contract`.

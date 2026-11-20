@@ -16,9 +16,9 @@
  *
  * No call site; kept (Unused code review).
  */
-double calculateEuclideanDistance(const DataPoint* point1, const DataPoint* point2)
+double calculateEuclideanDistance(const double* point1, const double* point2, size_t dimensions)
 {
-    return sqrt(calculateSquaredEuclideanDistance(point1, point2));
+    return sqrt(calculateSquaredEuclideanDistance(point1, point2, dimensions));
 }
 
 /**
@@ -30,32 +30,34 @@ double calculateEuclideanDistance(const DataPoint* point1, const DataPoint* poin
  * @param centroids Centroid set referenced by partitions.
  * @return Total SSE across all points.
  */
-double calculateSSE(const DataPoints* dataPoints, const Centroids* centroids)
+double calculateSSE(const Dataset* dataPoints, const Centroids* centroids)
 {
+    assert(dataPoints->dimensions == centroids->dimensions);
     double sse = 0.0;
 
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
-        size_t cIndex = dataPoints->points[i].partition;
+        size_t cIndex = dataPoints->partitions[i];
 
         assert(cIndex < centroids->size);
 
-        sse += calculateSquaredEuclideanDistance(&dataPoints->points[i], &centroids->points[cIndex]);
+        sse += calculateSquaredEuclideanDistance(datasetRowConst(dataPoints, i), centroidRowConst(centroids, cIndex),
+                                                 dataPoints->dimensions);
     }
 
     return sse;
 }
 
 /**
- * @brief SSE divided by the number of values (N·D). Requires a non-empty dataset (an empty one is read out of bounds).
+ * @brief SSE divided by the number of values (N·D). Requires a non-empty dataset.
  *
  * No call site; kept (Unused code review). The thesis reports SSE and CI only.
  */
-double calculateMSE(const DataPoints* dataPoints, const Centroids* centroids)
+double calculateMSE(const Dataset* dataPoints, const Centroids* centroids)
 {
     const double sse = calculateSSE(dataPoints, centroids);
 
-    const double mse = sse / ((double)dataPoints->size * (double)dataPoints->points[0].dimensions);
+    const double mse = sse / ((double)dataPoints->size * (double)dataPoints->dimensions);
 
     return mse;
 }
@@ -71,15 +73,17 @@ double calculateMSE(const DataPoints* dataPoints, const Centroids* centroids)
  * @param clusterLabel Target cluster id.
  * @return SSE for the specified cluster.
  */
-double calculateClusterSSE(const DataPoints* dataPoints, const Centroids* centroids, size_t clusterLabel)
+double calculateClusterSSE(const Dataset* dataPoints, const Centroids* centroids, size_t clusterLabel)
 {
+    assert(dataPoints->dimensions == centroids->dimensions);
     double sse = 0.0;
 
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
-        if (dataPoints->points[i].partition == clusterLabel)
+        if (dataPoints->partitions[i] == clusterLabel)
         {
-            sse += calculateSquaredEuclideanDistance(&dataPoints->points[i], &centroids->points[clusterLabel]);
+            sse += calculateSquaredEuclideanDistance(datasetRowConst(dataPoints, i),
+                                                     centroidRowConst(centroids, clusterLabel), dataPoints->dimensions);
         }
     }
 
@@ -105,7 +109,7 @@ size_t countOrphans(const Centroids* centroids1, const Centroids* centroids2)
 
     for (size_t i = 0; i < centroids1->size; ++i)
     {
-        size_t closestIndex = findNearestCentroid(&centroids1->points[i], centroids2);
+        size_t closestIndex = findNearestCentroid(centroidRowConst(centroids1, i), centroids2);
         hasClosest[closestIndex] = true;
     }
 
@@ -137,8 +141,7 @@ size_t calculateCentroidIndex(const Centroids* centroids1, const Centroids* cent
         printf("centroids1: %zu AND 2: %zu\n\n", centroids1->size, centroids2->size);
         if (centroids1->size > 0 && centroids2->size > 0)
         {
-            printf("centroids1: %f AND 2: %f\n\n", centroids1->points->attributes[0],
-                   centroids2->points->attributes[0]);
+            printf("centroids1: %f AND 2: %f\n\n", centroids1->coordinates[0], centroids2->coordinates[0]);
         }
     }
 

@@ -75,13 +75,13 @@
  * @param outputFileName Path to write centroids (space-separated doubles per row).
  * @return 0 on success; 1 when the data file has no rows, a file cannot be opened, a label is not an integer from
  *         1 to N, or the partition file has fewer or more labels than the data file has points.
- * @errors The data file is read by readDataPoints, which exits on its errors; lines over LINE_BUFSZ - 1 characters
+ * @errors The data file is read by readDataset, which exits on its errors; lines over LINE_BUFSZ - 1 characters
  *         and allocation failures exit.
  */
 int generateGroundTruthCentroids(const char* dataFileName, const char* partitionFileName, const char* outputFileName)
 {
     // Read the data points
-    DataPoints dataPoints = readDataPoints(dataFileName);
+    Dataset dataPoints = readDataset(dataFileName);
 
     if (dataPoints.size == 0)
     {
@@ -97,7 +97,7 @@ int generateGroundTruthCentroids(const char* dataFileName, const char* partition
     if (FOPEN(partitionFile, partitionFileName, "r") != 0)
     {
         fprintf(stderr, "Error: Unable to open partition file '%s'\n", partitionFileName);
-        freeDataPoints(&dataPoints);
+        freeDataset(&dataPoints);
         return 1;
     }
 
@@ -127,7 +127,7 @@ int generateGroundTruthCentroids(const char* dataFileName, const char* partition
                 break;
             }
             const size_t clusterIndex = (size_t)(label - 1);
-            dataPoints.points[labelCount++].partition = clusterIndex;
+            dataPoints.partitions[labelCount++] = clusterIndex;
             if (clusterIndex > maxPartitionIndex)
             {
                 maxPartitionIndex = clusterIndex;
@@ -144,7 +144,7 @@ int generateGroundTruthCentroids(const char* dataFileName, const char* partition
     }
     if (!valid)
     {
-        freeDataPoints(&dataPoints);
+        freeDataset(&dataPoints);
         return 1;
     }
 
@@ -155,7 +155,7 @@ int generateGroundTruthCentroids(const char* dataFileName, const char* partition
     printf("Will calculate %zu centroids\n", numCentroids);
 
     // Allocate memory for the centroids
-    Centroids centroids = allocateCentroids(numCentroids, dataPoints.points[0].dimensions);
+    Centroids centroids = allocateCentroids(numCentroids, dataPoints.dimensions);
 
     // Initialize count array to track how many points are in each cluster
     size_t* clusterCounts = calloc(numCentroids, sizeof(size_t));
@@ -164,15 +164,15 @@ int generateGroundTruthCentroids(const char* dataFileName, const char* partition
     // Sum up the attribute values for each cluster
     for (size_t i = 0; i < dataPoints.size; ++i)
     {
-        size_t clusterIndex = dataPoints.points[i].partition;
+        size_t clusterIndex = dataPoints.partitions[i];
 
         // Every label was checked against 1..N and K is the largest one
         assert(clusterIndex < numCentroids);
 
         // Add the attribute values to the centroid sum
-        for (size_t j = 0; j < dataPoints.points[i].dimensions; ++j)
+        for (size_t j = 0; j < dataPoints.dimensions; ++j)
         {
-            centroids.points[clusterIndex].attributes[j] += dataPoints.points[i].attributes[j];
+            centroidRow(&centroids, clusterIndex)[j] += datasetRowConst(&dataPoints, i)[j];
         }
 
         clusterCounts[clusterIndex]++;
@@ -183,9 +183,9 @@ int generateGroundTruthCentroids(const char* dataFileName, const char* partition
     {
         if (clusterCounts[i] > 0)
         {
-            for (size_t j = 0; j < centroids.points[i].dimensions; ++j)
+            for (size_t j = 0; j < centroids.dimensions; ++j)
             {
-                centroids.points[i].attributes[j] /= clusterCounts[i];
+                centroidRow(&centroids, i)[j] /= clusterCounts[i];
             }
             printf("Cluster %zu has %zu points\n", i, clusterCounts[i]);
         }
@@ -202,15 +202,15 @@ int generateGroundTruthCentroids(const char* dataFileName, const char* partition
         fprintf(stderr, "Error: Unable to open output file '%s'\n", outputFileName);
         free(clusterCounts);
         freeCentroids(&centroids);
-        freeDataPoints(&dataPoints);
+        freeDataset(&dataPoints);
         return 1;
     }
 
     for (size_t i = 0; i < numCentroids; ++i)
     {
-        for (size_t j = 0; j < centroids.points[i].dimensions; ++j)
+        for (size_t j = 0; j < centroids.dimensions; ++j)
         {
-            fprintf(outputFile, "%f ", centroids.points[i].attributes[j]);
+            fprintf(outputFile, "%f ", centroidRow(&centroids, i)[j]);
         }
         fprintf(outputFile, "\n");
     }
@@ -222,7 +222,7 @@ int generateGroundTruthCentroids(const char* dataFileName, const char* partition
     // Clean up
     free(clusterCounts);
     freeCentroids(&centroids);
-    freeDataPoints(&dataPoints);
+    freeDataset(&dataPoints);
 
     return 0;
 }
@@ -240,11 +240,11 @@ void debugCalculateCI(const char* debugCentroidsFile, const char* groundTruthFil
     printf("  Ground truth: %s\n", groundTruthFile);
 
     // Read centroids from both files
-    Centroids debugCentroids = readCentroids(debugCentroidsFile, logLevel);
-    Centroids groundTruth = readCentroids(groundTruthFile, logLevel);
+    Centroids debugCentroids = readCentroids(debugCentroidsFile);
+    Centroids groundTruth = readCentroids(groundTruthFile);
 
-    printf("Debug centroids: %zu with %zu dimensions\n", debugCentroids.size, debugCentroids.points[0].dimensions);
-    printf("Ground truth centroids: %zu with %zu dimensions\n", groundTruth.size, groundTruth.points[0].dimensions);
+    printf("Debug centroids: %zu with %zu dimensions\n", debugCentroids.size, debugCentroids.dimensions);
+    printf("Ground truth centroids: %zu with %zu dimensions\n", groundTruth.size, groundTruth.dimensions);
 
     // Calculate Centroid Index
     size_t ci = calculateCentroidIndex(&debugCentroids, &groundTruth);
@@ -268,11 +268,11 @@ void debugCalculateSSE(const char* debugCentroidsFile, const char* dataFile)
     printf("  Data file: %s\n", dataFile);
 
     // Read centroids and data points
-    Centroids centroids = readCentroids(debugCentroidsFile, logLevel);
-    DataPoints dataPoints = readDataPoints(dataFile);
+    Centroids centroids = readCentroids(debugCentroidsFile);
+    Dataset dataPoints = readDataset(dataFile);
 
-    printf("Centroids: %zu with %zu dimensions\n", centroids.size, centroids.points[0].dimensions);
-    printf("Data points: %zu with %zu dimensions\n", dataPoints.size, dataPoints.points[0].dimensions);
+    printf("Centroids: %zu with %zu dimensions\n", centroids.size, centroids.dimensions);
+    printf("Data points: %zu with %zu dimensions\n", dataPoints.size, dataPoints.dimensions);
 
     // Assign each data point to the nearest centroid
     partitionStep(&dataPoints, &centroids);
@@ -283,7 +283,7 @@ void debugCalculateSSE(const char* debugCentroidsFile, const char* dataFile)
 
     // Clean up
     freeCentroids(&centroids);
-    freeDataPoints(&dataPoints);
+    freeDataset(&dataPoints);
 }
 
 /**
@@ -296,18 +296,18 @@ void runDebuggery(void)
 }
 
 /** @brief Exits unless both point sets are non-empty and have the same number of dimensions. */
-static void requireCompatible(const DataPoint* first, size_t firstCount, const char* firstFile, const DataPoint* second,
-                              size_t secondCount, const char* secondFile)
+static void requireCompatible(size_t firstCount, size_t firstDimensions, const char* firstFile, size_t secondCount,
+                              size_t secondDimensions, const char* secondFile)
 {
     if (firstCount == 0 || secondCount == 0)
     {
         fprintf(stderr, "Error: %s has no rows\n", firstCount == 0 ? firstFile : secondFile);
         exit(EXIT_FAILURE);
     }
-    if (first[0].dimensions != second[0].dimensions)
+    if (firstDimensions != secondDimensions)
     {
-        fprintf(stderr, "Error: %s has %zu dimensions, %s has %zu\n", firstFile, first[0].dimensions, secondFile,
-                second[0].dimensions);
+        fprintf(stderr, "Error: %s has %zu dimensions, %s has %zu\n", firstFile, firstDimensions, secondFile,
+                secondDimensions);
         exit(EXIT_FAILURE);
     }
 }
@@ -321,9 +321,9 @@ static int commandCi(int argc, char* argv[])
         fprintf(stderr, "Usage: split_kmeans ci <centroids.txt> <ground-truth.txt>\n");
         return EXIT_FAILURE;
     }
-    Centroids centroids = readCentroids(argv[0], logLevel);
-    Centroids truth = readCentroids(argv[1], logLevel);
-    requireCompatible(centroids.points, centroids.size, argv[0], truth.points, truth.size, argv[1]);
+    Centroids centroids = readCentroids(argv[0]);
+    Centroids truth = readCentroids(argv[1]);
+    requireCompatible(centroids.size, centroids.dimensions, argv[0], truth.size, truth.dimensions, argv[1]);
 
     printf("%zu\n", calculateCentroidIndex(&centroids, &truth));
 
@@ -341,14 +341,14 @@ static int commandSse(int argc, char* argv[])
         fprintf(stderr, "Usage: split_kmeans sse <data.txt> <centroids.txt>\n");
         return EXIT_FAILURE;
     }
-    DataPoints dataPoints = readDataPoints(argv[0]);
-    Centroids centroids = readCentroids(argv[1], logLevel);
-    requireCompatible(dataPoints.points, dataPoints.size, argv[0], centroids.points, centroids.size, argv[1]);
+    Dataset dataPoints = readDataset(argv[0]);
+    Centroids centroids = readCentroids(argv[1]);
+    requireCompatible(dataPoints.size, dataPoints.dimensions, argv[0], centroids.size, centroids.dimensions, argv[1]);
 
     partitionStep(&dataPoints, &centroids);
     printf("%.17g\n", calculateSSE(&dataPoints, &centroids));
 
-    freeDataPoints(&dataPoints);
+    freeDataset(&dataPoints);
     freeCentroids(&centroids);
     return EXIT_SUCCESS;
 }
@@ -1075,13 +1075,13 @@ int cliMain(int argc, char* argv[])
         createDatasetDirectory(outputDirectory, baseName, datasetDirectory, sizeof(datasetDirectory));
 
         // Read data and ground truth
-        DataPoints dataPoints = readDataPoints(currentDataFile);
+        Dataset dataPoints = readDataset(currentDataFile);
         if (dataPoints.size == 0)
         {
             fprintf(stderr, "--> Skipping %s (no data points)\n", baseName);
             continue;
         }
-        const size_t numDimensions = dataPoints.points[0].dimensions;
+        const size_t numDimensions = dataPoints.dimensions;
 
         if (currentK > dataPoints.size)
         {
@@ -1090,14 +1090,14 @@ int cliMain(int argc, char* argv[])
             exit(EXIT_FAILURE);
         }
 
-        Centroids groundTruth = {NULL, 0};
+        Centroids groundTruth = {0};
         if (currentGtFile[0] != '\0')
         {
-            groundTruth = readCentroids(currentGtFile, logLevel);
-            if (groundTruth.size > 0 && groundTruth.points[0].dimensions != dataPoints.points[0].dimensions)
+            groundTruth = readCentroids(currentGtFile);
+            if (groundTruth.size > 0 && groundTruth.dimensions != dataPoints.dimensions)
             {
                 fprintf(stderr, "Error: Ground truth %s has %zu dimensions, data %s has %zu\n", currentGtFile,
-                        groundTruth.points[0].dimensions, currentDataFile, dataPoints.points[0].dimensions);
+                        groundTruth.dimensions, currentDataFile, dataPoints.dimensions);
                 exit(EXIT_FAILURE);
             }
         }
@@ -1163,7 +1163,7 @@ int cliMain(int argc, char* argv[])
         }
 
         // Clean up
-        freeDataPoints(&dataPoints);
+        freeDataset(&dataPoints);
         freeCentroids(&groundTruth);
     }
 

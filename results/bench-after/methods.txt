@@ -1,0 +1,37 @@
+Phase 5 post-refactor benchmark, 2026-11-20
+
+The same fixed jobs, options and four alternating rounds as bench-before.
+All 61 run identities (run, seed, SSE, CI) match the pre-Phase-5 benchmark
+and match between the MinGW and Visual Studio release builds in every round.
+summary.csv holds the minimum time for each run. The two run-config files
+record the build flags, CPU and timer.
+
+Sum of per-run minima (ms; these fixed jobs are weighted by their run times):
+                   before       after     after/before
+MinGW             7827.795    6234.065       0.7964
+Visual Studio     8425.320    7419.101       0.8806
+
+MinGW sums by dataset (ms):
+                   before       after     after/before
+s1                 652.83      489.61        0.750
+dim064             892.45      842.55        0.944
+worms_2d          4090.60     3247.90        0.794
+birch1            2191.92     1654.00        0.755
+
+The before and after benchmarks were separate sessions, not alternating
+builds across the refactor; ratios are descriptive and include timing noise.
+Each session did alternate MinGW and Visual Studio on the same jobs.
+Raw per-round outputs and run configurations:
+%TEMP%\skm_phase5_after_verified\bench-1009476983519
+
+An earlier post-refactor repeat gave 6193.415 ms MinGW and 7436.657 ms
+Visual Studio, illustrating the noise between benchmark sessions:
+%TEMP%\skm_phase5_after_final\bench-1006490294668
+
+A six-round Visual Studio diagnostic on KM, RKM and RS identified a 15 to
+21 percent regression from per-point indexed-view checks in dense kernels.
+Separating dense and indexed kernels brought those cases within 3 percent of
+a direct-row control, with identical SSE and CI. The initial and final
+six-round diagnostic outputs are respectively:
+%TEMP%\skm_phase5_direct_ab_20261120_193619_30408
+%TEMP%\skm_phase5_direct_ab_20261120_194441_24320

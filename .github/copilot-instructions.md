@@ -40,10 +40,10 @@
 
 ## Module map
 - `main.c`, `cli.[ch]`: entry point, argument parsing, subcommands and dataset dispatch.
-- `dataset.[ch]`: point and centroid ownership, allocation, copying and input parsing.
+- `dataset.[ch]`: flat dataset coordinates and partitions, capacity-sized centroid buffers, ownership and input parsing.
 - `metrics.[ch]`: distances, SSE and Centroid Index; nearest-centroid and squared-distance hot helpers are inline.
 - `kmeans.[ch]`: initialization, assignment, centroid updates and k-means iterations.
-- `split.[ch]`: split primitives, local repartition and tentative splits; `algorithms.[ch]`: algorithm IDs, names and split-k-means runners.
+- `split.[ch]`: stable cluster-membership indexes, shared local two-means, split primitives and local repartition; `algorithms.[ch]`: algorithm IDs, names and split-k-means runners.
 - `baselines.[ch]`: Random Swap and bisecting k-means.
 - `experiment.[ch]`: algorithm run loops, statistics, run configuration and dataset metadata.
 - `tracking.[ch]`: paused stopwatch, progress rows, snapshots and run CSV output.

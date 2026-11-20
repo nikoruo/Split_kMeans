@@ -16,12 +16,8 @@
 /**
  * @brief Squared Euclidean distance between two points.
  */
-static inline double calculateSquaredEuclideanDistance(const DataPoint* point1, const DataPoint* point2)
+static inline double calculateSquaredEuclideanDistance(const double* a, const double* b, size_t dims)
 {
-    const size_t dims = point1->dimensions;
-    const double* a = point1->attributes;
-    const double* b = point2->attributes;
-
     double sum = 0.0;
     for (size_t i = 0; i < dims; ++i)
     {
@@ -36,16 +32,18 @@ static inline double calculateSquaredEuclideanDistance(const DataPoint* point1, 
  *
  * Requires at least one centroid (asserted) and the same dimensionality as the point (not checked). O(K·D).
  */
-static inline size_t findNearestCentroid(const DataPoint* queryPoint, const Centroids* targetCentroids)
+static inline size_t findNearestCentroid(const double* queryPoint, const Centroids* targetCentroids)
 {
     assert(targetCentroids->size > 0);
 
     size_t nearestCentroidId = 0;
-    double minDistance = calculateSquaredEuclideanDistance(queryPoint, &targetCentroids->points[0]);
+    double minDistance =
+        calculateSquaredEuclideanDistance(queryPoint, centroidRowConst(targetCentroids, 0), targetCentroids->dimensions);
 
     for (size_t i = 1; i < targetCentroids->size; ++i)
     {
-        double d = calculateSquaredEuclideanDistance(queryPoint, &targetCentroids->points[i]);
+        double d = calculateSquaredEuclideanDistance(queryPoint, centroidRowConst(targetCentroids, i),
+                                                     targetCentroids->dimensions);
 
         if (d < minDistance)
         {
@@ -57,10 +55,10 @@ static inline size_t findNearestCentroid(const DataPoint* queryPoint, const Cent
     return nearestCentroidId;
 }
 
-double calculateEuclideanDistance(const DataPoint* point1, const DataPoint* point2);
-double calculateSSE(const DataPoints* dataPoints, const Centroids* centroids);
-double calculateMSE(const DataPoints* dataPoints, const Centroids* centroids);
-double calculateClusterSSE(const DataPoints* dataPoints, const Centroids* centroids, size_t clusterLabel);
+double calculateEuclideanDistance(const double* point1, const double* point2, size_t dimensions);
+double calculateSSE(const Dataset* dataPoints, const Centroids* centroids);
+double calculateMSE(const Dataset* dataPoints, const Centroids* centroids);
+double calculateClusterSSE(const Dataset* dataPoints, const Centroids* centroids, size_t clusterLabel);
 size_t countOrphans(const Centroids* centroids1, const Centroids* centroids2);
 size_t calculateCentroidIndex(const Centroids* centroids1, const Centroids* centroids2);
 bool hasGroundTruth(const Centroids* groundTruth);

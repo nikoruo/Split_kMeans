@@ -109,19 +109,19 @@ Tracker trackerCreate(Algorithm algorithm, const char* outputDirectory, const Ce
 void trackerFree(Tracker* tracker);
 void trackerBeginRun(Tracker* tracker, size_t run);
 double trackerEndRun(Tracker* tracker);
-size_t trackerRecord(Tracker* tracker, size_t count, const char* phase, const DataPoints* dataPoints,
+size_t trackerRecord(Tracker* tracker, size_t count, const char* phase, const Dataset* dataPoints,
                      const Centroids* centroids, size_t splitCluster);
-void trackerSnapshot(Tracker* tracker, size_t count, const char* phase, const DataPoints* dataPoints,
+void trackerSnapshot(Tracker* tracker, size_t count, const char* phase, const Dataset* dataPoints,
                      const Centroids* centroids, size_t splitCluster);
 void trackerInnerRow(Tracker* tracker, KMeansStage stage, size_t iteration, const Centroids* centroids, double sse);
 void trackerAddRow(Tracker* tracker, size_t count, double sse, size_t ci);
 size_t trackerCi(Tracker* tracker, const Centroids* centroids);
-void trackerSplitSnapshot(Tracker* tracker, const DataPoints* dataPoints, const Centroids* centroids,
+void trackerSplitSnapshot(Tracker* tracker, const Dataset* dataPoints, const Centroids* centroids,
                           size_t splitCluster);
 void appendRunCsv(const char* outputDirectory, const char* algorithmName, size_t run, uint64_t seed,
                   double sse, size_t ci, double ms);
 void algorithmFilePath(Algorithm algorithm, const char* outputDirectory, const char* suffix, char* path, size_t pathSize);
-void saveExampleSnapshots(const Centroids* centroids, const DataPoints* dataPoints, size_t centroidIndex,
+void saveExampleSnapshots(const Centroids* centroids, const Dataset* dataPoints, size_t centroidIndex,
                           const char* algorithmPrefix, const char* outputDirectory,
                           bool* savedPerfect, bool* savedFailed);
 

@@ -1,0 +1,37 @@
+Phase 5.1 baseline, 2026-11-20
+
+The source is commit 300b06a; the working tree was dirty with benchmark and
+documentation changes only. The machine was on AC power. The MinGW release
+and Visual Studio 2026 Release x64 builds, flags, CPU and timer are recorded
+in the two run-config files.
+
+make bench: four alternating rounds, seed 20261119, CLI, log level 1,
+--no-track, RS 300 swaps, RKM 25 repeats, bisecting 5 tries. The exact fixed
+jobs and their run counts are in tests/bench.c. All 61 run identities
+(run, seed, SSE, CI) matched across both builds and all four rounds.
+summary.csv holds the minimum time for each run. Sum of minima: MinGW
+7827.795 ms; MSVC 8425.320 ms, MSVC/MinGW 1.076. This is a weighted
+comparison of these jobs, not a prediction for every dataset.
+
+Raw per-round outputs and run configurations:
+%TEMP%\skm_phase5_baseline\bench-972237621541
+
+Log check A/B: a temporary copy compiled with the same MinGW release flags
+but with every logLevel >= 2 or >= 3 condition replaced by 0. Four alternating
+rounds of the same jobs produced identical run identities. The sum of minima
+was 7807.789 ms with the checks and 7851.866 ms without them (ratio 1.006);
+no measurable overhead in this test. log-checks-ab.csv holds the per-run
+minima. Raw outputs:
+%TEMP%\skm_phase5_log_ab\bench-974198996236
+
+Profile: gprof produced an empty profile on this Windows toolchain. A separate
+MinGW -O3 -finstrument-functions build recorded per-function self time and
+call counts, excluding the inline distance and nearest-centroid functions
+from instrumentation. These timings include instrumentation and file I/O,
+so they are qualitative, not thesis measurements. profile-worms.csv and
+profile-dim.csv retain the resolved function counts and self ticks. Four
+SKM-Local worms_2d runs matched M0 exactly: partitionStep accounted for 40.85% of measured
+self time; allocateDataPoint and deepCopyDataPoint were each called about
+6.67 million times, largely during tentative splits. On dim064 with KM,
+RKM and RS, partitionStep accounted for 46.60%. Inlined distance work is
+included in its callers.

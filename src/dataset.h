@@ -5,60 +5,68 @@
 #ifndef DATASET_H
 #define DATASET_H
 
+#include <assert.h>
 #include <stddef.h>
+#include <string.h>
 
-/**
- * @brief Represents a single data point in a multi-dimensional space.
- *
- * The point owns its `attributes` array. `partition` is a zero-based cluster label;
- * `SIZE_MAX` indicates "unassigned".
- */
+/* Owns N * D row-major coordinates and N labels; free with freeDataset. */
 typedef struct
 {
-    double* attributes; /**< Coordinates of the data point; length == dimensions. */
-    size_t dimensions;  /**< Number of dimensions (length of the attributes array). */
-    size_t partition;   /**< Zero-based cluster label; SIZE_MAX means unassigned. */
-} DataPoint;
+    double* coordinates;
+    size_t* partitions; /* SIZE_MAX means unassigned. */
+    size_t size;
+    size_t dimensions;
+} Dataset;
 
-/**
- * @brief A contiguous collection of data points.
- *
- * Ownership: the container owns the array and each element's `attributes`.
- * Use `freeDataPoints` to release.
- */
+/* Owns capacity * D row-major coordinates; free with freeCentroids. */
 typedef struct
 {
-    DataPoint* points; /**< Array of DataPoint structures (size elements). */
-    size_t size;       /**< Number of data points. */
-} DataPoints;
-
-/**
- * @brief A collection of centroids (cluster representatives).
- *
- * Ownership: the container owns the array and each element's `attributes`.
- * Use `freeCentroids` to release.
- */
-typedef struct
-{
-    DataPoint* points; /**< Array of centroid points (size elements). */
-    size_t size;       /**< Number of centroids (K). */
+    double* coordinates;
+    size_t size;
+    size_t capacity;
+    size_t dimensions;
 } Centroids;
 
-/* The caller owns the allocated points and releases them with the matching free functions. */
-DataPoint allocateDataPoint(size_t dimensions);
-DataPoints allocateDataPoints(size_t size, size_t dimensions);
+/* Row pointers are borrowed and remain valid until the owning buffer is freed. */
+static inline double* datasetRow(Dataset* dataset, size_t index)
+{
+    assert(index < dataset->size);
+    return dataset->coordinates + index * dataset->dimensions;
+}
+
+static inline const double* datasetRowConst(const Dataset* dataset, size_t index)
+{
+    assert(index < dataset->size);
+    return dataset->coordinates + index * dataset->dimensions;
+}
+
+static inline double* centroidRow(Centroids* centroids, size_t index)
+{
+    assert(index < centroids->size);
+    return centroids->coordinates + index * centroids->dimensions;
+}
+
+static inline const double* centroidRowConst(const Centroids* centroids, size_t index)
+{
+    assert(index < centroids->size);
+    return centroids->coordinates + index * centroids->dimensions;
+}
+
+static inline void copyCoordinates(double* destination, const double* source, size_t dimensions)
+{
+    if (destination != source) memcpy(destination, source, dimensions * sizeof(double));
+}
+
+Dataset allocateDataset(size_t size, size_t dimensions);
 Centroids allocateCentroids(size_t size, size_t dimensions);
-void deinitDataPoint(DataPoint* point);
-void freeDataPointArray(DataPoint* points, size_t size);
-void freeDataPoints(DataPoints* dataPoints);
+void freeDataset(Dataset* dataset);
 void freeCentroids(Centroids* centroids);
-void deepCopyDataPoint(DataPoint* destination, const DataPoint* source);
 void deepCopyCentroids(const Centroids* source, Centroids* destination);
-void resetPartitions(DataPoints* dataPoints);
+void resetPartitions(Dataset* dataset);
 
 /* Returned datasets and centroids are owned by the caller. */
-DataPoints readDataPoints(const char* filename);
-Centroids readCentroids(const char* filename, int currentLogLevel);
+Dataset readDataset(const char* filename);
+Centroids readCentroids(const char* filename);
 size_t readKFromFile(const char* path);
 
 #endif /* DATASET_H */
