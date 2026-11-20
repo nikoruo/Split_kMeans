@@ -303,31 +303,31 @@ void platform_cpu(char* buffer, size_t size)
 #endif
 
 /** @brief Creates `path` and its missing parent folders (as mkdir -p); false with errno set on failure. */
-  bool platform_make_directories(const char* path)
-  {
-      char partial[PATH_MAX];
-      const size_t length = strlen(path);
-      if (length == 0 || length >= sizeof(partial))
-      {
-          errno = ENAMETOOLONG;
-          return false;
-      }
-      for (size_t i = 1; i <= length; ++i)
-      {
-          if (i < length && path[i] != '/' && path[i] != '\\')
-          {
-              continue;
-          }
-          memcpy(partial, path, i);
-          partial[i] = '\0';
-          if (i == 2 && partial[1] == ':')
-          {
-              continue; // drive root such as C:
-          }
-          if (MAKE_DIR(partial) != 0 && errno != EEXIST)
-          {
-              return false;
-          }
-      }
-      return true;
-  }
+bool platform_make_directories(const char* path)
+{
+    char partial[PATH_MAX];
+    const size_t length = strlen(path);
+    if (length == 0 || length >= sizeof(partial))
+    {
+        errno = ENAMETOOLONG;
+        return false;
+    }
+    for (size_t i = 1; i <= length; ++i)
+    {
+        if (i < length && path[i] != '/' && path[i] != '\\')
+        {
+            continue;
+        }
+        memcpy(partial, path, i);
+        partial[i] = '\0';
+        if (i == 2 && partial[1] == ':')
+        {
+            continue; // drive root such as C:
+        }
+        if (MAKE_DIR(partial) != 0 && errno != EEXIST)
+        {
+            return false;
+        }
+    }
+    return true;
+}

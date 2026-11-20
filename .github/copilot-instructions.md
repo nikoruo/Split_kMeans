@@ -9,7 +9,7 @@
 - Datasets (untracked): `data/`, `gt/`, `centroids/` (and `Backups/`) in the repo root.
 - Compares k-means variants and split-based clustering (SKM Intra, Global, Local) against Repeated K-means, Random Swap, Random Split and Bisecting K-means.
 - Results must be reproducible and statistically comparable. Thesis is in progress: algorithm fixes are the default behavior.
-- Code: the v2.0.0 refactor is in progress on `feature/refactor` (v1.0.0 is on `main`). Until Phase 4, `src/main.c` holds everything except `platform`, `rng` and `locale_utils`. The refactor plan lives in `docs/refactor-plan.md`.
+- Code: the v2.0.0 refactor is in progress on `feature/refactor` (v1.0.0 is on `main`). The refactor plan lives in `docs/refactor-plan.md`; see the module map below.
 - Layout: sources in `src/`, Visual Studio project in `msvc/` (solution at the root), Makefile at the root, cluster figures in `visuals/` (MATLAB code that must also run unchanged in GNU Octave); Makefile builds go to `build/<config>/` (release, debug, asan, ubsan), Visual Studio builds to `build/msvc/`. Milestone and final result summaries go to `results/<name>/` (tracked in git, plan D4); run folders with tracking logs and snapshots stay local, outside OneDrive.
 
 ## Build and test
@@ -39,7 +39,17 @@
 - Platform `#ifdef`s only in `src/platform.c` / `src/platform.h`.
 
 ## Module map
-To be filled in step 4.3 of `docs/refactor-plan.md`.
+- `main.c`, `cli.[ch]`: entry point, argument parsing, subcommands and dataset dispatch.
+- `dataset.[ch]`: point and centroid ownership, allocation, copying and input parsing.
+- `metrics.[ch]`: distances, SSE and Centroid Index; nearest-centroid and squared-distance hot helpers are inline.
+- `kmeans.[ch]`: initialization, assignment, centroid updates and k-means iterations.
+- `split.[ch]`: split primitives, local repartition and tentative splits; `algorithms.[ch]`: algorithm IDs, names and split-k-means runners.
+- `baselines.[ch]`: Random Swap and bisecting k-means.
+- `experiment.[ch]`: algorithm run loops, statistics, run configuration and dataset metadata.
+- `tracking.[ch]`: paused stopwatch, progress rows, snapshots and run CSV output.
+- `report.[ch]`: merge finished runs and produce summary tables and curves.
+- `util.[ch]`, `version.h`: shared parsing, formatting, errors, paths and build/version information.
+- `platform.[ch]`, `rng.[ch]`, `locale_utils.[ch]`: platform shims and clock, seeded PCG32, and the retained locale helper.
 
 ## Working agreement
 - Make one plan step at a time, verify it, then stop.

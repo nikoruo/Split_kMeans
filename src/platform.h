@@ -88,7 +88,7 @@
 
 /* Filesystem */
 # include <direct.h>
-# include <sys/stat.h>  /* stat() in main.c */
+# include <sys/stat.h>  /* stat() in fileExists (util.c) */
 # define MAKE_DIR(path)           _mkdir(path)
 
 /* CRT */

@@ -26,8 +26,9 @@ Comments in `src/` are not a source: they are unverified claims from an older AI
 - Bisecting k-means: Steinbach, Karypis & Kumar 2000 (not available locally; mark claims unverified).
 
 ## Code map
-- `splitType` 0 = SKM-Intra, 1 = SKM-Global (`splitClusterGlobalV2`, the thesis variant), 2 = SKM-Local (default run).
-- `splitClusterGlobal` is the basic global variant, kept as the thesis comparison for why V2 was needed.
+- `src/algorithms.[ch]` defines IDs and names: 0 `skm-intra` -> `SKM_Intra`, 1 `skm-global` -> `SKM_Global`, 2 `skm-local` -> `SKM_Local`, 3 `rs` -> `RS`, 4 `bisecting` -> `Bisecting_KM`, 5 `skm-random` -> `SKM_Random`, 6 `km` -> `KM`, 7 `rkm` -> `RKM`, 8 `skm-global-basic` -> `SKM_Global_Basic`.
+- `src/split.c` holds `splitClusterGlobalV2` (the thesis global variant), `splitClusterGlobal` (the basic comparison), the local repartition and tentative splits. `src/algorithms.c` runs the split variants; `src/baselines.c` holds Random Swap and bisecting k-means.
+- `src/kmeans.c` holds initialization and k-means; `src/metrics.c` and `src/metrics.h` hold SSE, CI and distance helpers. `src/experiment.c` handles run seeds and algorithm wrappers; `src/tracking.c` times and records runs; `src/report.c` makes tables and curves.
 - Variant names: SKM-Intra ~ 1997 S1GLA and Rantinoja's tentative split; SKM-Local ~ 1997 SLR+GLA and Rantinoja's hybrid split, plus an outward pass; SKM-Global ~ 1997 SGLA but global k-means runs to convergence after each split (the thesis supervisor's request; the paper uses 2 GLA iterations).
 - Current defaults: 100 runs, RS 5000 swaps, RKM 1000 repeats, bisecting 5 tries, k-means until SSE stops improving; RKM and RS run once.
 
