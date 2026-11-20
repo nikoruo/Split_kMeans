@@ -11,7 +11,7 @@
 
 void localRepartitionForRS(DataPoints* dataPoints, Centroids* centroids, size_t removed);
 double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps, Tracker* tracker, Rng* rng);
-double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids,
-                          size_t maxIterations, size_t bisectingIterations, Tracker* tracker, Rng* rng);
+double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
+                          size_t bisectingIterations, Tracker* tracker, Rng* rng);
 
 #endif /* BASELINES_H */
