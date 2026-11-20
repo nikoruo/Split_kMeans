@@ -195,7 +195,7 @@ These score results from any program, for example the centroids that CBModules S
 
 The files are plain whitespace-separated numbers (the same parser as the data files); the dimensions must match. CBModules' own `.cb` and `.pa` formats (with a `VQ CODEBOOK` header) need exporting to text first.
 
-The C helpers `generateGroundTruthCentroids`, `debugCalculateCI`, `debugCalculateSSE` and `runDebuggery()` (fixed paths under debuggery/, gt/, data/) remain in `src/main.c`.
+The C helpers `generateGroundTruthCentroids`, `debugCalculateCI`, `debugCalculateSSE` and `runDebuggery()` (fixed paths under debuggery/, gt/, data/) remain in `src/cli.c`.
 
 ## Subcommand: report (tables and curves for Excel)
 

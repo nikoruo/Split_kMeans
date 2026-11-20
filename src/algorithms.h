@@ -29,7 +29,7 @@ typedef struct
     Algorithm id;
 } AlgorithmOption;
 
-extern const AlgorithmOption algorithmOptions[ALGORITHM_COUNT];
+extern const AlgorithmOption algorithmOptions[]; /* ALGORITHM_COUNT entries, checked in algorithms.c */
 
 struct Tracker;
 

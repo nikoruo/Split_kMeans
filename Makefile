@@ -47,7 +47,6 @@ COMPARE       := $(BUILD_DIR)/compare_runs$(EXE)
 UNIT          := $(BUILD_DIR)/test_unit$(EXE)
 UNIT_OBJECTS  := $(addprefix $(BUILD_DIR)/,algorithms.o baselines.o dataset.o kmeans.o metrics.o platform.o rng.o split.o tracking.o util.o)
 TEST_DIR      := build/testdata
-UNIT_DIR      := $(TEST_DIR)/unit
 TESTDATA_DIRS := $(foreach g,main edge pending,$(foreach d,data gt centroids,$(TEST_DIR)/$(g)/$(d)))
 
 # --- Regression tests: fixed seed, golden <Algo>_runs.csv per dataset --------
@@ -55,6 +54,7 @@ TESTDATA_DIRS := $(foreach g,main edge pending,$(foreach d,data gt centroids,$(T
 # per-swap tracking files hit sharing violations, so pass for example CHECK_ROOT=C:/Temp there.
 CHECK_ROOT   ?= build
 CHECK_DIR    := $(CHECK_ROOT)/check
+UNIT_DIR     := $(CHECK_DIR)/unit
 # CHECK_BIN runs the checks with another binary, for example the Visual Studio Release build.
 CHECK_BIN    ?=
 TEST_BIN     := $(if $(CHECK_BIN),$(CHECK_BIN),$(BIN))
@@ -156,9 +156,6 @@ $(UNIT): tests/test_unit.c $(UNIT_OBJECTS) | $(BUILD_DIR)
 $(TESTDATA_DIRS):
 	$(call MKDIR,$@)
 
-$(UNIT_DIR):
-	$(call MKDIR,$@)
-
 # Integer-only synthetic datasets for the regression tests
 testdata: $(GEN_DATA) | $(TESTDATA_DIRS)
 	$(call fixpath,$(GEN_DATA)) $(TEST_DIR)
@@ -188,9 +185,11 @@ check-variants: check-outputs
 	$(call run_in,edge) --seed $(CHECK_SEED) -r 5 --algo $(CHECK_ALGOS) $(VARIANT_log3) -o $(CHECK_OUT)/log3/edge > $(NULLDEV) 2> $(NULLDEV)
 	$(call run_in,edge) --seed $(CHECK_SEED) --algo rkm,rs $(VARIANT_log3) -o $(CHECK_OUT)/log3/edge > $(NULLDEV) 2> $(NULLDEV)
 
-# Golden comparison (also of the tracking variants and of the report), then smoke tests of the two
-# default invocations (CLI with and without ground truth) and of the subcommands.
-check: check-variants $(COMPARE) $(UNIT) | $(UNIT_DIR)
+# Unit tests (fixtures in $(UNIT_DIR)), golden comparison (also of the tracking variants and of the
+# report), then smoke tests of the two default invocations (CLI with and without ground truth) and of
+# the subcommands.
+check: check-variants $(COMPARE) $(UNIT)
+	$(call MKDIR,$(UNIT_DIR))
 	$(call fixpath,$(UNIT)) $(call fixpath,$(UNIT_DIR))
 	$(call fixpath,$(COMPARE)) tests/golden $(CHECK_DIR) $(GOLDEN_FILES)
 	$(call fixpath,$(COMPARE)) tests/golden $(CHECK_DIR)/notrack $(GOLDEN_EDGE)

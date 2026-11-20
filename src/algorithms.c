@@ -19,12 +19,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-const AlgorithmOption algorithmOptions[ALGORITHM_COUNT] = {
+const AlgorithmOption algorithmOptions[] = {
     {"km", ALGO_KM}, {"rkm", ALGO_RKM}, {"rs", ALGO_RS}, {"skm-random", ALGO_SKM_RANDOM},
     {"skm-intra", ALGO_SKM_INTRA}, {"skm-global", ALGO_SKM_GLOBAL},
     {"skm-global-basic", ALGO_SKM_GLOBAL_BASIC}, {"skm-local", ALGO_SKM_LOCAL},
     {"bisecting", ALGO_BISECTING},
 };
+_Static_assert(sizeof(algorithmOptions) / sizeof(algorithmOptions[0]) == ALGORITHM_COUNT,
+               "every Algorithm needs exactly one algorithmOptions entry");
 
 /**
  * @brief Maps an algorithm id to a short stable name.
