@@ -52,22 +52,34 @@ TESTDATA_DIRS := $(foreach g,main edge pending,$(foreach d,data gt centroids,$(T
 # per-swap tracking files hit sharing violations, so pass for example CHECK_ROOT=C:/Temp there.
 CHECK_ROOT   ?= build
 CHECK_DIR    := $(CHECK_ROOT)/check
-# run_in starts three folders below the repo root, so relative roots get a ../../../ prefix.
-CHECK_OUT    := $(if $(or $(filter /%,$(CHECK_ROOT)),$(findstring :,$(CHECK_ROOT))),$(CHECK_DIR),../../../$(CHECK_DIR))
+# CHECK_BIN runs the checks with another binary, for example the Visual Studio Release build.
+CHECK_BIN    ?=
+TEST_BIN     := $(if $(CHECK_BIN),$(CHECK_BIN),$(BIN))
+# run_in starts three folders below the repo root, so relative paths get a ../../../ prefix.
+from_run_dir = $(if $(or $(filter /%,$1),$(findstring :,$1)),$1,../../../$1)
+CHECK_OUT    := $(call from_run_dir,$(CHECK_DIR))
 CHECK_SEED   := 20251026
 CHECK_ALGOS  := km,skm-random,skm-intra,skm-global,skm-global-basic,skm-local,bisecting
 MAIN_SETS    := s01_blobs2d s02_blobs8d s03_overlap s04_unbalanced s05_k15
 EDGE_SETS    := e01_k1 e02_k_equals_n e03_duplicates e04_tiny e05_constant_dim e06_highdim e07_k2
 GOLDEN_ALGOS := KM RKM RS SKM_Random SKM_Intra SKM_Global SKM_Global_Basic SKM_Local Bisecting_KM
-GOLDEN_FILES := $(foreach s,$(MAIN_SETS),$(foreach a,$(GOLDEN_ALGOS),main/$(s)/$(a)_runs.csv)) \
-                $(foreach s,$(EDGE_SETS),$(foreach a,$(GOLDEN_ALGOS),edge/$(s)/$(a)_runs.csv))
-GOLDEN_DIRS  := $(addprefix tests/golden/main/,$(MAIN_SETS)) $(addprefix tests/golden/edge/,$(EDGE_SETS))
+GOLDEN_EDGE  := $(foreach s,$(EDGE_SETS),$(foreach a,$(GOLDEN_ALGOS),edge/$(s)/$(a)_runs.csv))
+GOLDEN_FILES := $(foreach s,$(MAIN_SETS),$(foreach a,$(GOLDEN_ALGOS),main/$(s)/$(a)_runs.csv)) $(GOLDEN_EDGE)
+GOLDEN_DIRS  := $(addprefix tests/golden/main/,$(MAIN_SETS)) $(addprefix tests/golden/edge/,$(EDGE_SETS)) tests/golden/report
+# The report of the main group without time columns (whole lines are compared)
+REPORT_FILES := $(addprefix report/,summary.csv table_ci.csv table_success.csv table_sse.csv $(foreach s,$(MAIN_SETS),curves_$(s).csv))
+# Tracking, snapshots and logging must not change the results: the edge group runs again with each.
+VARIANT_notrack   := --no-track
+VARIANT_snapshots := --snapshots all:all:split --track-inner
+VARIANT_log3      := --log-level 3
+VARIANTS     := notrack snapshots log3
 
 # Runs the program inside a test-data group so batch mode finds data/, gt/ and centroids/.
-run_in = cd $(call fixpath,$(TEST_DIR)/$1) && $(call fixpath,../../$(CONFIG)/split_kmeans$(EXE))
+run_in = cd $(call fixpath,$(TEST_DIR)/$1) && $(call fixpath,$(call from_run_dir,$(TEST_BIN)))
 
 # --- Flags (user CFLAGS, CPPFLAGS, LDFLAGS, LDLIBS are appended) -----------
-BASE_CFLAGS   := -std=c11 -Wall -Wextra -Wpedantic
+# -ffp-contract=off: no fused multiply-add, so every compiler and target rounds the same way.
+BASE_CFLAGS   := -std=c11 -Wall -Wextra -Wpedantic -ffp-contract=off
 BASE_CPPFLAGS :=
 BASE_LDFLAGS  :=
 BASE_LDLIBS   := -lm
@@ -88,21 +100,33 @@ endif
 ifeq ($(WERROR),1)
   BASE_CFLAGS += -Werror
 endif
-ifeq ($(NATIVE),1)
-  BASE_CFLAGS += -march=native
-endif
-ifeq ($(THREADS),1)
-  BASE_CFLAGS += -pthread
-  BASE_LDLIBS += -pthread
-endif
 
 ALL_CFLAGS   := $(BASE_CFLAGS) $(CFLAGS)
 ALL_CPPFLAGS := $(BASE_CPPFLAGS) $(CPPFLAGS)
 ALL_LDFLAGS  := $(BASE_LDFLAGS) $(LDFLAGS)
 ALL_LDLIBS   := $(BASE_LDLIBS) $(LDLIBS)
 
+# --- Build information for run_config.txt: git commit and compile command ----
+# build_info.h is rewritten only when its text changes, so main.c recompiles after a commit or a flag change.
+BUILD_INFO := $(BUILD_DIR)/build_info.h
+hash := \#
+define newline
+
+
+endef
+ifneq ($(filter-out clean help,$(or $(MAKECMDGOALS),all)),)
+  GIT_COMMIT := $(shell git rev-parse --short HEAD 2>$(NULLDEV))
+  # -dirty: changed tracked files, or files in src/ that git does not track yet (the build compiles every src/*.c)
+  GIT_DIRTY  := $(if $(strip $(shell git status --porcelain --untracked-files=no 2>$(NULLDEV))$(shell git ls-files --others --exclude-standard -- src 2>$(NULLDEV))),-dirty)
+  BUILD_INFO_TEXT := $(hash)define SKM_GIT_COMMIT "$(or $(GIT_COMMIT),unknown)$(GIT_DIRTY)"$(newline)$(hash)define SKM_BUILD_FLAGS "$(subst ",\",$(strip $(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS)))"
+  ifneq ($(file <$(BUILD_INFO)),$(BUILD_INFO_TEXT))
+    $(shell $(call MKDIR,$(BUILD_DIR)))
+    $(file >$(BUILD_INFO),$(BUILD_INFO_TEXT))
+  endif
+endif
+
 # --- Targets ----------------------------------------------------------------
-.PHONY: all run check check-outputs debug asan ubsan bench clean help golden-update testdata
+.PHONY: all run check check-outputs check-variants debug asan ubsan bench clean help golden-update testdata
 
 all: $(BIN)
 
@@ -112,7 +136,7 @@ $(BIN): $(OBJ)
 	$(CC) $(ALL_LDFLAGS) $^ -o $@ $(ALL_LDLIBS)
 
 $(BUILD_DIR)/%.o: src/%.c | $(BUILD_DIR)
-	$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) -MMD -MP -c $< -o $@
+	$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) -DSKM_BUILD_INFO -I$(BUILD_DIR) -MMD -MP -c $< -o $@
 
 $(BUILD_DIR):
 	$(call MKDIR,$@)
@@ -135,7 +159,7 @@ run: $(BIN)
 	$(call fixpath,$(BIN)) $(ARGS)
 
 # RKM and RS run with their default single run; the other algorithms run 5 times.
-check-outputs: $(BIN) testdata
+check-outputs: $(if $(CHECK_BIN),,$(BIN)) testdata
 	$(call RMDIR,$(CHECK_DIR))
 	$(call MKDIR,$(CHECK_DIR))
 	$(call run_in,main) --seed $(CHECK_SEED) -r 5 --algo $(CHECK_ALGOS) -o $(CHECK_OUT)/main > $(NULLDEV)
@@ -143,24 +167,52 @@ check-outputs: $(BIN) testdata
 	$(call run_in,edge) --seed $(CHECK_SEED) -r 5 --algo $(CHECK_ALGOS) -o $(CHECK_OUT)/edge > $(NULLDEV)
 	$(call run_in,edge) --seed $(CHECK_SEED) --algo rkm,rs -o $(CHECK_OUT)/edge > $(NULLDEV)
 
-# Golden comparison, then smoke tests of the two default invocations (CLI with and without ground truth).
-check: check-outputs $(COMPARE)
+# The edge runs again with each tracking variant, into $(CHECK_DIR)/<variant>/edge.
+check-variants: check-outputs
+	$(call MKDIR,$(CHECK_DIR)/notrack)
+	$(call MKDIR,$(CHECK_DIR)/snapshots)
+	$(call MKDIR,$(CHECK_DIR)/log3)
+	$(call run_in,edge) --seed $(CHECK_SEED) -r 5 --algo $(CHECK_ALGOS) $(VARIANT_notrack) -o $(CHECK_OUT)/notrack/edge > $(NULLDEV)
+	$(call run_in,edge) --seed $(CHECK_SEED) --algo rkm,rs $(VARIANT_notrack) -o $(CHECK_OUT)/notrack/edge > $(NULLDEV)
+	$(call run_in,edge) --seed $(CHECK_SEED) -r 5 --algo $(CHECK_ALGOS) $(VARIANT_snapshots) -o $(CHECK_OUT)/snapshots/edge > $(NULLDEV)
+	$(call run_in,edge) --seed $(CHECK_SEED) --algo rkm,rs $(VARIANT_snapshots) -o $(CHECK_OUT)/snapshots/edge > $(NULLDEV)
+	$(call run_in,edge) --seed $(CHECK_SEED) -r 5 --algo $(CHECK_ALGOS) $(VARIANT_log3) -o $(CHECK_OUT)/log3/edge > $(NULLDEV) 2> $(NULLDEV)
+	$(call run_in,edge) --seed $(CHECK_SEED) --algo rkm,rs $(VARIANT_log3) -o $(CHECK_OUT)/log3/edge > $(NULLDEV) 2> $(NULLDEV)
+
+# Golden comparison (also of the tracking variants and of the report), then smoke tests of the two
+# default invocations (CLI with and without ground truth) and of the subcommands.
+check: check-variants $(COMPARE)
 	$(call fixpath,$(COMPARE)) tests/golden $(CHECK_DIR) $(GOLDEN_FILES)
+	$(call fixpath,$(COMPARE)) tests/golden $(CHECK_DIR)/notrack $(GOLDEN_EDGE)
+	$(call fixpath,$(COMPARE)) tests/golden $(CHECK_DIR)/snapshots $(GOLDEN_EDGE)
+	$(call fixpath,$(COMPARE)) tests/golden $(CHECK_DIR)/log3 $(GOLDEN_EDGE)
+	$(call run_in,main) report --no-time -o $(CHECK_OUT)/report $(CHECK_OUT)/main > $(NULLDEV)
+	$(call fixpath,$(COMPARE)) --whole tests/golden $(CHECK_DIR) $(REPORT_FILES)
 	$(call run_in,main) > $(NULLDEV)
 	$(call run_in,main) -k 4 data/s01_blobs2d.txt gt/s01_blobs2d.txt > $(NULLDEV)
 	$(call run_in,main) -k 4 data/s01_blobs2d.txt > $(NULLDEV)
+	$(call run_in,main) ci gt/s01_blobs2d.txt gt/s01_blobs2d.txt > $(NULLDEV)
+	$(call run_in,main) sse data/s01_blobs2d.txt gt/s01_blobs2d.txt > $(NULLDEV)
 
 $(GOLDEN_DIRS):
 	$(call MKDIR,$@)
 
 golden-update: check-outputs $(COMPARE) | $(GOLDEN_DIRS)
 	$(call fixpath,$(COMPARE)) --update tests/golden $(CHECK_DIR) $(GOLDEN_FILES)
+	$(call run_in,main) report --no-time -o $(CHECK_OUT)/report $(CHECK_OUT)/main > $(NULLDEV)
+	$(call fixpath,$(COMPARE)) --update --whole tests/golden $(CHECK_DIR) $(REPORT_FILES)
 
 bench:
 	$(error make bench arrives in plan step 5.1)
 
+# Removes the Makefile configurations only; the Visual Studio output in build/msvc stays.
 clean:
-	$(call RMDIR,build)
+	$(call RMDIR,build/release)
+	$(call RMDIR,build/debug)
+	$(call RMDIR,build/asan)
+	$(call RMDIR,build/ubsan)
+	$(call RMDIR,$(TEST_DIR))
+	$(call RMDIR,build/check)
 
 help:
 	@echo Targets:
@@ -172,10 +224,11 @@ help:
 	@echo   golden-update  regenerate golden files, algorithm-change commits only
 	@echo   bench          benchmark run
 	@echo   testdata       generate the synthetic test datasets in build/testdata
-	@echo   clean          remove build/
+	@echo   clean          remove the Makefile builds and test data; build/msvc stays
 	@echo Variables:
-	@echo   CC=gcc or clang, WERROR=1, NATIVE=1, THREADS=1
+	@echo   CC=gcc or clang, WERROR=1
 	@echo   CHECK_ROOT=dir  check output root, default build; dir/check is deleted first, no spaces
+	@echo   CHECK_BIN=exe   run check with another binary, for example build/msvc/x64/Release/Split_kMeans.exe
 	@echo   CFLAGS, CPPFLAGS, LDFLAGS, LDLIBS are appended to the defaults
 
 -include $(DEP)

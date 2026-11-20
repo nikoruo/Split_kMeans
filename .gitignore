@@ -465,4 +465,6 @@ FodyWeavers.xsd
 /university/**
 !/university/**/
 !/university/**/*.ps1
-/visuals
+
+# the v1 plotting script (another student's, kept locally; replaced by visuals/generalizedplotting.m)
+/visuals/v1/

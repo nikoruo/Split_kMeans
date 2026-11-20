@@ -134,7 +134,12 @@
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
+      <!-- /fp:precise without /fp:contract or /arch:AVX2: no fused multiply-add, the same rounding as -ffp-contract=off in the Makefile -->
+      <FloatingPointModel>Precise</FloatingPointModel>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <!-- build_info.h (git commit and configuration for run_config.txt) is generated in IntDir by SkmBuildInfo below -->
+      <PreprocessorDefinitions>SKM_BUILD_INFO;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -146,4 +151,25 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
+  <!-- Writes IntDir\build_info.h only when its text changes, so main.c recompiles after a commit -->
+  <Target Name="SkmBuildInfo" BeforeTargets="ClCompile">
+    <Exec Command="git rev-parse --short HEAD" WorkingDirectory="$(SolutionDir)" ConsoleToMSBuild="true" IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="SkmCommit" />
+      <Output TaskParameter="ExitCode" PropertyName="SkmCommitExit" />
+    </Exec>
+    <Exec Command="git status --porcelain --untracked-files=no" WorkingDirectory="$(SolutionDir)" ConsoleToMSBuild="true" IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="SkmStatus" />
+      <Output TaskParameter="ExitCode" PropertyName="SkmStatusExit" />
+    </Exec>
+    <!-- Files in src that git does not track yet are compiled too (src\*.c), so they also make the build dirty -->
+    <Exec Command="git ls-files --others --exclude-standard -- src" WorkingDirectory="$(SolutionDir)" ConsoleToMSBuild="true" IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="SkmUntracked" />
+    </Exec>
+    <PropertyGroup>
+      <SkmCommit Condition="'$(SkmCommitExit)' != '0' Or '$(SkmCommit)' == ''">unknown</SkmCommit>
+      <SkmDirty Condition="'$(SkmStatusExit)' == '0' And ('$(SkmStatus)' != '' Or '$(SkmUntracked)' != '')">-dirty</SkmDirty>
+    </PropertyGroup>
+    <MakeDir Directories="$(IntDir)" />
+    <WriteLinesToFile File="$(IntDir)build_info.h" Overwrite="true" WriteOnlyWhenDifferent="true" Lines="#define SKM_GIT_COMMIT &quot;$(SkmCommit)$(SkmDirty)&quot;;#define SKM_BUILD_FLAGS &quot;Visual Studio project, $(Configuration)|$(Platform), toolset $(PlatformToolset)&quot;" />
+  </Target>
 </Project>

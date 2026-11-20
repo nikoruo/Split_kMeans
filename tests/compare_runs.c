@@ -4,19 +4,23 @@
 
 /* compare_runs: checks <Algo>_runs.csv files against the golden copies.
  *
- * Usage: compare_runs [--update] <golden_root> <output_root> <relative_file>...
+ * Usage: compare_runs [--update] [--whole] <golden_root> <output_root> <relative_file>...
  * Each file is compared line by line on the columns run;seed;sse;ci. The ms column
  * is timing and is dropped. SSE is printed with %.17g, so equal text means equal bits.
- * --update writes the output files (without ms) over the golden files instead.
+ * --whole compares whole lines (the report tables, written without time columns).
+ * --update writes the output files (without ms, unless --whole) over the golden files instead.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define LINE_MAX_LEN 1024
+#define LINE_MAX_LEN 8192
 #define KEPT_FIELDS 4
 #define MAX_REPORTED 5
+
+/* Set by --whole: keep every field. */
+static int wholeLines = 0;
 
 typedef struct
 {
@@ -35,9 +39,13 @@ static void freeLines(Lines* lines)
     lines->count = 0;
 }
 
-/* Truncates the line before field KEPT_FIELDS + 1 (the ms column). */
+/* Truncates the line before field KEPT_FIELDS + 1 (the ms column); no-op with --whole. */
 static void keepComparedFields(char* line)
 {
+    if (wholeLines)
+    {
+        return;
+    }
     size_t separators = 0;
     for (char* p = line; *p != '\0'; ++p)
     {
@@ -177,14 +185,21 @@ int main(int argc, char** argv)
 {
     int first = 1;
     int update = 0;
-    if (argc > 1 && strcmp(argv[1], "--update") == 0)
+    while (first < argc && (strcmp(argv[first], "--update") == 0 || strcmp(argv[first], "--whole") == 0))
     {
-        update = 1;
-        first = 2;
+        if (strcmp(argv[first], "--update") == 0)
+        {
+            update = 1;
+        }
+        else
+        {
+            wholeLines = 1;
+        }
+        ++first;
     }
     if (argc - first < 3)
     {
-        fprintf(stderr, "Usage: %s [--update] <golden_root> <output_root> <relative_file>...\n", argv[0]);
+        fprintf(stderr, "Usage: %s [--update] [--whole] <golden_root> <output_root> <relative_file>...\n", argv[0]);
         return EXIT_FAILURE;
     }
 
