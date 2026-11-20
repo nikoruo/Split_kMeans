@@ -1,6 +1,6 @@
 # Split_kMeans run configuration. Every call that writes to this folder must match the lines above "calls:".
 version: 2.0.0-dev
-commit: 4c7b221-dirty
+commit: f80f938
 compiler: gcc 16.2.0
 flags: gcc -DNDEBUG -std=c11 -Wall -Wextra -Wpedantic -ffp-contract=off -O3
 asserts: off (NDEBUG)
@@ -16,25 +16,25 @@ bisect-tries: 5
 init: random
 decimal-comma: off
 calls:
-2026-11-20 15:49:38 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo km,skm-intra,skm-global,skm-local,bisecting -r 100 -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_154938 -k 15 data/s1.txt gt/s1-cb.txt
+2026-11-20 16:19:20 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo km,skm-intra,skm-global,skm-local,bisecting -r 100 -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_161919_943 -k 15 data\s1.txt gt\s1-cb.txt
   mode: cli; algorithms: km skm-intra skm-global skm-local bisecting; runs: 1 to 100 (RKM and RS: to 100); datasets: all; track-progress: on; snapshots: none; track-inner: off
-2026-11-20 15:49:43 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo rkm,rs -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_154938 -k 15 data/s1.txt gt/s1-cb.txt
+2026-11-20 16:19:24 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo rkm,rs -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_161919_943 -k 15 data\s1.txt gt\s1-cb.txt
   mode: cli; algorithms: rkm rs; runs: 1 to 100 (RKM and RS: to 1); datasets: all; track-progress: on; snapshots: none; track-inner: off
-2026-11-20 15:49:47 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo km,skm-intra,skm-global,skm-local,bisecting -r 100 -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_154938 -k 15 data/s4.txt gt/s4-cb.txt
+2026-11-20 16:19:28 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo km,skm-intra,skm-global,skm-local,bisecting -r 100 -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_161919_943 -k 15 data\s4.txt gt\s4-cb.txt
   mode: cli; algorithms: km skm-intra skm-global skm-local bisecting; runs: 1 to 100 (RKM and RS: to 100); datasets: all; track-progress: on; snapshots: none; track-inner: off
-2026-11-20 15:49:56 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo rkm,rs -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_154938 -k 15 data/s4.txt gt/s4-cb.txt
+2026-11-20 16:19:36 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo rkm,rs -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_161919_943 -k 15 data\s4.txt gt\s4-cb.txt
   mode: cli; algorithms: rkm rs; runs: 1 to 100 (RKM and RS: to 1); datasets: all; track-progress: on; snapshots: none; track-inner: off
-2026-11-20 15:50:04 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo km,skm-intra,skm-global,skm-local,bisecting -r 100 -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_154938 -k 50 data/a3.txt gt/a3-ga-cb.txt
+2026-11-20 16:19:44 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo km,skm-intra,skm-global,skm-local,bisecting -r 100 -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_161919_943 -k 50 data\a3.txt gt\a3-ga-cb.txt
   mode: cli; algorithms: km skm-intra skm-global skm-local bisecting; runs: 1 to 100 (RKM and RS: to 100); datasets: all; track-progress: on; snapshots: none; track-inner: off
-2026-11-20 15:50:34 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo rkm,rs -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_154938 -k 50 data/a3.txt gt/a3-ga-cb.txt
+2026-11-20 16:20:13 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo rkm,rs -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_161919_943 -k 50 data\a3.txt gt\a3-ga-cb.txt
   mode: cli; algorithms: rkm rs; runs: 1 to 100 (RKM and RS: to 1); datasets: all; track-progress: on; snapshots: none; track-inner: off
-2026-11-20 15:50:56 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo km,skm-intra,skm-global,skm-local,bisecting -r 100 -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_154938 -k 8 data/unbalance.txt gt/unbalance-gt.txt
+2026-11-20 16:20:36 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo km,skm-intra,skm-global,skm-local,bisecting -r 100 -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_161919_943 -k 8 data\unbalance.txt gt\unbalance-gt.txt
   mode: cli; algorithms: km skm-intra skm-global skm-local bisecting; runs: 1 to 100 (RKM and RS: to 100); datasets: all; track-progress: on; snapshots: none; track-inner: off
-2026-11-20 15:51:00 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo rkm,rs -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_154938 -k 8 data/unbalance.txt gt/unbalance-gt.txt
+2026-11-20 16:20:40 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo rkm,rs -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_161919_943 -k 8 data\unbalance.txt gt\unbalance-gt.txt
   mode: cli; algorithms: rkm rs; runs: 1 to 100 (RKM and RS: to 1); datasets: all; track-progress: on; snapshots: none; track-inner: off
-2026-11-20 15:51:06 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo km,skm-intra,skm-global,skm-local,bisecting -r 100 -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_154938 -k 16 data/dim064.txt gt/dim064.txt
+2026-11-20 16:20:45 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo km,skm-intra,skm-global,skm-local,bisecting -r 100 -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_161919_943 -k 16 data\dim064.txt gt\dim064.txt
   mode: cli; algorithms: km skm-intra skm-global skm-local bisecting; runs: 1 to 100 (RKM and RS: to 100); datasets: all; track-progress: on; snapshots: none; track-inner: off
-2026-11-20 15:51:10 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo rkm,rs -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_154938 -k 16 data/dim064.txt gt/dim064.txt
+2026-11-20 16:20:49 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo rkm,rs -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_161919_943 -k 16 data\dim064.txt gt\dim064.txt
   mode: cli; algorithms: rkm rs; runs: 1 to 100 (RKM and RS: to 1); datasets: all; track-progress: on; snapshots: none; track-inner: off
-2026-11-20 15:51:16 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo km,skm-intra,skm-local,bisecting -r 10 -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_154938 -k 35 data/worms_2d.txt gt/worms_2d-gt.txt
+2026-11-20 16:20:54 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo km,skm-intra,skm-local,bisecting -r 10 -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M1_20261120_161919_943 -k 35 data\worms_2d.txt gt\worms_2d-gt.txt
   mode: cli; algorithms: km skm-intra skm-local bisecting; runs: 1 to 10 (RKM and RS: to 10); datasets: all; track-progress: on; snapshots: none; track-inner: off
