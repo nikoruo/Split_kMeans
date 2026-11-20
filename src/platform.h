@@ -11,7 +11,7 @@
 * Exposes small cross-platform shims:
 *   - String:   STRTOK, STRCPY
 *   - Files:    FOPEN, MAKE_DIR, list_files (in platform.c)
-*   - Time:     LOCALTIME
+*   - Time:     LOCALTIME; platform_ticks, the monotonic stopwatch clock (in platform.c)
 *   - Paths:    PATHSEP, PATH_MAX (fallback on POSIX if undefined)
 *
 * Notes:
@@ -51,6 +51,7 @@
 /* --------------------------------------------------------------------
 * Common includes
 * -------------------------------------------------------------------- */
+#include <stdint.h>
 #include <string.h>
 #include <stdio.h>   /* needed for snprintf/fprintf used in this header */
 
@@ -116,10 +117,6 @@
 # include <sys/types.h>
 # include <time.h>
 # include <unistd.h>
-
-# ifdef _REENTRANT
-#   include <pthread.h>
-# endif
 
 /* Provide a fallback when PATH_MAX is not defined */
 # ifndef PATH_MAX
@@ -198,6 +195,36 @@ static inline struct tm* _mingw_localtime_r(const time_t* timep, struct tm* resu
  * or the folder cannot be read. The caller frees each name and the array. Exits on allocation failure.
  */
 size_t list_files(const char* dir, char*** out);
+
+/**
+ * @brief Lists the subfolders of `dir` (without `.` and `..`), sorted like list_files.
+ *
+ * Returns the count; `*out` receives a malloc'd array of malloc'd names, or NULL when there are none or the
+ * folder cannot be read. The caller frees each name and the array. Exits on allocation failure.
+ */
+size_t list_dirs(const char* dir, char*** out);
+
+/**
+ * @brief Monotonic wall-clock ticks from an arbitrary origin; only differences are meaningful.
+ *
+ * Windows: QueryPerformanceCounter. POSIX: clock_gettime(CLOCK_MONOTONIC) in nanoseconds.
+ */
+uint64_t platform_ticks(void);
+
+/** @brief Ticks per second of platform_ticks. */
+uint64_t platform_ticks_per_second(void);
+
+/** @brief Name of the clock behind platform_ticks (for run_config.txt). */
+const char* platform_clock_name(void);
+
+/** @brief Compiler name and version (for run_config.txt). */
+const char* platform_compiler(void);
+
+/** @brief Writes the OS and the number of logical processors into `buffer` (for run_config.txt; no host name, the file is published in results/). */
+void platform_machine(char* buffer, size_t size);
+
+/** @brief Writes the CPU model name into `buffer`, or "unknown" (for run_config.txt). */
+void platform_cpu(char* buffer, size_t size);
 
 #endif /* PLATFORM_H */
 

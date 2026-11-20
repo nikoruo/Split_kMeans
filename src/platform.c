@@ -8,12 +8,22 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
-#ifdef _MSC_VER
+#ifdef _WIN32
 #  include <windows.h>
-#else
+#endif
+#ifdef _MSC_VER
+/* RegGetValueA (platform_cpu); MinGW and the Visual Studio project link advapi32 by default, clang with the MSVC target does not */
+#  pragma comment(lib, "advapi32.lib")
+#endif
+#ifndef _MSC_VER
 #  include <dirent.h>
 #  include <sys/stat.h>
+#endif
+#ifndef _WIN32
+#  include <sys/utsname.h>
+#  include <unistd.h>
 #endif
 
 /* ASCII case-insensitive, then byte order, so the result is the same on every OS and locale. */
@@ -81,7 +91,14 @@ static void append_name(char*** list, size_t* count, size_t* capacity, const cha
     (*list)[(*count)++] = copy;
 }
 
-size_t list_files(const char* dir, char*** out)
+/* True for "." and "..". */
+static bool is_dot_entry(const char* name)
+{
+    return strcmp(name, ".") == 0 || strcmp(name, "..") == 0;
+}
+
+/* The *.txt files of `dir` (wantDirs false) or its subfolders (wantDirs true), sorted with compare_file_names. */
+static size_t list_entries(const char* dir, char*** out, bool wantDirs)
 {
     char** list = NULL;
     size_t count = 0;
@@ -105,7 +122,8 @@ size_t list_files(const char* dir, char*** out)
 
     do
     {
-        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && has_txt_extension(fd.cFileName))
+        const bool isDir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        if (wantDirs ? (isDir && !is_dot_entry(fd.cFileName)) : (!isDir && has_txt_extension(fd.cFileName)))
         {
             append_name(&list, &count, &capacity, fd.cFileName);
         }
@@ -122,7 +140,7 @@ size_t list_files(const char* dir, char*** out)
     struct dirent* e;
     while ((e = readdir(d)) != NULL)
     {
-        if (!has_txt_extension(e->d_name))
+        if (wantDirs ? is_dot_entry(e->d_name) : !has_txt_extension(e->d_name))
         {
             continue;
         }
@@ -134,7 +152,7 @@ size_t list_files(const char* dir, char*** out)
             fprintf(stderr, "Warning: Skipping %s/%s (path too long)\n", dir, e->d_name);
             continue;
         }
-        if (stat(path, &st) != 0 || S_ISDIR(st.st_mode))
+        if (stat(path, &st) != 0 || (S_ISDIR(st.st_mode) != 0) != wantDirs)
         {
             continue;
         }
@@ -151,3 +169,135 @@ size_t list_files(const char* dir, char*** out)
     *out = list;
     return count;
 }
+
+size_t list_files(const char* dir, char*** out)
+{
+    return list_entries(dir, out, false);
+}
+
+size_t list_dirs(const char* dir, char*** out)
+{
+    return list_entries(dir, out, true);
+}
+#ifdef _WIN32
+uint64_t platform_ticks(void)
+{
+    LARGE_INTEGER counter;
+    QueryPerformanceCounter(&counter);
+    return (uint64_t)counter.QuadPart;
+}
+
+uint64_t platform_ticks_per_second(void)
+{
+    LARGE_INTEGER frequency;
+    QueryPerformanceFrequency(&frequency);
+    return (uint64_t)frequency.QuadPart;
+}
+
+const char* platform_clock_name(void)
+{
+    return "QueryPerformanceCounter (monotonic wall clock)";
+}
+#else
+uint64_t platform_ticks(void)
+{
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (uint64_t)now.tv_sec * UINT64_C(1000000000) + (uint64_t)now.tv_nsec;
+}
+
+uint64_t platform_ticks_per_second(void)
+{
+    return UINT64_C(1000000000);
+}
+
+const char* platform_clock_name(void)
+{
+    return "clock_gettime(CLOCK_MONOTONIC) (monotonic wall clock)";
+}
+#endif
+
+#define PLATFORM_STRING2(x) #x
+#define PLATFORM_STRING(x) PLATFORM_STRING2(x)
+
+const char* platform_compiler(void)
+{
+#if defined(__clang__)
+    return "clang " __clang_version__;
+#elif defined(__GNUC__)
+    return "gcc " __VERSION__;
+#elif defined(_MSC_VER)
+    return "MSVC " PLATFORM_STRING(_MSC_FULL_VER);
+#else
+    return "unknown";
+#endif
+}
+
+/* Removes leading and trailing spaces and the line end in place. */
+static void trim_text(char* text)
+{
+    size_t start = 0;
+    while (text[start] == ' ' || text[start] == '\t')
+    {
+        ++start;
+    }
+    size_t length = strlen(text + start);
+    memmove(text, text + start, length + 1);
+    while (length > 0 && isspace((unsigned char)text[length - 1]))
+    {
+        text[--length] = '\0';
+    }
+}
+
+#ifdef _WIN32
+void platform_machine(char* buffer, size_t size)
+{
+    SYSTEM_INFO info;
+    GetSystemInfo(&info);
+    snprintf(buffer, size, "Windows, %lu logical processors", (unsigned long)info.dwNumberOfProcessors);
+}
+
+void platform_cpu(char* buffer, size_t size)
+{
+    DWORD bytes = (DWORD)size;
+    if (RegGetValueA(HKEY_LOCAL_MACHINE, "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
+            "ProcessorNameString", RRF_RT_REG_SZ, NULL, buffer, &bytes) != ERROR_SUCCESS)
+    {
+        snprintf(buffer, size, "unknown");
+    }
+    trim_text(buffer);
+}
+#else
+void platform_machine(char* buffer, size_t size)
+{
+    struct utsname host;
+    if (uname(&host) != 0)
+    {
+        snprintf(buffer, size, "unknown");
+        return;
+    }
+    snprintf(buffer, size, "%s %s, %ld logical processors", host.sysname, host.release, sysconf(_SC_NPROCESSORS_ONLN));
+}
+
+void platform_cpu(char* buffer, size_t size)
+{
+    snprintf(buffer, size, "unknown");
+    FILE* file = fopen("/proc/cpuinfo", "r");
+    if (file == NULL)
+    {
+        return;
+    }
+    char line[512];
+    while (fgets(line, sizeof line, file) != NULL)
+    {
+        const char* colon = strchr(line, ':');
+        if (strncmp(line, "model name", 10) == 0 && colon != NULL)
+        {
+            snprintf(buffer, size, "%s", colon + 1);
+            trim_text(buffer);
+            break;
+        }
+    }
+    fclose(file);
+}
+#endif

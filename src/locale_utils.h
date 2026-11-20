@@ -8,17 +8,14 @@
  * to a Finnish locale and falls back to "C" if none are available.
  *
  * Notes:
+ *  - The program does not call this function (kept, Unused code review): strtod follows
+ *    LC_NUMERIC, so a Finnish locale makes the reader stop at the decimal point ("4260.1"
+ *    is read as 4260; this happened in v1). --decimal-comma gives the Finnish number format
+ *    in the Excel-facing files without setlocale.
  *  - setlocale() changes process-global state and is not thread-safe.
- *    Consider calling this early during startup, before starting threads.
  *  - Candidates tried (in order): "fi_FI.UTF-8", "fi_FI",
  *    "Finnish_Finland.1252" (Windows). If none succeed, LC_NUMERIC is set
  *    to "C" and a warning is printed to stderr.
- * 
- * Example:
- *   int main(void) {
- *       set_numeric_locale_finnish();  // Call before CSV writes
- *       printf("%.2f\n", 3.14);        // Prints "3,14" on Finnish locale
- *   }
  * --------------------------------------------------------------------*/
 
 /* Update log
@@ -48,7 +45,8 @@
  *
  * Behavior notes:
  *  - setlocale() modifies process-global state and is not thread-safe.
- *    Call this early during initialization, before spawning threads.
+ *  - Do not call it in this program: the data parser, `_runs.csv` (%.17g) and
+ *    formatFixed all assume the "C" locale (see the notes at the top).
  *
  * @return void
  */

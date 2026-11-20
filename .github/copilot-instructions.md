@@ -10,7 +10,7 @@
 - Compares k-means variants and split-based clustering (SKM Intra, Global, Local) against Repeated K-means, Random Swap, Random Split and Bisecting K-means.
 - Results must be reproducible and statistically comparable. Thesis is in progress: algorithm fixes are the default behavior.
 - Code: the v2.0.0 refactor is in progress on `feature/refactor` (v1.0.0 is on `main`). Until Phase 4, `src/main.c` holds everything except `platform`, `rng` and `locale_utils`. The refactor plan lives in `docs/refactor-plan.md`.
-- Layout: sources in `src/`, Visual Studio project in `msvc/` (solution at the root), Makefile at the root; Makefile builds go to `build/<config>/` (release, debug, asan, ubsan), Visual Studio builds to `build/msvc/`. Milestone and final result summaries go to `results/<name>/` (tracked in git, plan D4); run folders with tracking logs and snapshots stay local, outside OneDrive.
+- Layout: sources in `src/`, Visual Studio project in `msvc/` (solution at the root), Makefile at the root, cluster figures in `visuals/` (MATLAB code that must also run unchanged in GNU Octave); Makefile builds go to `build/<config>/` (release, debug, asan, ubsan), Visual Studio builds to `build/msvc/`. Milestone and final result summaries go to `results/<name>/` (tracked in git, plan D4); run folders with tracking logs and snapshots stay local, outside OneDrive.
 
 ## Build and test
 - Primary build: `make` in the repo root (GNU Make 4.3+, gcc or clang; on Windows, `mingw32-make` from MinGW-w64).
@@ -20,7 +20,7 @@
 - Visual Studio project lives in `msvc/` and must keep building.
 - Golden files are regenerated only with `make golden-update`, and only in algorithm-change commits.
 - Thesis timings come from the MinGW gcc release build at log level 1 (plan D3; about 8 % faster than Visual Studio Release, same SSE and CI). Never time debug or sanitizer builds.
-- Windows dev laptop: WinLibs GCC 16, `mingw32-make` 4.4 and cppcheck (winget `BrechtSanders.WinLibs.POSIX.UCRT`); Visual Studio 2026 with MSBuild and its bundled clang 22, which runs ASan and UBSan (see the verify skill; MinGW gcc has no sanitizers, Windows ASan no leak checker). Recipes run in cmd.exe. If `gcc` is missing in a terminal, reload PATH from the registry.
+- Windows dev laptop: WinLibs GCC 16, `mingw32-make` 4.4 and cppcheck (winget `BrechtSanders.WinLibs.POSIX.UCRT`); Visual Studio 2026 with MSBuild and its bundled clang 22, which runs ASan and UBSan (see the verify skill; MinGW gcc has no sanitizers, Windows ASan no leak checker); GNU Octave 11 for `visuals/` (winget `GNU.Octave --scope user`; run headless with `octave-cli`, figures with `'Visible', 'off'`, which use the gnuplot toolkit there because Octave's OpenGL printing hangs on invisible figures). Recipes run in cmd.exe. If `gcc` is missing in a terminal, reload PATH from the registry.
 
 ## Default settings (professor's requirement)
 - The exe must run with defaults: no arguments = batch mode over `data/`, `gt/`, `centroids/`; `-k K data.txt [gt.txt]` = single dataset.

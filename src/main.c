@@ -38,6 +38,26 @@
 *   Studio clang 22); CI runs make asan check and make ubsan check with gcc
 *   and clang, leak detection on. _Analysis_assume_ fallback and the sal.h
 *   include removed (unused). No code fixes were needed.
+* - Phase 3 (measurement, outputs, CLI; golden files unchanged, M1 matches M0):
+*   run times from a monotonic wall clock (QueryPerformanceCounter or
+*   clock_gettime(CLOCK_MONOTONIC); clock() was CPU time on Linux) that pauses
+*   while tracking; _log.csv rows are buffered and written after each run, with
+*   run and count columns (RS: the initial solution and each improvement only;
+*   RKM: one row per repeat; KM: one row per iteration); --track-progress,
+*   --snapshots, --track-inner and --no-track are separate; snapshot names give
+*   run, iteration and phase; run_config.txt; --decimal-comma; a strict CLI
+*   (--max-swaps, --repeats, --bisect-tries, --init, --first-run, --datasets,
+*   --batch, --version); subcommands ci, sse and gt-from-partition; report
+*   (summary, seminar tables and curves from finished batch folders) and
+*   dataset.txt in every dataset folder.
+* - Phase 3 review (golden runs unchanged, report golden files updated): report
+*   ends RS at the last SSE improvement of each run (was the first CI = 0) and
+*   needs its _log.csv rows; KM mean curves keep each finished run at its last
+*   state (they averaged only the runs still running, so they rose); sd NA for
+*   one run; gt-from-partition rejects short, long or non-integer label files
+*   (it computed centroids from a partial file and exited 0); run_config.txt
+*   has no host name and names the program without its folder; an empty
+*   --datasets list is an error; splitClusterGlobal checks its realloc.
 * --------------------------------------------------------------------
 * Update 1.1...
 * - ...
@@ -45,84 +65,43 @@
 
 // Introduction
 /**
-* Project: Split K-Means
+* Project: Split K-Means (version: SKM_VERSION below; v1.0.0 released 26-10-2025)
 * Author: Niko Ruohonen
-* Version: 1.0.0
-* Date: 26-10-2025*
-* 
+*
 * DESCRIPTION:
-* Implementation of multiple clustering algorithms with focus on the novel SSE Split Algorithm.
-* Designed for efficient clustering of multi-dimensional data points.
+* k-means, repeated k-means, Random Swap and split-based k-means variants for the
+* thesis comparison (SSE and Centroid Index, success rate, time).
 *
-* IMPLEMENTED ALGORITHMS:
-* - K-means, Repeated K-means, Random Swap, Random Split
-* - SSE Split (Intra-cluster, Global, Local Repartition)
-* - Bisecting K-means
+* ALGORITHMS (--algo):
+* - km, rkm, rs
+* - skm-intra, skm-global, skm-global-basic, skm-local (SSE-based split k-means)
+* - skm-random (random split), bisecting
 *
-* FEATURES:
-* - Memory-safe dynamic allocation with comprehensive error handling
-* - File I/O for data points, centroids, and results
-* - Performance metrics: SSE (Sum of Squared Errors) and CI (Centroid Index)
-* - Two initialization methods: Random (default) and K-means++ (available)
-* - Log levels via --log-level: 1 basic (default), 2 progress, 3 debug
+* USAGE (all options: -h, README.md):
+* 1. Batch mode (no data file): every *.txt in data/, gt/ and centroids/ (K, one
+*    integer per file), paired by sorted file name (ASCII case-insensitive, the same
+*    on every OS); --datasets selects a subset.
+* 2. CLI mode: split_kmeans [options] -k <K> <data.txt> [gt.txt]; without gt.txt,
+*    CI and success rate are NA.
+* 3. Subcommands: ci, sse, gt-from-partition (score finished results); report (tables
+*    and curves from finished batch folders).
 *
-* Usage:
-* 1. Directory Batch Mode (no arguments):
-*    Processes multiple datasets from predefined folder structure:
-*
-*    ProjectRoot/
-*    ├─ data/          # Input data files (space-separated doubles)
-*    ├─ gt/            # Ground truth centroids (matching dimensionality)
-*    └─ centroids/     # K values (single integer per file, no BOM)
-*    
-*    Only *.txt files count; they are paired by sorted filename order (case-insensitive,
-*    the same on every OS). Ensure matching counts and base names.
-*    Example: datasetA.txt <-> datasetA-gt.txt <-> datasetA_k.txt
-*
-* 2. CLI Mode (with arguments):
-*    Syntax: split.exe -k <K> [options] <data.txt> [gt.txt]
-*
-*    Required:
-*      -k <K>              Number of clusters
-*      <data.txt>          Input data file
-*
-*    Optional (also in batch mode):
-*      --algo <list>       Comma-separated algorithms (default: skm-local)
-*      --seed <N>          Master seed (default: time-based, printed)
-*      -r, --runs <N>      Number of runs (default: 100; RKM and RS: 1)
-*      --track-progress    Enable iteration stats and snapshots
-*      --log-level <1-3>   1 basic (default), 2 progress, 3 debug
-*      -o <dir>            Output folder (default: outputs/<timestamp>)
-*      [gt.txt]            Ground truth for CI (optional; CI and success rate are NA without it)
-*      -h, --help          Display help
-*
-*    Examples:
-*      split.exe -k 5 mydata.txt
-*      split.exe -k 5 -r 50 --track-progress C:\data\mydata.txt C:\data\gt.txt
-*
-* OUTPUT STRUCTURE:
-* outputs/
-* └─ <timestamp>/
-*    └─ <dataset>/
-*       ├─ <Algorithm>_log.csv           # Per-iteration metrics
-*       ├─ <Algorithm>_runs.csv          # One row per run: run;seed;sse;ci;ms
-*       ├─ <Algorithm>_iteration_stats.txt
-*       ├─ <Algorithm>_centroids_perfect.txt
-*       ├─ <Algorithm>_partitions_perfect.txt
-*       ├─ <Algorithm>_centroids_failed.txt
-*       └─ <Algorithm>_partitions_failed.txt
+* OUTPUT (outputs/<timestamp>/ or -o <dir>):
+*    run_config.txt                      # build, machine, seed, parameters; one entry per call
+*    <dataset>/
+*       ├─ dataset.txt                   # data and ground-truth files, K, N, D (read by report)
+*       ├─ <dataset>.csv                 # summary row per algorithm (Excel, --decimal-comma)
+*       ├─ <Algorithm>_runs.csv          # one row per run: run;seed;sse;ci;ms (%.17g)
+*       ├─ <Algorithm>_log.csv           # tracked states: run;count;sse;ci;ms
+*       ├─ <Algorithm>_inner.csv         # --track-inner
+*       ├─ <Algorithm>_iteration_stats.txt and <Algorithm>_run<R>_iter<I>_<phase>_*.txt  # --snapshots
+*       └─ <Algorithm>_{centroids,partitions}_{perfect,failed}.txt  # first run with CI = 0 and CI > 0
 *
 * REQUIREMENTS:
-* - Input files: whitespace-separated doubles, consistent dimensionality per row
-* - K files: single positive integer only
-* - Ground truth: must match data dimensionality
-* - CSV output uses semicolons (;) as separators
-*
-* NOTES:
-* - To enable K-means++ initialization, replace generateRandomCentroids()
-*   with generateKMeansPlusPlusCentroids() in algorithm setup
-* - Locale handling: Program can optionally set fi_FI for Excel compatibility
-*   (currently commented out for portability)
+* - Input files: whitespace-separated finite numbers with a decimal point, the same
+*   column count on every row; the program never changes the locale
+* - K files: a single positive integer
+* - Ground truth: the same dimensionality as the data
 */
 
 /**
@@ -137,9 +116,6 @@
 
  // Platform-specific includes
 #include "platform.h"
-
-// Language-specific includes
-#include "locale_utils.h"
 
 #include "rng.h"
 
@@ -167,12 +143,19 @@
 
 #define LINE_BUFSZ 16384 /* tweak if needed */
 
-/**
-* @brief Converts clock ticks to milliseconds.
-*
-* Divide the result of (end - start) by this value to get milliseconds.
-*/
-#define CLOCKS_PER_MS ((double)CLOCKS_PER_SEC / 1000.0)
+/** @brief Program version: help text, --version and run_config.txt. */
+#define SKM_VERSION "2.0.0-dev"
+
+/* Build information: the Makefile and the Visual Studio project generate build_info.h with the git commit and the flags. */
+#ifdef SKM_BUILD_INFO
+#include "build_info.h"
+#endif
+#ifndef SKM_GIT_COMMIT
+#define SKM_GIT_COMMIT "unknown"
+#endif
+#ifndef SKM_BUILD_FLAGS
+#define SKM_BUILD_FLAGS "unknown"
+#endif
 
 /** @brief CI value meaning "not available": no ground truth, or not computed yet. Printed as NA. */
 #define CI_NA SIZE_MAX
@@ -184,6 +167,10 @@
 // Set by --log-level: 1 basic (default), 2 progress, 3 debug.
 // Checked only per run, swap, split or iteration, never per point.
 static int logLevel = 1;
+
+// Set by --decimal-comma: the Excel-facing files (summary, _log.csv, _inner.csv, _iteration_stats.txt)
+// get a decimal comma, as a Finnish Excel reads them. Numbers are formatted in the C locale first.
+static bool decimalComma = false;
 
 //////////////
 // Structs //
@@ -227,21 +214,14 @@ typedef struct
 } Centroids;
 
 /**
- * @brief Aggregates a single clustering outcome.
+ * @brief One bisecting try: the SSE of the two-way split and its two centroids.
  *
- * - sse: Sum of Squared Errors over all points (not mean).
- * - partition: length-N array of zero-based cluster labels.
- * - centroids: array of K centroid points.
- * - centroidIndex: CI metric for comparing to a reference (optional).
- *
- * Ownership: `partition` and `centroids` are owned; free via `freeClusteringResult`.
+ * Owns `centroids` (two points); free with freeClusteringResult.
  */
 typedef struct
 {
-    double sse;           /**< Sum of Squared Errors (SSE) for the clustering result. */
-    size_t* partition;    /**< Array of length N with zero-based cluster labels. */
-    DataPoint* centroids; /**< Array of K centroid points. */
-    size_t centroidIndex; /**< Centroid Index (CI) value (optional). */
+    double sse;           /**< SSE of the split cluster's points after the local 2-means. */
+    DataPoint* centroids; /**< The two centroids. */
 } ClusteringResult;
 
 /**
@@ -260,6 +240,124 @@ typedef struct
     double successRate;  /**< Success count across runs (used as count, averaged later). */
     bool ciAvailable;    /**< False once a run had no CI (no ground truth); CI and success rate print as NA. */
 } Statistics;
+
+/**
+ * @brief Wall-clock stopwatch on the monotonic platform clock (platform_ticks).
+ *
+ * Paused time is left out, so tracking and snapshot I/O can pause it. Times are in ms.
+ */
+typedef struct
+{
+    uint64_t startTicks;   /**< Clock value at the last start or resume. */
+    uint64_t elapsedTicks; /**< Time accumulated before the last pause. */
+    bool running;
+} Stopwatch;
+
+/** @brief One `_log.csv` row, buffered during the run and written after it. */
+typedef struct
+{
+    size_t count;  /**< Split number, swap, repeat or iteration; 0 is the initial state. */
+    double sse;
+    size_t ci;     /**< CI_NA without ground truth. */
+    double ms;     /**< Counted run time when the state was reached. */
+} TrackRow;
+
+/** @brief The k-means runs that --track-inner logs (`_inner.csv` stage column); KM_STAGE_NONE logs nothing. */
+typedef enum
+{
+    KM_STAGE_NONE,   /**< Not logged: k-means of KM, RKM and RS, trial splits. */
+    KM_STAGE_SPLIT,  /**< Local 2-means that splits the chosen cluster. */
+    KM_STAGE_TRY,    /**< Local 2-means of one bisecting try. */
+    KM_STAGE_GLOBAL, /**< Global k-means after a split (SKM-Global, SKM-Global-Basic). */
+    KM_STAGE_FINAL   /**< Final k-means of a split algorithm or bisecting. */
+} KMeansStage;
+
+/** @brief One `_inner.csv` row: one iteration of a k-means run inside a split algorithm. */
+typedef struct
+{
+    size_t count;      /**< Split number the k-means belongs to (as in `_log.csv`). */
+    KMeansStage stage;
+    size_t iteration;  /**< 1-based iteration of that k-means run. */
+    size_t k;          /**< Centroids in that k-means run (2 for the local ones). */
+    double sse;        /**< SSE of the points in that k-means run. */
+    size_t ci;         /**< CI against the ground truth; CI_NA for local runs or without ground truth. */
+    double ms;
+} InnerRow;
+
+/** @brief Most ranges in one --snapshots run or iteration list. */
+#define MAX_RANGES 32
+
+/** @brief A set of 1-based runs or of counts, given as `all` or a list such as `1,3-5`. */
+typedef struct
+{
+    bool all;
+    size_t rangeCount;
+    size_t low[MAX_RANGES];  /**< Inclusive bounds. */
+    size_t high[MAX_RANGES];
+} Selection;
+
+/** @brief What --snapshots writes: the selected runs and counts, and the state after each two-way split when `split` is set. */
+typedef struct
+{
+    bool enabled;
+    Selection runs;    /**< 1-based run numbers. */
+    Selection counts;  /**< Counts as in `_log.csv`. */
+    bool split;        /**< Also the state after the two-way split, before the follow-up step. */
+} SnapshotSpec;
+
+/** @brief Tracking switches of one invocation: `_log.csv` rows, snapshots and `_inner.csv` rows. */
+typedef struct
+{
+    bool rows;              /**< --track-progress: `_log.csv` rows of every run. */
+    SnapshotSpec snapshots; /**< --snapshots. */
+    bool inner;             /**< --track-inner: per-iteration rows of the k-means runs inside the split algorithms. */
+} TrackOptions;
+
+/** @brief Initial centroids of KM, RKM and RS (--init); the split algorithms and bisecting start from one random point. */
+typedef enum
+{
+    INIT_RANDOM,   /**< K distinct random data points (default). */
+    INIT_KMEANSPP  /**< k-means++ seeding. */
+} InitMethod;
+
+/** @brief The algorithms; getAlgorithmName gives the output file prefix, `--algo` the command-line names. */
+typedef enum
+{
+    ALGO_SKM_INTRA = 0,       /**< skm-intra: the chosen cluster is split by local 2-means only. */
+    ALGO_SKM_GLOBAL = 1,      /**< skm-global: local 2-means, then global k-means (splitClusterGlobalV2). */
+    ALGO_SKM_LOCAL = 2,       /**< skm-local: local 2-means, then local repartition. */
+    ALGO_RS = 3,              /**< rs: Random Swap. */
+    ALGO_BISECTING = 4,       /**< bisecting: bisecting k-means. */
+    ALGO_SKM_RANDOM = 5,      /**< skm-random: a random cluster is split by local 2-means. */
+    ALGO_KM = 6,              /**< km: k-means. */
+    ALGO_RKM = 7,             /**< rkm: repeated k-means. */
+    ALGO_SKM_GLOBAL_BASIC = 8 /**< skm-global-basic: two random points, then global k-means (splitClusterGlobal). */
+} Algorithm;
+
+/**
+ * @brief Tracking and log context of one algorithm: ground truth, run stopwatch, `_log.csv` and `_inner.csv` rows, snapshots.
+ *
+ * Recording pauses the stopwatch, so tracking does not count in the run time. Owns the row buffers; free with trackerFree.
+ */
+typedef struct
+{
+    const Centroids* groundTruth; /**< Reference for CI; NULL or empty gives CI_NA. */
+    const char* outputDirectory;  /**< Dataset output folder; must exist. */
+    Algorithm algorithm;          /**< Names the output files (getAlgorithmName). */
+    const TrackOptions* options;  /**< Must outlive the tracker. */
+    bool logRows;                 /**< Buffer `_log.csv` rows in every run. */
+    bool inner;                   /**< Buffer `_inner.csv` rows in every run. */
+    size_t run;                   /**< Current run, 0-based. */
+    bool snapshots;               /**< The current run is selected for snapshots. */
+    size_t nextCount;             /**< Count after the last recorded one: the split the inner k-means runs belong to. */
+    Stopwatch stopwatch;          /**< Run time; paused while tracking. */
+    TrackRow* rows;               /**< `_log.csv` rows of the current run. */
+    size_t rowCount;
+    size_t rowCapacity;
+    InnerRow* innerRows;          /**< `_inner.csv` rows of the current run. */
+    size_t innerCount;
+    size_t innerCapacity;
+} Tracker;
 
 
 ///////////////
@@ -340,21 +438,13 @@ void freeDataPointArray(DataPoint* points, size_t size)
  }
 
  /**
-  * @brief Releases owned arrays of a clustering outcome and resets pointers.
+  * @brief Frees the centroid array of a clustering result (including each centroid's attributes) and resets the pointer.
   *
-  * Frees the `partition` array and the centroid array (including each centroid’s attributes).
-  * Does not free the `ClusteringResult` object itself. The caller must pass the number of
-  * centroids contained in `result->centroids`.
+  * Does not free the `ClusteringResult` object itself. `numCentroids` is the number of centroids in `result->centroids`.
   */
  void freeClusteringResult(ClusteringResult* result, size_t numCentroids)
  {
      if (result == NULL) return;
-
-     if (result->partition != NULL)
-     {
-         free(result->partition);
-         result->partition = NULL;
-     }
 
      if (result->centroids != NULL)
      {
@@ -453,23 +543,14 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Builds a clustering result with partition buffer and K centroids.
+   * @brief A clustering result with SSE DBL_MAX and `numCentroids` zeroed centroids of `dimensions` attributes.
    */
-  ClusteringResult allocateClusteringResult(size_t numDataPoints, size_t numCentroids, size_t dimensions)
+  ClusteringResult allocateClusteringResult(size_t numCentroids, size_t dimensions)
   {
       assert(numCentroids > 0 && dimensions > 0);
 
       ClusteringResult result;
       result.sse = DBL_MAX;
-      result.centroidIndex = SIZE_MAX;
-      result.partition = malloc(numDataPoints * sizeof(size_t));
-      handleMemoryError(result.partition);
-
-      for (size_t i = 0; i < numDataPoints; ++i)
-      {
-          result.partition[i] = SIZE_MAX;
-      }
-      
       result.centroids = malloc(numCentroids * sizeof(DataPoint));
       handleMemoryError(result.centroids);
       for (size_t i = 0; i < numCentroids; ++i)
@@ -510,6 +591,45 @@ void freeDataPointArray(DataPoint* points, size_t size)
       if (ci == 0) stats->successRate++;
   }
 
+  /** @brief Resets the stopwatch to zero and starts it. */
+  static void stopwatchStart(Stopwatch* stopwatch)
+  {
+      stopwatch->elapsedTicks = 0;
+      stopwatch->running = true;
+      stopwatch->startTicks = platform_ticks();
+  }
+
+  /** @brief Stops the clock; the time until resume is not counted. No-op when already paused. */
+  static void stopwatchPause(Stopwatch* stopwatch)
+  {
+      if (stopwatch->running)
+      {
+          stopwatch->elapsedTicks += platform_ticks() - stopwatch->startTicks;
+          stopwatch->running = false;
+      }
+  }
+
+  /** @brief Restarts the clock after a pause. No-op when running. */
+  static void stopwatchResume(Stopwatch* stopwatch)
+  {
+      if (!stopwatch->running)
+      {
+          stopwatch->running = true;
+          stopwatch->startTicks = platform_ticks();
+      }
+  }
+
+  /** @brief Counted time in milliseconds, paused intervals excluded. */
+  static double stopwatchElapsedMs(const Stopwatch* stopwatch)
+  {
+      uint64_t ticks = stopwatch->elapsedTicks;
+      if (stopwatch->running)
+      {
+          ticks += platform_ticks() - stopwatch->startTicks;
+      }
+      return (double)ticks * 1000.0 / (double)platform_ticks_per_second();
+  }
+
   //////////////
   // Helpers //
   ////////////
@@ -533,9 +653,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Calculates the Euclidean distance between two data points.
-   * 
-   * @note (NOT USED)
+   * @brief Euclidean distance between two points of the same dimensionality.
+   *
+   * No call site; kept (Unused code review).
    */
   double calculateEuclideanDistance(const DataPoint* point1, const DataPoint* point2)
   {
@@ -810,7 +930,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
    *
    * @param filename Path to a space/tab-separated text file of doubles.
    * @return Centroids with `size == rows` and each centroid’s `dimensions == columns`.
-   * @errors Exits on open/read errors or inconsistent column counts (via readDataPoints).
+   * @errors The errors of readDataPoints (open and read errors, inconsistent column counts, values that are not
+   *         finite numbers, overlong lines). Prints the size at log level 2 and every centroid at level 3.
    * @note Skips whitespace-only lines; parsing uses the current C locale for `strtod`.
    */
   Centroids readCentroids(const char* filename)
@@ -896,6 +1017,28 @@ void freeDataPointArray(DataPoint* points, size_t size)
   /** @brief Buffer size for formatCi: 20 digits of SIZE_MAX plus the terminator. */
   #define CI_TEXT_SIZE 21
 
+  /** @brief Buffer size for formatFixed: DBL_MAX with %.6f has 316 characters. */
+  #define NUMBER_TEXT_SIZE 330
+
+  /**
+   * @brief Writes `value` with `decimals` fixed decimals into `buffer` and returns it (Excel-facing files).
+   *
+   * The program never calls setlocale, so printf writes a decimal point; with --decimal-comma it becomes a comma.
+   */
+  static const char* formatFixed(double value, int decimals, char buffer[NUMBER_TEXT_SIZE])
+  {
+      snprintf(buffer, NUMBER_TEXT_SIZE, "%.*f", decimals, value);
+      if (decimalComma)
+      {
+          char* point = strchr(buffer, '.');
+          if (point != NULL)
+          {
+              *point = ',';
+          }
+      }
+      return buffer;
+  }
+
   /**
    * @brief Writes `ci` as decimal text, or "NA" for CI_NA, into `buffer`; returns `buffer`.
    */
@@ -913,29 +1056,42 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Appends a CSV row: ci;iteration;sse;ms (ci is NA when not available).
-   */
-  void appendLogCsv(const char* filePath, size_t iteration, size_t ci, double sse, double ms)
-  {
-      FILE* file;
-      if (FOPEN(file, filePath, "a") != 0)
-      {
-          handleFileError(filePath);
-          return;
-      }
-      char ciText[CI_TEXT_SIZE];
-      /* Columns: ci;iteration;sse;ms */
-      fprintf(file, "%s;%zu;%.0f;%.0f\n", formatCi(ci, ciText), iteration, sse, ms);
-      fclose(file);
-  }
-
-  /**
    * @brief Returns true if the path exists (file or directory).
    */
   bool fileExists(const char* filePath)
   {
       struct stat buffer;
       return (stat(filePath, &buffer) == 0);
+  }
+
+  /**
+   * @brief Appends the buffered rows of one run to `filePath`: run;count;sse;ci;ms (ci is NA when not available).
+   *
+   * Writes the header first when the file does not exist yet. Call outside timed code.
+   */
+  void appendLogCsv(const char* filePath, size_t run, const TrackRow* rows, size_t rowCount)
+  {
+      const bool writeHeader = !fileExists(filePath);
+
+      FILE* file;
+      if (FOPEN(file, filePath, "a") != 0)
+      {
+          handleFileError(filePath);
+          return;
+      }
+      if (writeHeader)
+      {
+          fprintf(file, "run;count;sse;ci;ms\n");
+      }
+      char ciText[CI_TEXT_SIZE];
+      char sseText[NUMBER_TEXT_SIZE];
+      char msText[NUMBER_TEXT_SIZE];
+      for (size_t i = 0; i < rowCount; ++i)
+      {
+          fprintf(file, "%zu;%zu;%s;%s;%s\n", run + 1, rows[i].count, formatFixed(rows[i].sse, 6, sseText),
+              formatCi(rows[i].ci, ciText), formatFixed(rows[i].ms, 3, msText));
+      }
+      fclose(file);
   }
 
   /**
@@ -983,18 +1139,11 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Writes centroids as space-separated rows to outputDirectory/filename.
+   * @brief Writes centroids to `outputDirectory/filename`: one row per centroid, attributes `%f` separated by one space.
    *
-   * One centroid per line; attributes separated by a single space. Uses the current
-   * process numeric locale (does not modify LC_NUMERIC). The destination directory
-   * must exist.
-   *
-   * @param filename Target file name (no path).
-   * @param centroids Centroids to write; writes exactly `centroids->size` rows.
-   * @param outputDirectory Destination directory; must exist.
-   * @return void
-   * @errors Exits on open failure via handleFileError. Ignores write errors.
-   * @note Output format relies on the current locale’s decimal separator.
+   * `%f` keeps 6 decimals (snapshot files for the figures, not for exact comparisons); the program never changes
+   * the locale, so the decimal separator is a point. The folder must exist. Exits when the file cannot be opened;
+   * write errors are not checked.
    */
   void writeCentroidsToFile(const char* filename, const Centroids* centroids, const char* outputDirectory)
   {
@@ -1082,20 +1231,6 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Deep-copies an array of points element-by-element.
-   * @note (NOT USED)
-   */
-  void deepCopyDataPoints(DataPoint* destination, const DataPoint* source, size_t size)
-  {
-      assert(destination != NULL && source != NULL);
-
-      for (size_t i = 0; i < size; ++i)
-      {
-          deepCopyDataPoint(&destination[i], &source[i]);
-      }
-  }
-
-  /**
    * @brief Replaces destination with a deep copy of source centroids.
    *
    * Frees any existing centroids in `destination`, then allocates and copies all
@@ -1146,21 +1281,11 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Appends a single CSV summary row with aggregate metrics.
+   * @brief Appends the summary row of one algorithm to `<outputDirectory>/<filename>.csv` (header when the file is empty).
    *
-   * Opens/creates `<outputDirectory>/<filename>.csv`, writes a header once when empty,
-   * then appends averages across `loopCount` runs. Keeps output append-only to preserve history.
-   *
-   * @param filename Base name (without extension) used to build the CSV file path.
-   * @param stats Accumulated sums (CI, SSE, time, successes) across runs.
-   * @param numCentroids K for the algorithm to compute relative CI.
-   * @param algorithm Human-readable algorithm label written to the first column.
-   * @param loopCount Number of runs included in stats (must be > 0).
-   * @param scaling Divisor for SSE to adjust units (must be > 0).
-   * @param outputDirectory Destination directory; must exist.
-   * @return void
-   * @errors Exits on open failure via handleFileError. Write errors are not checked.
-   * @note Uses the process locale for numeric formatting; CSV uses semicolons as separators.
+   * Algorithm;Average CI;SSE;Relative CI;MS;Success Rate, averaged over `loopCount` runs (> 0); SSE divided by
+   * `scaling` (> 0); CI, relative CI and success rate NA without ground truth. Fixed decimals through formatFixed
+   * (decimal comma with --decimal-comma). Exits when the file cannot be opened; write errors are not checked.
    */
   void writeResultsToFile(const char* filename, Statistics stats, size_t numCentroids, const char* algorithm, size_t loopCount, size_t scaling, const char* outputDirectory)
   {
@@ -1193,29 +1318,28 @@ void freeDataPointArray(DataPoint* points, size_t size)
       double avgTime = stats.timeSum / (double)loopCount;
       double succRate = (stats.successRate / (double)loopCount);
 
+      char ciText[NUMBER_TEXT_SIZE];
+      char sseText[NUMBER_TEXT_SIZE];
+      char relText[NUMBER_TEXT_SIZE];
+      char msText[NUMBER_TEXT_SIZE];
+      char rateText[NUMBER_TEXT_SIZE];
       if (stats.ciAvailable)
       {
-          fprintf(file, "%s;%.2f;%.0f;%.2f;%.0f;%.2f\n", algorithm, avgCI, sse, relCI, avgTime, succRate);
+          fprintf(file, "%s;%s;%s;%s;%s;%s\n", algorithm, formatFixed(avgCI, 2, ciText), formatFixed(sse, 0, sseText),
+              formatFixed(relCI, 2, relText), formatFixed(avgTime, 0, msText), formatFixed(succRate, 2, rateText));
       }
       else
       {
-          fprintf(file, "%s;NA;%.0f;NA;%.0f;NA\n", algorithm, sse, avgTime);
+          fprintf(file, "%s;NA;%s;NA;%s;NA\n", algorithm, formatFixed(sse, 0, sseText), formatFixed(avgTime, 0, msText));
       }
 
       fclose(file);
   }
 
   /**
-   * @brief Creates a timestamped output directory under "outputs".
+   * @brief Creates a new folder `outputs/<YYYY-MM-DD_HH-MM-SS>` (local time; `_2`, `_3`, ... when it exists) and writes its path into `outputDirectory`.
    *
-   * Ensures the base folder "outputs" exists, then creates `outputs/<YYYY-MM-DD_HH-MM-SS>`.
-   * On success, writes the created path into `outputDirectory`.
-   *
-   * @param outputDirectory Buffer that receives the created path.
-   * @param size Buffer capacity in bytes; must be large enough for the path.
-   * @return void
-   * @errors Exits on failure to format time, buffer overflow, or mkdir error (other than EEXIST).
-   * @note Uses local time. Does not remove or clean existing directories.
+   * Creates `outputs` when missing. Exits on a path longer than `size` or a mkdir error.
    */
   void createUniqueDirectory(char* outputDirectory, size_t size)
   {
@@ -1237,17 +1361,30 @@ void freeDataPointArray(DataPoint* points, size_t size)
           exit(EXIT_FAILURE);
       }
 
-      if (snprintf(outputDirectory, size, "outputs%c%s", PATHSEP, datebuf) >= (int)size)
+      // A second call in the same second gets <timestamp>_2, _3, ...: never two calls in one folder
+      for (unsigned attempt = 1; attempt < 100; ++attempt)
       {
-          fprintf(stderr, "Buffer too small in createUniqueDirectory\n");
-          exit(EXIT_FAILURE);
-      }
+          const int length = attempt == 1
+              ? snprintf(outputDirectory, size, "outputs%c%s", PATHSEP, datebuf)
+              : snprintf(outputDirectory, size, "outputs%c%s_%u", PATHSEP, datebuf, attempt);
+          if (length < 0 || (size_t)length >= size)
+          {
+              fprintf(stderr, "Buffer too small in createUniqueDirectory\n");
+              exit(EXIT_FAILURE);
+          }
 
-      if (MAKE_DIR(outputDirectory) != 0 && errno != EEXIST)
-      {
-          perror("Error: Unable to create directory");
-          exit(EXIT_FAILURE);
+          if (MAKE_DIR(outputDirectory) == 0)
+          {
+              return;
+          }
+          if (errno != EEXIST)
+          {
+              perror("Error: Unable to create directory");
+              exit(EXIT_FAILURE);
+          }
       }
+      fprintf(stderr, "Error: Unable to create a new folder under outputs for %s\n", datebuf);
+      exit(EXIT_FAILURE);
   }
 
   /**
@@ -1277,45 +1414,32 @@ void freeDataPointArray(DataPoint* points, size_t size)
   /**
    * @brief Maps an algorithm id to a short stable name.
    */
-  const char* getAlgorithmName(size_t algorithmId)
+  const char* getAlgorithmName(Algorithm algorithm)
   {
-      switch (algorithmId)
+      switch (algorithm)
       {
-      case 0: return "SKM_Intra";
-      case 1: return "SKM_Global";
-      case 2: return "SKM_Local";
-      case 3: return "RS";
-      case 4: return "Bisecting_KM";
-      case 5: return "SKM_Random";
-      case 6: return "KM";
-      case 7: return "RKM";
-      case 8: return "SKM_Global_Basic";
+      case ALGO_SKM_INTRA: return "SKM_Intra";
+      case ALGO_SKM_GLOBAL: return "SKM_Global";
+      case ALGO_SKM_LOCAL: return "SKM_Local";
+      case ALGO_RS: return "RS";
+      case ALGO_BISECTING: return "Bisecting_KM";
+      case ALGO_SKM_RANDOM: return "SKM_Random";
+      case ALGO_KM: return "KM";
+      case ALGO_RKM: return "RKM";
+      case ALGO_SKM_GLOBAL_BASIC: return "SKM_Global_Basic";
       default:
-          fprintf(stderr, "Error: Invalid algorithm type provided: %zu\n", algorithmId);
+          fprintf(stderr, "Error: Invalid algorithm type provided: %d\n", (int)algorithm);
           return "Unknown";
       }
   }
 
   /**
-   * @brief Prints a human-readable summary of aggregate metrics.
+   * @brief Prints the averages over `loopCount` runs (> 0) to stdout: CI, SSE divided by `scaling`, relative CI, time, success rate.
    *
-   * Reports averages across `loopCount` runs and a success rate in percent. Intended for
-   * console diagnostics alongside CSV output.
-   *
-   * @param algorithmName Human-readable label to prefix each line.
-   * @param stats Accumulated sums across runs.
-   * @param loopCount Number of runs included (must be > 0).
-   * @param numCentroids K for relative CI (must be > 0 to avoid divide-by-zero).
-   * @param scaling Divisor applied to SSE in CSV (not used here; retained for parity).
-   * @param dataSize Dataset size; currently printed for context.
-   * @return void
-   * @errors None (writes to stdout).
-   * @note Uses the process locale for numeric formatting.
+   * CI, relative CI and success rate print as NA without ground truth.
    */
   void printStatistics(const char* algorithmName, Statistics stats, size_t loopCount, size_t numCentroids, size_t scaling)
   {
-      (void)scaling; // (NOT USED): could be used for scaling statistics if needed
-
       if (!stats.ciAvailable)
       {
           printf("(%s) Average CI: NA and SSE: %.0f\n", algorithmName, stats.sseSum / loopCount / scaling);
@@ -1364,38 +1488,16 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Ensures a per-algorithm CSV log exists and returns its path.
-   *
-   * Builds `<outputDirectory>/<AlgorithmName>_log.csv`. If the file does not exist,
-   * creates it and writes the header line. The resolved path is written to `csvFilePath`.
-   *
-   * @param splitType Algorithm id mapped via getAlgorithmName.
-   * @param outputDirectory Directory where the CSV should reside.
-   * @param csvFilePath Output buffer receiving the full CSV path.
-   * @param csvFilePathSize Capacity of `csvFilePath` in bytes.
-   * @return void
-   * @errors Exits on buffer overflow or file open failure (via handleFileError).
-   * @note Header schema: "ci;iteration;sse".
+   * @brief Writes the path `<outputDirectory>/<AlgorithmName><suffix>` into `path`; exits when it does not fit.
    */
-  void initializeCsvFile(size_t splitType, const char* outputDirectory, char* csvFilePath, size_t csvFilePathSize)
+  static void algorithmFilePath(Algorithm algorithm, const char* outputDirectory, const char* suffix, char* path, size_t pathSize)
   {
-      const char* algorithmName = getAlgorithmName(splitType);
+      const char* algorithmName = getAlgorithmName(algorithm);
 
-      if (snprintf(csvFilePath, csvFilePathSize, "%s%c%s_log.csv", outputDirectory, PATHSEP, algorithmName) >= (int)csvFilePathSize)
+      if (snprintf(path, pathSize, "%s%c%s%s", outputDirectory, PATHSEP, algorithmName, suffix) >= (int)pathSize)
       {
-          fprintf(stderr, "Buffer too small in initializeCsvFile\n");
+          fprintf(stderr, "Error: Path too long: %s%c%s%s\n", outputDirectory, PATHSEP, algorithmName, suffix);
           exit(EXIT_FAILURE);
-      }
-
-      if (!fileExists(csvFilePath))
-      {
-          FILE* csvFile;
-          if (FOPEN(csvFile, csvFilePath, "w") != 0)
-          {
-              handleFileError(csvFilePath);
-          }
-          fprintf(csvFile, "%s\n", "ci;iteration;sse;ms");
-          fclose(csvFile);
       }
   }
   
@@ -1416,8 +1518,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @param outputDirectory Directory where files are saved.
    * @param savedPerfect Pointer to a bool tracking if perfect example was saved.
    * @param savedFailed Pointer to a bool tracking if failed example was saved.
-   * @return void
-   * @errors None (errors in writing files are handled internally).
+   * @errors Exits when a file cannot be opened (via writeCentroidsToFile and writeDataPointPartitionsToFile).
    */
   static void saveExampleSnapshots(const Centroids* centroids, const DataPoints* dataPoints,
       size_t centroidIndex, const char* algorithmPrefix, const char* outputDirectory,
@@ -1457,10 +1558,11 @@ void freeDataPointArray(DataPoint* points, size_t size)
   ///////////////
 
   /**
-   * @brief Picks K unique data points uniformly and copies them as initial centroids.
+   * @brief Picks K different data points uniformly and copies them as initial centroids.
    *
    * Uses a partial Fisher–Yates shuffle to select `numCentroids` distinct indices from
-   * `dataPoints` without replacement, then deep-copies those points into `centroids`.
+   * `dataPoints` without replacement (duplicate points in the data can still give equal
+   * coordinates, 6.6), then deep-copies those points into `centroids`.
    * Selection of swap index uses rejection sampling (no modulo bias).
    *
    * @param numCentroids Number of centroids to select (K); must be <= dataPoints->size and > 0.
@@ -1511,18 +1613,12 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Seeds centroids using the KMeans++ strategy with a robust fallback.
+   * @brief k-means++ seeding (--init kmeans++): the first centroid uniformly, each next one with probability
+   * proportional to the squared distance to the nearest chosen centroid.
    *
-   * Chooses the first centroid uniformly at random; each subsequent centroid is chosen
-   * with probability proportional to the squared distance to the nearest chosen centroid.
-   * In degenerate cases where all distances are zero, fills remaining centroids by random picks.
-   *
-   * @param numCentroids Number of centroids to choose (K); must be <= dataPoints->size.
-   * @param dataPoints Input dataset (N points).
-   * @param centroids Output container for K centroids (preallocated).
-   * @return void
-   * @errors Asserts valid K; exits on allocation failure (via handleMemoryError).
-   * @note Maintains a distance cache for O(KN) seeding cost. (NOT-USED)
+   * A pick at distance 0 (an already chosen coordinate) is drawn again. Exits when no point is left at a
+   * positive distance, that is when the data have fewer than K distinct points (it looped forever before 3.5).
+   * Requires 0 < K <= N and room for K centroids. O(K·N·D) with a distance cache.
    */
   void generateKMeansPlusPlusCentroids(size_t numCentroids, const DataPoints* dataPoints, Centroids* centroids, Rng* rng)
   {
@@ -1551,6 +1647,13 @@ void freeDataPointArray(DataPoint* points, size_t size)
           for (size_t i = 0; i < dataPoints->size; ++i)
           {
               distSum += dist2[i];
+          }
+
+          // Every point coincides with a chosen centroid: no new distinct centroid exists
+          if (distSum == 0.0)
+          {
+              fprintf(stderr, "Error: k-means++ found only %zu distinct points for K = %zu\n", chosen, numCentroids);
+              exit(EXIT_FAILURE);
           }
 
           // 3. Select a new centroid with probability r
@@ -1592,6 +1695,19 @@ void freeDataPointArray(DataPoint* points, size_t size)
       free(dist2);
   }
 
+  /** @brief Initial centroids of KM, RKM and RS: K distinct random data points, or k-means++ with --init kmeans++. */
+  static void initialCentroids(InitMethod init, size_t numCentroids, const DataPoints* dataPoints, Centroids* centroids, Rng* rng)
+  {
+      if (init == INIT_KMEANSPP)
+      {
+          generateKMeansPlusPlusCentroids(numCentroids, dataPoints, centroids, rng);
+      }
+      else
+      {
+          generateRandomCentroids(numCentroids, dataPoints, centroids, rng);
+      }
+  }
+
   /**
    * @brief Sums squared distances from each point to its assigned centroid.
    *
@@ -1618,16 +1734,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Returns SSE normalized by number of values (N·D).
+   * @brief SSE divided by the number of values (N·D). Requires a non-empty dataset (an empty one is read out of bounds).
    *
-   * Computes MSE = SSE / (N·D). Returns 0.0 when the dataset is empty or dimensions is 0
-   * to avoid divide-by-zero.
-   *
-   * @param dataPoints Dataset used for the denominator and distances.
-   * @param centroids Centroids referenced by point partitions.
-   * @return Mean squared error (MSE).
-   * @errors Asserts valid partition indices via calculateSSE.
-   * @note (NOT USED)
+   * No call site; kept (Unused code review). The thesis reports SSE and CI only.
    */
   double calculateMSE(const DataPoints* dataPoints, const Centroids* centroids)
   {
@@ -1645,10 +1754,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * cluster has no points.
    *
    * @param dataPoints Dataset with assigned partitions.
-   * @param centroids Centroid set; `clusterLabel` must be < `centroids->size`.
+   * @param centroids Centroid set; `clusterLabel` must be < `centroids->size` (not checked).
    * @param clusterLabel Target cluster id.
    * @return SSE for the specified cluster.
-   * @errors Exits if `clusterLabel` is out of range.
    */
   double calculateClusterSSE(const DataPoints* dataPoints, const Centroids* centroids, size_t clusterLabel)
   {
@@ -1666,16 +1774,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Returns the index of the nearest centroid by squared Euclidean distance.
+   * @brief Index of the nearest centroid by squared Euclidean distance; the first one on ties.
    *
-   * Requires at least one centroid and matching dimensionality between the query point
-   * and centroids. Fails fast on invalid inputs to surface upstream issues.
-   *
-   * @param queryPoint Data point to classify; `dimensions` must match centroid dimensionality.
-   * @param targetCentroids Centroids to compare against; `size` must be > 0.
-   * @return Zero-based index of the nearest centroid.
-   * @errors Asserts that centroids exist.
-   * @note O(K·D) per call; distance squared avoids sqrt.
+   * Requires at least one centroid (asserted) and the same dimensionality as the point (not checked). O(K·D).
    */
   size_t findNearestCentroid(const DataPoint* queryPoint, const Centroids* targetCentroids)
   {
@@ -1724,7 +1825,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @brief Recomputes centroids as means of their assigned points.
    *
    * Accumulates per-cluster coordinate sums and divides by counts. Skips clusters with
-   * zero assignments (keeps previous coordinates). Validates partitions and dimensionality.
+   * zero assignments (they keep their previous coordinates; level-3 warning). Partitions and
+   * dimensionality are asserted (debug builds only).
    *
    * @param centroids Centroids to update in-place; `size` must be > 0.
    * @param dataPoints Dataset with assigned partitions.
@@ -1782,13 +1884,12 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @brief Counts centroids in `centroids2` with no nearest centroid from `centroids1`.
    *
    * For each centroid in `centroids1`, marks its nearest neighbor in `centroids2`.
-   * Returns how many centroids in `centroids2` were never marked. If `centroids2` is empty,
-   * returns 0. If `centroids1` is empty, returns `centroids2->size`.
+   * Returns how many centroids in `centroids2` were never marked. Both sets must be
+   * non-empty and of the same dimensionality (neither is checked; callers check at the input boundary).
    *
    * @param centroids1 Reference set used to mark nearest neighbors.
    * @param centroids2 Target set whose unmarked count is returned.
    * @return Number of orphan centroids in `centroids2`.
-   * @errors Exits via `findNearestCentroid` if dimensionality mismatches.
    */
   size_t countOrphans(const Centroids* centroids1, const Centroids* centroids2)
   {
@@ -1820,14 +1921,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
    *
    * CI = max(orphans(centroids1 → centroids2), orphans(centroids2 → centroids1)),
    * where orphans(X→Y) is the number of centroids in Y with no centroid from X
-   * selecting them as nearest. Returns 0 when both sets are empty; equals the size
-   * of the non-empty set when compared against an empty one.
-   *
-   * @param centroids1 First centroid set.
-   * @param centroids2 Second centroid set.
-   * @return CI value (non-negative integer).
-   * @errors Exits via underlying functions on dimensionality mismatch.
-   * @note O(K^2·D) due to nearest-centroid queries across sets.
+   * selecting them as nearest. Both sets must be non-empty and of the same dimensionality
+   * (not checked here). O(K^2·D).
    */
   size_t calculateCentroidIndex(const Centroids* centroids1, const Centroids* centroids2)
   {
@@ -1864,63 +1959,38 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Persists a snapshot of centroids and partitions for a given iteration.
+   * @brief Writes a snapshot: `<algo>_run<RRR>_iter<IIII>_<phase>_centroids.txt` and `..._partitions.txt` in `outputDirectory`.
    *
-   * Produces two files in `outputDirectory`: `<algo>_centroids_iter_<n>.txt`
-   * and `<algo>_partitions_iter_<n>.txt`. Supports post-run visualization and debugging.
-   *
-   * @param dataPoints Dataset to serialize partitions from.
-   * @param centroids Centroids to serialize as space-separated rows.
-   * @param iteration Zero-based iteration counter used in filenames.
-   * @param outputDirectory Destination directory; must exist.
-   * @param algorithmName Short algorithm tag used as filename prefix.
-   * @return void
-   * @errors Exits on buffer overflow in path formatting or file open failure via sub-writers.
-   * @note File format matches other writers in this module.
+   * `run` is 1-based and `iteration` is the count of `_log.csv`; both are zero-padded (3 and 4 digits) so the
+   * names sort in order. Phases: start, split (after the two-way split), step, final (after the final k-means).
+   * Centroids: one space-separated row per centroid; partitions: one 0-based label per line.
    */
   void saveIterationState(const DataPoints* dataPoints, const Centroids* centroids,
-      size_t iteration, const char* outputDirectory, const char* algorithmName)
+      size_t run, size_t iteration, const char* phase, const char* outputDirectory, const char* algorithmName)
   {
       char centroidsFileName[PATH_MAX];
       char partitionsFileName[PATH_MAX];
 
-    if (snprintf(centroidsFileName, sizeof(centroidsFileName),
-                 "%s_centroids_iter_%zu.txt", algorithmName, iteration) >= (int)sizeof(centroidsFileName))
-    {
-        fprintf(stderr, "Buffer too small in saveIterationState (centroids file)\n");
-        exit(EXIT_FAILURE);
-    }
-
-    if (snprintf(partitionsFileName, sizeof(partitionsFileName),
-                 "%s_partitions_iter_%zu.txt", algorithmName, iteration) >= (int)sizeof(partitionsFileName))
-    {
-        fprintf(stderr, "Buffer too small in saveIterationState (partitions file)\n");
-        exit(EXIT_FAILURE);
-    }
+      if (snprintf(centroidsFileName, sizeof(centroidsFileName), "%s_run%03zu_iter%04zu_%s_centroids.txt",
+              algorithmName, run, iteration, phase) >= (int)sizeof(centroidsFileName)
+          || snprintf(partitionsFileName, sizeof(partitionsFileName), "%s_run%03zu_iter%04zu_%s_partitions.txt",
+              algorithmName, run, iteration, phase) >= (int)sizeof(partitionsFileName))
+      {
+          fprintf(stderr, "Buffer too small in saveIterationState\n");
+          exit(EXIT_FAILURE);
+      }
 
       writeCentroidsToFile(centroidsFileName, centroids, outputDirectory);
       writeDataPointPartitionsToFile(partitionsFileName, dataPoints, outputDirectory);
   }
 
   /**
-   * @brief Appends per-iteration metrics to `<outputDirectory>/<algo>_iteration_stats.txt`.
+   * @brief Appends one row to `<outputDirectory>/<algorithmName>_iteration_stats.txt`, with a header when the file is new.
    *
-   * Writes a header line once when the file is empty, then appends a row with
-   * iteration, K, SSE, CI (NA without ground truth), and split cluster id. Keeps a single growing log across runs.
-   *
-   * @param dataPoints Dataset used to derive metrics (SSE via caller).
-   * @param centroids Centroids at this iteration (for K and CI).
-   * @param groundTruth Reference centroids for CI.
-   * @param iteration Zero-based iteration number.
-   * @param sse Sum of squared errors at this iteration.
-   * @param splitCluster Cluster id split this iteration or SIZE_MAX when N/A.
-   * @param outputDirectory Destination directory; must exist.
-   * @param algorithmName Algorithm tag used for the log filename.
-   * @return void
-   * @errors Exits on path overflow or open failure.
-   * @note Semicolon-separated CSV-like text; numeric formatting uses current locale.
+   * One row per snapshot. Columns: Run;Iteration;Phase;NumCentroids;SSE;CI;SplitCluster;MS (run 1-based;
+   * CI is NA without ground truth; SplitCluster is SIZE_MAX when none).
    */
-  void writeIterationStats(const Centroids* centroids, const Centroids* groundTruth, size_t iteration, 
+  void writeIterationStats(const Centroids* centroids, size_t ci, size_t run, size_t iteration, const char* phase,
       double sse, size_t splitCluster, double elapsedMs, const char* outputDirectory, const char* algorithmName)
   {
       char statsFileName[PATH_MAX];
@@ -1943,86 +2013,321 @@ void freeDataPointArray(DataPoint* points, size_t size)
       fseek(statsFile, 0, SEEK_END);
       if (ftell(statsFile) == 0)
       {
-          fprintf(statsFile, "Iteration;NumCentroids;SSE;CI;SplitCluster;MS\n");
+          fprintf(statsFile, "Run;Iteration;Phase;NumCentroids;SSE;CI;SplitCluster;MS\n");
       }
 
-      size_t ci = centroidIndexOrNA(centroids, groundTruth);
       char ciText[CI_TEXT_SIZE];
-      fprintf(statsFile, "%zu;%zu;%.0f;%s;%zu;%.0f\n",
-          iteration, centroids->size, sse, formatCi(ci, ciText), splitCluster, elapsedMs);
+      char sseText[NUMBER_TEXT_SIZE];
+      char msText[NUMBER_TEXT_SIZE];
+      fprintf(statsFile, "%zu;%zu;%s;%zu;%s;%s;%zu;%s\n", run, iteration, phase, centroids->size,
+          formatFixed(sse, 6, sseText), formatCi(ci, ciText), splitCluster, formatFixed(elapsedMs, 3, msText));
 
       fclose(statsFile);
   }
 
   /**
-   * @brief Writes iteration stats and snapshot files for the current state.
+   * @brief Writes the iteration stats row and the snapshot files of the current state (`run` 1-based).
    */
-  static void trackProgressState(const DataPoints* dataPoints, const Centroids* centroids, 
-      const Centroids* groundTruth, size_t iteration, size_t clusterToSplit, size_t splitType, 
-      const char* outputDirectory, double elapsedMs)
+  static void trackProgressState(const DataPoints* dataPoints, const Centroids* centroids, double sse, size_t ci,
+      size_t run, size_t iteration, const char* phase, size_t clusterToSplit, Algorithm splitType, const char* outputDirectory, double elapsedMs)
   {
       const char* splitTypeName = getAlgorithmName(splitType);
-      double currentSse = calculateSSE(dataPoints, centroids);
-      
-      writeIterationStats(centroids, groundTruth, iteration, currentSse, clusterToSplit, elapsedMs, outputDirectory, splitTypeName);
-      saveIterationState(dataPoints, centroids, iteration, outputDirectory, splitTypeName);
+
+      writeIterationStats(centroids, ci, run, iteration, phase, sse, clusterToSplit, elapsedMs, outputDirectory, splitTypeName);
+      saveIterationState(dataPoints, centroids, run, iteration, phase, outputDirectory, splitTypeName);
   }
 
-  /**
-   * @brief Coordinates optional time tracking, iteration snapshots, and CSV appends.
-   *
-   * Applies the three logging actions depending on the provided flags. Intended to
-   * centralize progress reporting logic and keep algorithm loops clean.
-   *
-   * @param start Clock taken at the beginning of the enclosing operation.
-   * @param trackProgress Whether to write iteration stats and snapshot files.
-   * @param dataPoints Current dataset state (partitions used for stats/snapshots).
-   * @param centroids Current centroid state.
-   * @param groundTruth Reference centroids for CI calculation.
-   * @param iterationCount Iteration number to log.
-   * @param outputDirectory Destination directory for files.
-   * @param createCsv Whether to append a line to the CSV log.
-   * @param csvFile Path to the CSV file (valid if `createCsv` is true).
-   * @param clusterToSplit Cluster id split at this iteration or SIZE_MAX when N/A.
-   * @param splitType Algorithm id used for labeling outputs.
-   * @return void
-   * @errors Exits on I/O failures via underlying helpers.
-   */
-  static void handleLoggingAndTracking(clock_t start, bool trackProgress, const DataPoints* dataPoints,
-      const Centroids* centroids, const Centroids* groundTruth, size_t iterationCount, const char* outputDirectory, bool createCsv, const char* csvFile,
-      size_t clusterToSplit, size_t splitType)
+  /** @brief True when `value` is in the selection. */
+  static bool selectionContains(const Selection* selection, size_t value)
   {
-      clock_t now = clock();
-      double elapsedMs = ((double)(now - start)) / CLOCKS_PER_MS;
-
-      //NOTE: Only done for iteration=1 atm. Make changes to "if" if needed
-      if (trackProgress)
+      if (selection->all)
       {
-          trackProgressState(dataPoints, centroids, groundTruth, iterationCount, clusterToSplit, splitType, outputDirectory, elapsedMs);
+          return true;
       }
-
-      if (createCsv)
+      for (size_t i = 0; i < selection->rangeCount; ++i)
       {
-          size_t currentCi = centroidIndexOrNA(centroids, groundTruth);
-          double currentSse = calculateSSE(dataPoints, centroids);
-          appendLogCsv(csvFile, iterationCount, currentCi, currentSse, elapsedMs);
+          if (value >= selection->low[i] && value <= selection->high[i])
+          {
+              return true;
+          }
+      }
+      return false;
+  }
+
+  /** @brief Name of a k-means stage in `_inner.csv`. */
+  static const char* kmeansStageName(KMeansStage stage)
+  {
+      switch (stage)
+      {
+      case KM_STAGE_SPLIT: return "split";
+      case KM_STAGE_TRY: return "try";
+      case KM_STAGE_GLOBAL: return "global";
+      case KM_STAGE_FINAL: return "final";
+      default: return "none";
       }
   }
 
   /**
-   * @brief Locally reassigns points after modifying one centroid (Random Swap helper).
+   * @brief Appends the `_inner.csv` rows of one run to `filePath`: run;count;stage;iteration;k;sse;ci;ms.
    *
-   * Performs a two-phase local repartition: (1) reassigns points currently in the
-   * modified cluster (`removed`) to their nearest centroid; (2) compares all other
-   * points’ current centroid against the modified centroid and moves points that
-   * are now closer to it. Leaves other clusters unchanged.
+   * Writes the header first when the file does not exist yet. Call outside timed code.
+   */
+  static void appendInnerCsv(const char* filePath, size_t run, const InnerRow* rows, size_t rowCount)
+  {
+      const bool writeHeader = !fileExists(filePath);
+
+      FILE* file;
+      if (FOPEN(file, filePath, "a") != 0)
+      {
+          handleFileError(filePath);
+      }
+      if (writeHeader)
+      {
+          fprintf(file, "run;count;stage;iteration;k;sse;ci;ms\n");
+      }
+      char ciText[CI_TEXT_SIZE];
+      char sseText[NUMBER_TEXT_SIZE];
+      char msText[NUMBER_TEXT_SIZE];
+      for (size_t i = 0; i < rowCount; ++i)
+      {
+          const InnerRow* row = &rows[i];
+          fprintf(file, "%zu;%zu;%s;%zu;%zu;%s;%s;%s\n", run + 1, row->count, kmeansStageName(row->stage),
+              row->iteration, row->k, formatFixed(row->sse, 6, sseText), formatCi(row->ci, ciText), formatFixed(row->ms, 3, msText));
+      }
+      fclose(file);
+  }
+
+  /**
+   * @brief Tracker for one algorithm with the switches in `options`.
+   *
+   * `outputDirectory`, `groundTruth` and `options` must outlive the tracker. Free with trackerFree.
+   */
+  static Tracker trackerCreate(Algorithm algorithm, const char* outputDirectory, const Centroids* groundTruth, const TrackOptions* options)
+  {
+      Tracker tracker;
+      tracker.groundTruth = groundTruth;
+      tracker.outputDirectory = outputDirectory;
+      tracker.algorithm = algorithm;
+      tracker.options = options;
+      tracker.logRows = options->rows;
+      tracker.inner = options->inner;
+      tracker.run = 0;
+      tracker.snapshots = false;
+      tracker.nextCount = 0;
+      tracker.stopwatch.startTicks = 0;
+      tracker.stopwatch.elapsedTicks = 0;
+      tracker.stopwatch.running = false;
+      tracker.rows = NULL;
+      tracker.rowCount = 0;
+      tracker.rowCapacity = 0;
+      tracker.innerRows = NULL;
+      tracker.innerCount = 0;
+      tracker.innerCapacity = 0;
+      return tracker;
+  }
+
+  /** @brief Frees the row buffers. */
+  static void trackerFree(Tracker* tracker)
+  {
+      free(tracker->rows);
+      tracker->rows = NULL;
+      tracker->rowCount = 0;
+      tracker->rowCapacity = 0;
+      free(tracker->innerRows);
+      tracker->innerRows = NULL;
+      tracker->innerCount = 0;
+      tracker->innerCapacity = 0;
+  }
+
+  /** @brief Starts run `run` (0-based): clears the rows, selects the snapshots of this run and starts the stopwatch. */
+  static void trackerBeginRun(Tracker* tracker, size_t run)
+  {
+      tracker->run = run;
+      tracker->snapshots = tracker->options->snapshots.enabled && selectionContains(&tracker->options->snapshots.runs, run + 1);
+      tracker->nextCount = 0;
+      tracker->rowCount = 0;
+      tracker->innerCount = 0;
+      stopwatchStart(&tracker->stopwatch);
+  }
+
+  /** @brief Stops the stopwatch, appends the buffered rows to `_log.csv` and `_inner.csv` and returns the run time in ms. */
+  static double trackerEndRun(Tracker* tracker)
+  {
+      stopwatchPause(&tracker->stopwatch);
+      const double ms = stopwatchElapsedMs(&tracker->stopwatch);
+
+      char path[PATH_MAX];
+      if (tracker->logRows && tracker->rowCount > 0)
+      {
+          algorithmFilePath(tracker->algorithm, tracker->outputDirectory, "_log.csv", path, sizeof(path));
+          appendLogCsv(path, tracker->run, tracker->rows, tracker->rowCount);
+      }
+      if (tracker->inner && tracker->innerCount > 0)
+      {
+          algorithmFilePath(tracker->algorithm, tracker->outputDirectory, "_inner.csv", path, sizeof(path));
+          appendInnerCsv(path, tracker->run, tracker->innerRows, tracker->innerCount);
+      }
+      return ms;
+  }
+
+  /** @brief Buffers one row; the caller has paused the stopwatch. */
+  static void trackerPushRow(Tracker* tracker, size_t count, double sse, size_t ci, double ms)
+  {
+      if (tracker->rowCount == tracker->rowCapacity)
+      {
+          const size_t grown = tracker->rowCapacity ? tracker->rowCapacity * 2 : 64;
+          TrackRow* rows = realloc(tracker->rows, grown * sizeof(TrackRow));
+          handleMemoryError(rows);
+          tracker->rows = rows;
+          tracker->rowCapacity = grown;
+      }
+
+      TrackRow* row = &tracker->rows[tracker->rowCount++];
+      row->count = count;
+      row->sse = sse;
+      row->ci = ci;
+      row->ms = ms;
+  }
+
+  /** @brief Buffers a `_log.csv` row with known SSE and CI at the current run time; no-op without row logging. */
+  static void trackerAddRow(Tracker* tracker, size_t count, double sse, size_t ci)
+  {
+      if (!tracker->logRows)
+      {
+          return;
+      }
+      stopwatchPause(&tracker->stopwatch);
+      trackerPushRow(tracker, count, sse, ci, stopwatchElapsedMs(&tracker->stopwatch));
+      stopwatchResume(&tracker->stopwatch);
+  }
+
+  /** @brief CI of `centroids` against the ground truth, computed with the stopwatch paused; CI_NA without ground truth. */
+  static size_t trackerCi(Tracker* tracker, const Centroids* centroids)
+  {
+      if (!hasGroundTruth(tracker->groundTruth))
+      {
+          return CI_NA;
+      }
+      stopwatchPause(&tracker->stopwatch);
+      const size_t ci = calculateCentroidIndex(centroids, tracker->groundTruth);
+      stopwatchResume(&tracker->stopwatch);
+      return ci;
+  }
+
+  /** @brief True when the state at `count` of the current run is selected for a snapshot. */
+  static bool trackerSnapshotWanted(const Tracker* tracker, size_t count)
+  {
+      return tracker->snapshots && selectionContains(&tracker->options->snapshots.counts, count);
+  }
+
+  /**
+   * @brief Records the state at `count`: a `_log.csv` row and, when selected, the snapshot files and iteration stats.
+   *
+   * SSE and CI are computed with the stopwatch paused. Returns the CI, or CI_NA when nothing is recorded or there is no ground truth.
+   * `phase` names the snapshot (start, step or final); `splitCluster` is the cluster split at this count, SIZE_MAX when none.
+   */
+  static size_t trackerRecord(Tracker* tracker, size_t count, const char* phase, const DataPoints* dataPoints, const Centroids* centroids, size_t splitCluster)
+  {
+      tracker->nextCount = count + 1;
+
+      const bool snapshot = trackerSnapshotWanted(tracker, count);
+      if (!tracker->logRows && !snapshot)
+      {
+          return CI_NA;
+      }
+
+      stopwatchPause(&tracker->stopwatch);
+      const double ms = stopwatchElapsedMs(&tracker->stopwatch);
+      const double sse = calculateSSE(dataPoints, centroids);
+      const size_t ci = centroidIndexOrNA(centroids, tracker->groundTruth);
+
+      if (tracker->logRows)
+      {
+          trackerPushRow(tracker, count, sse, ci, ms);
+      }
+      if (snapshot)
+      {
+          trackProgressState(dataPoints, centroids, sse, ci, tracker->run + 1, count, phase, splitCluster,
+              tracker->algorithm, tracker->outputDirectory, ms);
+      }
+
+      stopwatchResume(&tracker->stopwatch);
+      return ci;
+  }
+
+  /** @brief When selected, writes the snapshot files and iteration stats of the state at `count`, without a `_log.csv` row. */
+  static void trackerSnapshot(Tracker* tracker, size_t count, const char* phase, const DataPoints* dataPoints, const Centroids* centroids, size_t splitCluster)
+  {
+      if (!trackerSnapshotWanted(tracker, count))
+      {
+          return;
+      }
+
+      stopwatchPause(&tracker->stopwatch);
+      const double ms = stopwatchElapsedMs(&tracker->stopwatch);
+      const double sse = calculateSSE(dataPoints, centroids);
+      const size_t ci = centroidIndexOrNA(centroids, tracker->groundTruth);
+      trackProgressState(dataPoints, centroids, sse, ci, tracker->run + 1, count, phase, splitCluster,
+          tracker->algorithm, tracker->outputDirectory, ms);
+      stopwatchResume(&tracker->stopwatch);
+  }
+
+  /**
+   * @brief With `--snapshots ...:split`, writes the state after the two-way split of `splitCluster`, before the follow-up step.
+   *
+   * Phase "split" at the count of the split being made. NULL tracker: no-op.
+   */
+  static void trackerSplitSnapshot(Tracker* tracker, const DataPoints* dataPoints, const Centroids* centroids, size_t splitCluster)
+  {
+      if (tracker != NULL && tracker->options->snapshots.split)
+      {
+          trackerSnapshot(tracker, tracker->nextCount, "split", dataPoints, centroids, splitCluster);
+      }
+  }
+
+  /**
+   * @brief With --track-inner, buffers the `_inner.csv` row of iteration `iteration` of a k-means run at `stage`.
+   *
+   * `sse` is that run's SSE after the iteration. CI only for the global and final stages. NULL tracker or KM_STAGE_NONE: no-op.
+   */
+  static void trackerInnerRow(Tracker* tracker, KMeansStage stage, size_t iteration, const Centroids* centroids, double sse)
+  {
+      if (tracker == NULL || !tracker->inner || stage == KM_STAGE_NONE)
+      {
+          return;
+      }
+
+      stopwatchPause(&tracker->stopwatch);
+      if (tracker->innerCount == tracker->innerCapacity)
+      {
+          const size_t grown = tracker->innerCapacity ? tracker->innerCapacity * 2 : 256;
+          InnerRow* rows = realloc(tracker->innerRows, grown * sizeof(InnerRow));
+          handleMemoryError(rows);
+          tracker->innerRows = rows;
+          tracker->innerCapacity = grown;
+      }
+
+      InnerRow* row = &tracker->innerRows[tracker->innerCount++];
+      row->count = tracker->nextCount;
+      row->stage = stage;
+      row->iteration = iteration;
+      row->k = centroids->size;
+      row->sse = sse;
+      row->ci = (stage == KM_STAGE_GLOBAL || stage == KM_STAGE_FINAL) ? centroidIndexOrNA(centroids, tracker->groundTruth) : CI_NA;
+      row->ms = stopwatchElapsedMs(&tracker->stopwatch);
+      stopwatchResume(&tracker->stopwatch);
+  }
+
+  /**
+   * @brief Random Swap local repartition after one centroid moved, in two passes.
+   *
+   * Pass 1: every point of the swapped cluster (`removed`) moves to its nearest centroid. Pass 2: every other
+   * point moves to the swapped centroid when it is closer than its own. Other points keep their labels.
    *
    * @param dataPoints Dataset with current partitions.
    * @param centroids Centroids after the swap; index `removed` denotes the modified centroid.
-   * @param removed Index of the centroid whose coordinates were changed.
-   * @return void
-   * @errors Exits if `removed` is out of range.
-   * @note O(N·D). A full centroid update happens later via k-means iterations.
+   * @param removed Index of the centroid whose coordinates were changed; must be < centroids->size (not checked).
+   * @note O(N·D). The centroids are not updated here (the step-4 update is commented out, 6.4); the two k-means iterations follow.
    */
   void localRepartitionForRS(DataPoints* dataPoints, Centroids* centroids, size_t removed)
   {
@@ -2061,23 +2366,19 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Iterates assignment and update steps until SSE no longer improves.
+   * @brief k-means: partition and centroid steps until the SSE does not strictly decrease or after `iterations` iterations.
    *
-   * Repeats partition and centroid steps up to `iterations` times, tracking the best
-   * observed SSE and stopping early when the SSE does not strictly decrease.
-   *
-   * @param dataPoints Dataset to cluster; partitions updated in-place.
-   * @param iterations Maximum iterations to perform (stop earlier on no improvement).
-   * @param centroids Centroid set updated in-place.
-   * @param groundTruth Optional reference (unused here).
+   * @param dataPoints Points to cluster; partitions updated in place.
+   * @param centroids Initial centroids; updated in place.
+   * @param tracker Optional (NULL for trial splits): ground truth for the level-3 CI, and the `_inner.csv` rows of `stage`.
+   * @param stage Which k-means this is for --track-inner; KM_STAGE_NONE logs no rows.
    * @return Best SSE observed during the run.
-   * @errors Exits if dataset is empty or K == 0.
-   * @note Uses strict improvement; add a tolerance if convergence stalls due to rounding.
    */
-  double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids, const Centroids* groundTruth)
+  double runKMeans(DataPoints* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage)
   {
       double bestSse = DBL_MAX;
       double sse = DBL_MAX;
+      const Centroids* groundTruth = tracker != NULL ? tracker->groundTruth : NULL;
 
       for (size_t iteration = 0; iteration < iterations; ++iteration)
       {
@@ -2085,6 +2386,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
           centroidStep(centroids, dataPoints);
 
           sse = calculateSSE(dataPoints, centroids);
+
+          trackerInnerRow(tracker, stage, iteration + 1, centroids, sse);
 
           if (logLevel >= 3)
           {
@@ -2115,42 +2418,28 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief k-means with optional per-iteration logging and timing.
+   * @brief k-means that records the state after every iteration with the tracker (count = iteration, 1-based).
    *
-   * Runs the assignment/update loop like `runKMeans`, optionally recording elapsed time,
-   * writing snapshots/CI, and appending CSV lines. Increments `*iterationCount` only
-   * when SSE improves.
+   * Runs the same steps as `runKMeans`, so the result is identical; stops when the SSE does not
+   * strictly decrease or after `iterations` iterations.
    *
-   * @param dataPoints Dataset to cluster; partitions updated in-place.
-   * @param iterations Maximum iterations to perform.
-   * @param centroids Centroid set updated in-place.
-   * @param groundTruth Optional reference for CI in logs.
-   * @param outputDirectory Destination for snapshot/stat files when enabled.
-   * @param trackProgress Whether to write iteration snapshot/stat files.
-   * @param start Clock at start of outer operation.
-   * @param createCsv Whether to append per-iteration CSV entries.
-   * @param iterationCount In/out iteration number used in logs; incremented on improvements.
-   * @param firstRun Whether this is the first run in a multi-run context (affects logging cadence).
-   * @param csvFile CSV file path; valid if `createCsv`.
+   * @param dataPoints Dataset to cluster; partitions updated in place.
+   * @param centroids Centroid set updated in place.
+   * @param tracker Rows, snapshots and the ground truth for the level-3 CI.
    * @return Best SSE observed during the run.
-   * @errors Exits if dataset is empty or K == 0.
    */
-  double runKMeansWithTracking(DataPoints* dataPoints, size_t iterations, Centroids* centroids, const Centroids* groundTruth, const char* outputDirectory,
-      bool trackProgress, clock_t start, bool createCsv, size_t* iterationCount, bool firstRun, const char* csvFile)
+  double runKMeansWithTracking(DataPoints* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker)
   {
       double bestSse = DBL_MAX;
       double sse = DBL_MAX;
+      const Centroids* groundTruth = tracker->groundTruth;
 
       for (size_t iteration = 0; iteration < iterations; ++iteration)
       {
           partitionStep(dataPoints, centroids);
           centroidStep(centroids, dataPoints);
 
-          if (firstRun)
-          {
-              handleLoggingAndTracking(start, trackProgress,
-                  dataPoints, centroids, groundTruth, *iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, 7);
-          }
+          trackerRecord(tracker, iteration + 1, "step", dataPoints, centroids, SIZE_MAX);
 
           sse = calculateSSE(dataPoints, centroids);
 
@@ -2176,31 +2465,26 @@ void freeDataPointArray(DataPoint* points, size_t size)
           {
               break; // Exit the loop if the SSE does not improve
           }
-
-          (*iterationCount)++;
       }
 
       return bestSse;
   }
 
   /**
-   * @brief Performs random swaps of centroids and evaluates the resulting clustering using k-means.
+   * @brief Random Swap: moves a random centroid to a random data point, runs two k-means iterations and keeps the swap if the SSE improves.
    *
-   * This function performs random swaps of centroids with data points, runs k-means on the modified centroids,
-   * and keeps the changes if the mean squared error (SSE) improves. If the SSE does not improve, it reverses the swap.
-   * The function returns the best mean squared error (SSE) obtained during the swaps.
+   * A rejected swap restores the centroids and partitions. The tracker records the initial
+   * solution (count 0) and every improvement (count = swap number); CI is computed only for
+   * the tracker and the level-2 log, with the stopwatch paused.
    *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param centroids A pointer to the Centroids structure containing the centroids.
-   * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
-   * @param maxSwaps The maximum number of attempted swaps.
-   * @return The best mean squared error (SSE) obtained during the swaps.
+   * @param dataPoints Dataset; its partitions must belong to `centroids` on entry.
+   * @param centroids Initial centroids; updated in place to the best solution.
+   * @param maxSwaps Number of trial swaps.
+   * @return The best SSE found.
    */
-  double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps, const Centroids* groundTruth, const char* outputDirectory,
-      bool trackProgress, clock_t start, bool createCsv, Rng* rng)
+  double randomSwap(DataPoints* dataPoints, Centroids* centroids, size_t maxSwaps, Tracker* tracker, Rng* rng)
   {
       double bestSse = DBL_MAX;
-      size_t bestCI = CI_NA;
       size_t kMeansIterations = 2;
       size_t numCentroids = centroids->size;
       size_t dimensions = centroids->points[0].dimensions;
@@ -2213,16 +2497,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       size_t* backupPartitions = malloc(dataPoints->size * sizeof(size_t));
       handleMemoryError(backupPartitions);
 
-      char csvFile[PATH_MAX] = "";
-      if (createCsv)
-      {
-          initializeCsvFile(3, outputDirectory, csvFile, sizeof(csvFile));
-      }
-
-      handleLoggingAndTracking(start, trackProgress,
-          dataPoints, centroids, groundTruth, 0, outputDirectory, createCsv, csvFile, SIZE_MAX, 3);
-
-      size_t iterationCount = 1; //Helper for tracking progress
+      size_t bestCI = trackerRecord(tracker, 0, "start", dataPoints, centroids, SIZE_MAX);
 
       for (size_t i = 0; i < maxSwaps; ++i)
       {
@@ -2251,7 +2526,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           localRepartitionForRS(dataPoints, centroids, randomCentroidId);
 
           //K-means
-          double resultSse = runKMeans(dataPoints, kMeansIterations, centroids, groundTruth);
+          double resultSse = runKMeans(dataPoints, kMeansIterations, centroids, tracker, KM_STAGE_NONE);
 
           //If 1) SSE improves, we keep the change
           //if not, 2) we reverse the swap
@@ -2259,25 +2534,18 @@ void freeDataPointArray(DataPoint* points, size_t size)
           {
               bestSse = resultSse;
 
-              size_t currentCi = centroidIndexOrNA(centroids, groundTruth);
-              bestCI = currentCi;
+              // Row and snapshot for each improvement, with its swap number (decided 2026-11-19)
+              bestCI = trackerRecord(tracker, i + 1, "step", dataPoints, centroids, SIZE_MAX);
+
+              // Alternative: the row without the snapshot files
+              //trackerAddRow(tracker, i + 1, resultSse, trackerCi(tracker, centroids));
 
               if (logLevel >= 2)
               {
+                  if (bestCI == CI_NA) bestCI = trackerCi(tracker, centroids);
                   char ciText[CI_TEXT_SIZE];
-                  printf("(RS) Swap %zu: Best CI: %s and Best SSE: %.5f\n", i + 1, formatCi(currentCi, ciText), resultSse);
+                  printf("(RS) Swap %zu: Best CI: %s and Best SSE: %.5f\n", i + 1, formatCi(bestCI, ciText), resultSse);
               }
-
-			  //For all swaps in RS, we want to track progress p1/2
-              // This can be used if we are not interested in tracking iteration progress
-              //clock_t iterEnd = clock();
-              //double elapsedMs = ((double)(iterEnd - start)) / CLOCKS_PER_MS;
-              //appendLogCsv(csvFile, iterationCount, currentCi, resultSse, elapsedMs);
-
-			  //For all iterations in RS, we want to track progress p1/2
-			  //This can be used if we are interested in tracking iteration progress (only when SSE improves)
-              handleLoggingAndTracking(start, trackProgress,
-                  dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, 3); 
           }
           else
           {
@@ -2293,21 +2561,12 @@ void freeDataPointArray(DataPoint* points, size_t size)
                   dataPoints->points[j].partition = backupPartitions[j];
               }
 
-              //For all swaps in RS, we want to track progress p2/2
-              if (createCsv)
-              {
-                  clock_t iterEnd = clock();
-                  double elapsedMs = ((double)(iterEnd - start)) / CLOCKS_PER_MS;
-                  appendLogCsv(csvFile, iterationCount, bestCI, bestSse, elapsedMs);
-              }
+              // Alternative (v1): one row per swap; a rejected swap repeats the best solution so far
+              //trackerAddRow(tracker, i + 1, bestSse, bestCI);
 
-              //For all iterations in RS, we want to track progress p2/2
-              //This can be used if we are interested in tracking iteration progress (also when SSE doesn't improve)
-              //handleLoggingAndTracking(start, trackProgress,
-                  //dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, 3);
+              // Alternative: row and snapshot also for a rejected swap (the restored best solution)
+              //trackerRecord(tracker, i + 1, "step", dataPoints, centroids, SIZE_MAX);
           }
-
-          iterationCount++;
       }
 
       free(backupAttributes);
@@ -2319,20 +2578,19 @@ void freeDataPointArray(DataPoint* points, size_t size)
   /**
    * @brief Splits one cluster by running a local k-means within that cluster.
    *
-   * Picks two distinct points from the target cluster as seeds, runs k-means (K=2) on
-   * that cluster’s points only, then updates the original clustering by replacing the
-   * old centroid with one local result and appending the second as a new global centroid.
-   * Partitions for the affected points are rewritten accordingly.
+   * Picks two different points of the target cluster as seeds (different indices; equal coordinates
+   * are possible, 6.6), runs k-means (K=2) on that cluster's points only, then replaces the old centroid
+   * with the first local centroid and appends the second as a new global centroid. Partitions for the
+   * affected points are rewritten accordingly.
    *
    * @param dataPoints All points with current partitions.
    * @param centroids Global centroids; updated in-place (size increases by one).
    * @param clusterToSplit Index of the cluster to split.
    * @param localMaxIterations Max iterations for the local k-means refinement.
-   * @param groundTruth Optional reference centroids (unused in computation).
-   * @return void
+   * @param tracker Optional: `_inner.csv` rows of the local 2-means (stage split) and the ground truth for the level-3 log.
    * @errors Exits on allocation failure. Asserts that the cluster has at least 2 points.
    */
-  void splitClusterIntraCluster(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t localMaxIterations, const Centroids* groundTruth, Rng* rng)
+  void splitClusterIntraCluster(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t localMaxIterations, Tracker* tracker, Rng* rng)
   {
       size_t clusterSize = 0;
       for (size_t i = 0; i < dataPoints->size; ++i)
@@ -2389,10 +2647,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
       //partition step
       partitionStep(&pointsInCluster, &localCentroids);
 
-      //trackProgressState(&pointsInCluster, &localCentroids, groundTruth, 0, clusterToSplit, splitType, outputDirectory);
-
       // Run local k-means
-      runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, groundTruth);
+      runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, tracker, KM_STAGE_SPLIT);
 
       // Update partitions
       for (size_t i = 0; i < clusterSize; ++i)
@@ -2420,24 +2676,20 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
- * @brief Splits a cluster locally (k-means) and then refines globally.
- *
- * Runs local k-means within the target cluster to produce two centroids, merges them
- * into the global set (replace + append), then runs a short global k-means refinement
- * over all data to settle assignments.
- *
- * @param dataPoints All points with current partitions.
- * @param centroids Global centroids; updated in-place (size increases by one).
- * @param clusterToSplit Index of the cluster to split.
- * @param localMaxIterations Max iterations for both local and global refinement.
- * @param groundTruth Optional reference (unused in computation).
- * @param splitType For labeling/logging (unused here).
- * @param outputDirectory Output directory for optional logging (unused here).
- * @param trackProgress/start/createCsv/iteration For logging (unused here).
- * @return SSE after the global refinement.
- * @errors Exits on allocation failure. Asserts that the cluster has at least 2 points.
- */
-  double splitClusterGlobalV2(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t localMaxIterations, const Centroids* groundTruth, Rng* rng)
+   * @brief SKM-Global split: local 2-means within the chosen cluster, then global k-means over all data.
+   *
+   * The two local seeds are two different points of the cluster (different indices; equal coordinates are
+   * possible, 6.6). The local result replaces the old centroid and is appended as the new one; global k-means
+   * then runs until the SSE stops improving (localMaxIterations is SIZE_MAX by default).
+   *
+   * @param dataPoints All points with current partitions.
+   * @param centroids Global centroids; updated in place (size increases by one).
+   * @param clusterToSplit Index of the cluster to split; it has at least 2 points (asserted).
+   * @param localMaxIterations Max iterations for both the local and the global k-means.
+   * @param tracker Optional: the after-split snapshot, the `_inner.csv` rows (stages split and global) and the ground truth for the level-3 log.
+   * @return SSE after the global k-means.
+   */
+  double splitClusterGlobalV2(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t localMaxIterations, Tracker* tracker, Rng* rng)
   {
       size_t clusterSize = 0;
       for (size_t i = 0; i < dataPoints->size; ++i)
@@ -2492,7 +2744,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
 
       // Run local k-means
-      runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, groundTruth);
+      runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, tracker, KM_STAGE_SPLIT);
 
       // Update partitions
       for (size_t i = 0; i < clusterSize; ++i)
@@ -2512,9 +2764,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
       centroids->points[centroids->size - 1] = allocateDataPoint(dataPoints->points[0].dimensions);
       deepCopyDataPoint(&centroids->points[centroids->size - 1], &localCentroids.points[1]);
 
-      //saveIterationState(dataPoints, centroids, iteration, outputDirectory, "Global_test");
+      trackerSplitSnapshot(tracker, dataPoints, centroids, clusterToSplit);
 
-      double sse = runKMeans(dataPoints, localMaxIterations, centroids, groundTruth);
+      double sse = runKMeans(dataPoints, localMaxIterations, centroids, tracker, KM_STAGE_GLOBAL);
 
 
       // Cleanup
@@ -2526,9 +2778,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Replaces one cluster with two random seeds and runs global refinement.
+   * @brief SKM-Global-Basic split: two random points of the chosen cluster as centroids, then global k-means.
    *
-   * Selects two distinct points from the chosen cluster, overwrites the original centroid
+   * Selects two different points of the cluster (different indices), overwrites the original centroid
    * with the first, appends the second as a new centroid, then runs global k-means for
    * `globalMaxIterations` to refine assignments over all data.
    *
@@ -2536,12 +2788,13 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @param centroids Global centroids; updated in-place (size increases by one).
    * @param clusterToSplit Index of the cluster to split.
    * @param globalMaxIterations Max iterations for the global refinement.
-   * @param groundTruth Optional reference (unused in computation).
+   * @param tracker Optional: the after-split snapshot, the `_inner.csv` rows (stage global) and the ground truth for the level-3 log.
    * @return SSE after global refinement.
    * @errors Exits on allocation failure. Asserts that the cluster has at least 2 points.
-   * @note Runs as --algo skm-global-basic: starts global k-means directly after random seeding -> clusters are not stable -> worse results
+   * @note Runs as --algo skm-global-basic, the basic comparison for SKM-Global: global k-means starts right after
+   *       the two random seeds, without the local 2-means. Whether this gives worse results is measured in 6.7.
    */
-  double splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t globalMaxIterations, const Centroids* groundTruth, Rng* rng)
+  double splitClusterGlobal(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, size_t globalMaxIterations, Tracker* tracker, Rng* rng)
   {
       size_t clusterSize = 0;
 
@@ -2587,11 +2840,14 @@ void freeDataPointArray(DataPoint* points, size_t size)
       // Add the second new centroid to the global centroids list
       centroids->size++;
       centroids->points = realloc(centroids->points, centroids->size * sizeof(DataPoint));
+      handleMemoryError(centroids->points);
       centroids->points[centroids->size - 1] = allocateDataPoint(dataPoints->points[0].dimensions);
       deepCopyDataPoint(&centroids->points[centroids->size - 1], &dataPoints->points[datapoint2]);
 
+      trackerSplitSnapshot(tracker, dataPoints, centroids, clusterToSplit);
+
       // Run global k-means, this time including the new centroids
-      double resultSse = runKMeans(dataPoints, globalMaxIterations, centroids, groundTruth);
+      double resultSse = runKMeans(dataPoints, globalMaxIterations, centroids, tracker, KM_STAGE_GLOBAL);
 
       // Cleanup
       free(clusterIndices);
@@ -2600,20 +2856,18 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Locally reassigns points to either the split cluster or the new cluster.
+   * @brief SKM-Local repartition after a split, in two passes over the same centroids.
    *
-   * Compares each point currently assigned to “other” clusters against the split
-   * centroid and the newly created centroid. If either is closer than the point’s
-   * current centroid, moves the point and marks the original cluster as affected.
-   * Keeps assignments in the split and new clusters unchanged.
+   * Pass 1: every point of the split cluster and of the new cluster moves to its nearest centroid among all
+   * centroids. Pass 2: every other point moves to the split or the new centroid when one of them is closer than
+   * its own (the nearer of the two). Pass 1 marks both clusters of a moved point in `clustersAffected`, pass 2
+   * the cluster it left (the caller marks the split and the new cluster). No centroid is recomputed here (6.1).
    *
    * @param dataPoints Dataset with current partitions.
-   * @param centroids Global centroids; newest centroid is at index `centroids->size - 1`.
+   * @param centroids Global centroids; the new centroid is at index `centroids->size - 1`.
    * @param clusterToSplit Index of the cluster that was split.
    * @param clustersAffected Output array (size >= number of clusters) marking touched clusters.
-   * @return void
-   * @errors Exits if preconditions are violated.
-   * @note O(N·D). Intended to be followed by centroid recomputation.
+   * @note O(N·D); indices are not checked.
    */
   void localRepartition(DataPoints* dataPoints, Centroids* centroids, size_t clusterToSplit, bool* clustersAffected)
   {
@@ -2672,7 +2926,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
    * @param clusterLabel Cluster id to test a tentative split for.
    * @param localMaxIterations Max iterations for the local k-means refinement.
    * @param originalClusterSSE Current SSE of the cluster before splitting.
-   * @return SSE drop (non-negative when the split helps).
+   * @return SSE drop (non-negative when the split helps); 0 for a cluster with fewer than 2 points.
    * @errors Exits on allocation failure.
    */
   double tentativeSseDrop(DataPoints* dataPoints, size_t clusterLabel, size_t localMaxIterations, double originalClusterSSE, Rng* rng)
@@ -2717,7 +2971,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       deepCopyDataPoint(&localCentroids.points[1], &pointsInCluster.points[c2]);
 
       // k-means
-      double resultSse = runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, NULL);
+      double resultSse = runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, NULL, KM_STAGE_NONE);
 
       double sseDrop = originalClusterSSE - resultSse;
 
@@ -2728,21 +2982,19 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Produces a k-means candidate for a given cluster (for bisecting).
+   * @brief One bisecting try: local k-means with K=2 on the points of `clusterLabel`.
    *
-   * Runs local k-means with K=2 on the points of `clusterLabel` using unbiased seeding
-   * and returns two candidate centroids with the achieved local SSE. Caller compares
-   * SSEs across attempts and picks the best pair.
+   * The seeds are two different points of the cluster (different indices, drawn uniformly). Returns the two
+   * centroids and the local SSE; the caller keeps the try with the lowest SSE and frees each result.
    *
    * @param dataPoints Dataset with current partitions; used to extract the cluster’s points.
    * @param clusterLabel Cluster id to bisect.
    * @param localMaxIterations Max iterations for the local k-means refinement.
-   * @param groundTruth Optional reference (unused in computation).
+   * @param tracker Optional: `_inner.csv` rows of the try (stage try) and the ground truth for the level-3 log.
    * @return ClusteringResult with `centroids[2]` and `sse` for the cluster’s points.
    * @errors Exits on allocation failure. Asserts that the cluster has at least 2 points.
-   * @note Allocates `partition` sized to the cluster for symmetry; it is not populated here.
    */
-  ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, size_t clusterLabel, size_t localMaxIterations, const Centroids* groundTruth, Rng* rng)
+  ClusteringResult tentativeSplitterForBisecting(DataPoints* dataPoints, size_t clusterLabel, size_t localMaxIterations, Tracker* tracker, Rng* rng)
   {
       size_t clusterSize = 0;
       for (size_t i = 0; i < dataPoints->size; ++i)
@@ -2780,10 +3032,10 @@ void freeDataPointArray(DataPoint* points, size_t size)
       deepCopyDataPoint(&localCentroids.points[0], &pointsInCluster.points[c1]);
       deepCopyDataPoint(&localCentroids.points[1], &pointsInCluster.points[c2]);
 
-      ClusteringResult localResult = allocateClusteringResult(dataPoints->size, 2, dataPoints->points[0].dimensions);
+      ClusteringResult localResult = allocateClusteringResult(2, dataPoints->points[0].dimensions);
 
       // k-means
-      localResult.sse = runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, groundTruth);
+      localResult.sse = runKMeans(&pointsInCluster, localMaxIterations, &localCentroids, tracker, KM_STAGE_TRY);
 
       deepCopyDataPoint(&localResult.centroids[0], &localCentroids.points[0]);
       deepCopyDataPoint(&localResult.centroids[1], &localCentroids.points[1]);
@@ -2817,7 +3069,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
   /**
    * @brief Exits when no cluster has 2 or more points. Cannot happen while K <= N; reports a bug instead of hanging.
    */
-  static void requireSplittableCluster(size_t splittable, size_t numClusters, size_t splitType)
+  static void requireSplittableCluster(size_t splittable, size_t numClusters, Algorithm splitType)
   {
       if (splittable == 0)
       {
@@ -2828,34 +3080,24 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Grows K by repeatedly splitting a random cluster with local k-means.
+   * @brief Random Split: grows K by splitting a random cluster with local k-means.
    *
-   * Starts from current centroids, repeatedly selects a random cluster, performs an
-   * intra-cluster split (local k-means), updates global centroids and partitions,
-   * and logs progress if enabled. Stops when `centroids->size == maxCentroids`,
+   * Each split draws a cluster uniformly and draws again while it has fewer than 2 points, splits it
+   * with splitClusterIntraCluster and records the state. Stops when `centroids->size == maxCentroids`,
    * then runs a final global k-means and returns its SSE.
    *
    * @param dataPoints Dataset; partitions updated in-place across splits.
    * @param centroids Global centroids; grows until `maxCentroids`.
    * @param maxCentroids Target number of centroids (K).
    * @param maxIterations Max iterations for local/final k-means refinements.
-   * @param groundTruth Optional reference for logging (CI).
-   * @param outputDirectory Destination directory for logs (when enabled).
-   * @param trackProgress/start/createCsv Logging/timing controls and buffers.
+   * @param tracker Records each split (count = split number) and the final k-means; carries the ground truth for CI.
    * @return Final SSE after the concluding global k-means.
    * @errors Exits on allocation failure in underlying functions.
    */
-  double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, const Centroids* groundTruth, const char* outputDirectory,
-      bool trackProgress, clock_t start, bool createCsv, Rng* rng)
+  double runRandomSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, Tracker* tracker, Rng* rng)
   {
-      char csvFile[PATH_MAX] = "";
-      if (createCsv)
-      {
-          initializeCsvFile(5, outputDirectory, csvFile, sizeof(csvFile));
-      }
-
-      handleLoggingAndTracking(start, trackProgress,
-          dataPoints, centroids, groundTruth, 0, outputDirectory, createCsv, csvFile, SIZE_MAX, 5);
+      const Centroids* groundTruth = tracker->groundTruth;
+      trackerRecord(tracker, 0, "start", dataPoints, centroids, SIZE_MAX);
 
       size_t iterationCount = 1; //Helper for tracking progress
 
@@ -2865,14 +3107,14 @@ void freeDataPointArray(DataPoint* points, size_t size)
       while (centroids->size < maxCentroids)
       {
           // Uniform over the clusters with at least 2 points: draw again on smaller ones
-          requireSplittableCluster(countClusterSizes(dataPoints, centroids->size, clusterSizes), centroids->size, 5);
+          requireSplittableCluster(countClusterSizes(dataPoints, centroids->size, clusterSizes), centroids->size, ALGO_SKM_RANDOM);
           size_t clusterToSplit = rng_below(rng, centroids->size);
           while (clusterSizes[clusterToSplit] < 2)
           {
               clusterToSplit = rng_below(rng, centroids->size);
           }
 
-          splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth, rng);
+          splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, maxIterations, tracker, rng);
 
           if (logLevel >= 3)
           {
@@ -2888,48 +3130,48 @@ void freeDataPointArray(DataPoint* points, size_t size)
               }
           }
 
-          handleLoggingAndTracking(start, trackProgress,
-              dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, clusterToSplit, 5);
+          trackerRecord(tracker, iterationCount, "step", dataPoints, centroids, clusterToSplit);
 
           iterationCount++;
       }
 
       free(clusterSizes);
 
-      double finalResultSse = runKMeans(dataPoints, maxIterations, centroids, groundTruth);
+      double finalResultSse = runKMeans(dataPoints, maxIterations, centroids, tracker, KM_STAGE_FINAL);
 
-      handleLoggingAndTracking(start, trackProgress,
-          dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, 5);
+      trackerRecord(tracker, iterationCount, "final", dataPoints, centroids, SIZE_MAX);
 
       return finalResultSse;
   }
 
   /**
-   * @brief Iteratively grows K by splitting the cluster that maximizes expected SSE drop.
+   * @brief SSE-based split k-means: grows K by splitting the cluster with the largest tentative SSE drop.
    *
-   * Computes per-cluster SSE drops via tentative local k-means, repeatedly splits the
-   * cluster with the highest drop using the selected strategy:
-   *  - 0: Intra-cluster split (local k-means on the cluster).
-   *  - 1: Global split (local k-means, then global refinement).
-   *  - 2: Local repartition (reassigns neighbors to split/new centroids).
-   * Logs progress/timing when enabled. Returns the final SSE (from the last refinement).
+   * The first split of the single starting cluster uses local 2-means for every variant. Then each split picks,
+   * among the clusters with at least 2 points, the one whose tentative local 2-means lowers its SSE the most, and
+   * splits it by the variant:
+   *  - ALGO_SKM_INTRA: local 2-means on the cluster; the drops of the two halves are re-evaluated.
+   *  - ALGO_SKM_GLOBAL: local 2-means, then global k-means (splitClusterGlobalV2); all drops re-evaluated.
+   *  - ALGO_SKM_GLOBAL_BASIC: two random points, then global k-means (splitClusterGlobal); all drops re-evaluated.
+   *  - ALGO_SKM_LOCAL: local 2-means, then localRepartition; the drops of the touched clusters re-evaluated
+   *    (the repartition and the re-evaluation are skipped after the last split, 6.1).
+   * The split itself re-runs a local 2-means instead of reusing the evaluated one (6.2).
    *
    * @param dataPoints Dataset; partitions updated in-place.
    * @param centroids Global centroids; grows until `maxCentroids`.
    * @param maxCentroids Target number of centroids (K); K=1 skips the split.
    * @param maxIterations Max iterations for local/global k-means refinements.
-   * @param groundTruth Optional reference centroids for logging (CI).
-   * @param splitType Strategy selector: 0=Intra-cluster, 1=Global, 2=LocalRepartition.
-   * @param outputDirectory Destination directory for logs.
-   * @param trackProgress/start/createCsv Logging/timing controls and buffers.
-   * @return Final SSE after all splits and final refinement; global types run the final k-means only when no global split ran (K <= 2).
+   * @param splitType One of the four SKM variants above.
+   * @param tracker Records each split (count = split number) and the final k-means; carries the ground truth for CI.
+   * @return Final SSE: of the final k-means, or for the global variants of the last global k-means (the final
+   *         k-means runs there only when no global split ran, K <= 2).
    * @errors Exits on allocation failure in underlying helpers.
    */
-  double runSseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, const Centroids* groundTruth, size_t splitType, const char* outputDirectory,
-      bool trackProgress, clock_t start, bool createCsv, Rng* rng)
+  double runSseSplit(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, Algorithm splitType, Tracker* tracker, Rng* rng)
   {
+      const Centroids* groundTruth = tracker->groundTruth;
       double finalResultSse = DBL_MAX;
-      bool refinedGlobally = false; // set when a global split (types 1 and 8) ran global k-means
+      bool refinedGlobally = false; // set when a global split (SKM-Global, SKM-Global-Basic) ran global k-means
 
       // The initial split always makes two clusters, so the arrays hold at least two
       const size_t capacity = maxCentroids < 2 ? 2 : maxCentroids;
@@ -2945,15 +3187,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       size_t* clusterSizes = malloc(capacity * sizeof(size_t));
       handleMemoryError(clusterSizes);
-
-      char csvFile[PATH_MAX] = "";
-      if (createCsv)
-      {
-          initializeCsvFile(splitType, outputDirectory, csvFile, sizeof(csvFile));
-      }
-
-      handleLoggingAndTracking(start, trackProgress,
-          dataPoints, centroids, groundTruth, 0, outputDirectory, createCsv, csvFile, SIZE_MAX, splitType);
+      trackerRecord(tracker, 0, "start", dataPoints, centroids, SIZE_MAX);
 
       size_t iterationCount = 1; //Helper for tracking progress
 
@@ -2962,10 +3196,9 @@ void freeDataPointArray(DataPoint* points, size_t size)
       {
           //Only 1 cluster, so no need for decision making
           size_t initialClusterToSplit = 0;
-          splitClusterIntraCluster(dataPoints, centroids, initialClusterToSplit, maxIterations, groundTruth, rng);
+          splitClusterIntraCluster(dataPoints, centroids, initialClusterToSplit, maxIterations, tracker, rng);
 
-          handleLoggingAndTracking(start, trackProgress,
-              dataPoints, centroids, groundTruth, 1, outputDirectory, createCsv, csvFile, initialClusterToSplit, splitType);
+          trackerRecord(tracker, 1, "step", dataPoints, centroids, initialClusterToSplit);
 
           for (size_t i = 0; i < centroids->size; ++i)
           {
@@ -2992,26 +3225,23 @@ void freeDataPointArray(DataPoint* points, size_t size)
               }
           }
 
-		  // Split the chosen cluster
-		  // 0: Intra-cluster
-		  // 1: Global
-		  // 2: Local repartition
-          if (splitType == 0) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth, rng);
-          else if (splitType == 1)
+          // Split the chosen cluster by the variant (see the function comment)
+          if (splitType == ALGO_SKM_INTRA) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, maxIterations, tracker, rng);
+          else if (splitType == ALGO_SKM_GLOBAL)
           {
-              finalResultSse = splitClusterGlobalV2(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth, rng);
+              finalResultSse = splitClusterGlobalV2(dataPoints, centroids, clusterToSplit, maxIterations, tracker, rng);
               refinedGlobally = true;
           }
-          else if (splitType == 8)
+          else if (splitType == ALGO_SKM_GLOBAL_BASIC)
           {
-              finalResultSse = splitClusterGlobal(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth, rng);
+              finalResultSse = splitClusterGlobal(dataPoints, centroids, clusterToSplit, maxIterations, tracker, rng);
               refinedGlobally = true;
           }
-          else if (splitType == 2) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, maxIterations, groundTruth, rng);
+          else if (splitType == ALGO_SKM_LOCAL) splitClusterIntraCluster(dataPoints, centroids, clusterToSplit, maxIterations, tracker, rng);
 
           if (centroids->size < maxCentroids)
           {
-              if (splitType == 0) // Intra-cluster
+              if (splitType == ALGO_SKM_INTRA)
               {
                   // Recalculate SSE for the affected clusters
                   clusterSSEs[clusterToSplit] = calculateClusterSSE(dataPoints, centroids, clusterToSplit);
@@ -3021,7 +3251,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
                   SseDrops[clusterToSplit] = tentativeSseDrop(dataPoints, clusterToSplit, maxIterations, clusterSSEs[clusterToSplit], rng);
                   SseDrops[centroids->size - 1] = tentativeSseDrop(dataPoints, centroids->size - 1, maxIterations, clusterSSEs[centroids->size - 1], rng);
               }
-              else if (splitType == 1 || splitType == 8) // Global
+              else if (splitType == ALGO_SKM_GLOBAL || splitType == ALGO_SKM_GLOBAL_BASIC)
               {
                   for (size_t i = 0; i < centroids->size; ++i)
                   {
@@ -3029,8 +3259,10 @@ void freeDataPointArray(DataPoint* points, size_t size)
                       SseDrops[i] = tentativeSseDrop(dataPoints, i, maxIterations, clusterSSEs[i], rng);
                   }
               }
-              else if (splitType == 2) // Local repartition
+              else if (splitType == ALGO_SKM_LOCAL)
               {
+                  trackerSplitSnapshot(tracker, dataPoints, centroids, clusterToSplit);
+
                   localRepartition(dataPoints, centroids, clusterToSplit, clustersAffected);
 
                   clustersAffected[clusterToSplit] = true;
@@ -3049,8 +3281,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
                   memset(clustersAffected, 0, capacity * sizeof(bool));
               }
           }
-          handleLoggingAndTracking(start, trackProgress,
-              dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, clusterToSplit, splitType);
+          trackerRecord(tracker, iterationCount, "step", dataPoints, centroids, clusterToSplit);
 
           iterationCount++;
 
@@ -3077,37 +3308,32 @@ void freeDataPointArray(DataPoint* points, size_t size)
       // Global splits end with global k-means; without one (K <= 2) run it here
       if (!refinedGlobally)
       {
-          finalResultSse = runKMeans(dataPoints, maxIterations, centroids, groundTruth);
-          handleLoggingAndTracking(start, trackProgress,
-              dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, splitType);
+          finalResultSse = runKMeans(dataPoints, maxIterations, centroids, tracker, KM_STAGE_FINAL);
+          trackerRecord(tracker, iterationCount, "final", dataPoints, centroids, SIZE_MAX);
       }
 
       return finalResultSse;
   }
 
   /**
-   * @brief Grows K by repeatedly bisecting the cluster with the largest SSE.
+   * @brief Bisecting k-means: grows K by splitting the cluster with the largest SSE.
    *
-   * Starts from the current centroids, performs an initial split to reach K=2,
-   * then repeatedly picks the cluster with the highest current SSE, runs several
-   * local k-means attempts on that cluster, and applies the best candidate split.
-   * Reassigns points globally after each accepted split and updates per-cluster SSEs.
-   * Stops when centroids->size == maxCentroids; only clusters with ≥2 points are split.
+   * The first split (to K=2) is one local 2-means. Then each split picks, among the clusters with at least 2
+   * points, the one with the largest stored SSE, runs `bisectingIterations` local 2-means tries on it, places the
+   * two centroids of the try with the lowest SSE, and reassigns every point with a global partition step. Only the
+   * stored SSEs of the two new clusters are updated, although the partition step can move points of other clusters
+   * too (6.3). A final k-means follows.
    *
    * @param dataPoints Dataset; partitions updated in-place across splits.
    * @param centroids Global centroids; grown in-place up to maxCentroids.
    * @param maxCentroids Target number of clusters (K); K=1 skips the split.
    * @param maxIterations Max iterations for the local k-means and final global k-means.
-   * @param groundTruth Optional reference centroids for CI in logs (may be NULL).
-   * @param outputDirectory Destination directory for optional iteration logs/snapshots.
-   * @param trackProgress/start/createCsv Logging/timing controls.
-   * @param bisectingIterations Number of local k-means attempts per split; 0 treated as 1.
-   * @return Final SSE after the concluding refinement step.
+   * @param bisectingIterations Local 2-means tries per split; at least 1 (main checks it).
+   * @param tracker Records each split (count = split number) and the final k-means; carries the ground truth for CI.
+   * @return SSE after the final k-means.
    * @errors Exits on allocation failures via helpers.
-   * @note Recomputes per-cluster SSE after each global reassignment for robust selection.
    */
-  double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, const Centroids* groundTruth, const char* outputDirectory,
-      bool trackProgress, clock_t start, bool createCsv, size_t bisectingIterations, Rng* rng)
+  double runBisectingKMeans(DataPoints* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations, size_t bisectingIterations, Tracker* tracker, Rng* rng)
   {
       // The initial split always makes two clusters, so the list holds at least two
       double* SseList = malloc((maxCentroids < 2 ? 2 : maxCentroids) * sizeof(double));
@@ -3118,15 +3344,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       DataPoint newCentroid1 = allocateDataPoint(dataPoints->points[0].dimensions);
       DataPoint newCentroid2 = allocateDataPoint(dataPoints->points[0].dimensions);
-
-      char csvFile[PATH_MAX] = "";
-      if (createCsv)
-      {
-          initializeCsvFile(4, outputDirectory, csvFile, sizeof(csvFile));
-      }
-
-      handleLoggingAndTracking(start, trackProgress,
-          dataPoints, centroids, groundTruth, 0, outputDirectory, createCsv, csvFile, SIZE_MAX, 4);
+      trackerRecord(tracker, 0, "start", dataPoints, centroids, SIZE_MAX);
 
       size_t iterationCount = 1; //Helper for tracking progress
 
@@ -3135,13 +3353,12 @@ void freeDataPointArray(DataPoint* points, size_t size)
       {
           //Step 0: Only 1 cluster, so no need for decision making
           size_t initialClusterToSplit = 0;
-          splitClusterIntraCluster(dataPoints, centroids, initialClusterToSplit, maxIterations, groundTruth, rng);
+          splitClusterIntraCluster(dataPoints, centroids, initialClusterToSplit, maxIterations, tracker, rng);
 
           SseList[0] = calculateClusterSSE(dataPoints, centroids, 0);
           SseList[1] = calculateClusterSSE(dataPoints, centroids, 1);
 
-          handleLoggingAndTracking(start, trackProgress,
-              dataPoints, centroids, groundTruth, 1, outputDirectory, createCsv, csvFile, initialClusterToSplit, 4);
+          trackerRecord(tracker, 1, "step", dataPoints, centroids, initialClusterToSplit);
 
           iterationCount = 2;
       }
@@ -3150,7 +3367,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
       while (centroids->size < maxCentroids)
       {
           //Step 1: Choose the cluster to split (the highest SSE among clusters with at least 2 points)
-          requireSplittableCluster(countClusterSizes(dataPoints, centroids->size, clusterSizes), centroids->size, 4);
+          requireSplittableCluster(countClusterSizes(dataPoints, centroids->size, clusterSizes), centroids->size, ALGO_BISECTING);
           size_t clusterToSplit = SIZE_MAX;
           double maxSSE = 0.0;
 
@@ -3166,7 +3383,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
           //Repeat for a set number of iterations
           for (size_t j = 0; j < bisectingIterations; ++j)
           {
-              ClusteringResult curr = tentativeSplitterForBisecting(dataPoints, clusterToSplit, maxIterations, groundTruth, rng);
+              ClusteringResult curr = tentativeSplitterForBisecting(dataPoints, clusterToSplit, maxIterations, tracker, rng);
 
               if (logLevel >= 3) printf("(Bisecting) Cluster %zu, try %zu: SSE %.0f\n", clusterToSplit, j + 1, curr.sse);
 
@@ -3193,6 +3410,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
           deepCopyDataPoint(&centroids->points[centroids->size], &newCentroid2);
           centroids->size++;
 
+          trackerSplitSnapshot(tracker, dataPoints, centroids, clusterToSplit);
+
           partitionStep(dataPoints, centroids); //partition step, vai pitaisiko tallentaa ne loopissa ja tehda tassa sitten muutokset? (esim kaikki 0->clusterToSplit, 1->centroids->size-1)
 
           //Step 3: Update the SSE list
@@ -3201,17 +3420,15 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
           bestSse = DBL_MAX;
 
-          handleLoggingAndTracking(start, trackProgress,
-              dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, clusterToSplit, 4);
+          trackerRecord(tracker, iterationCount, "step", dataPoints, centroids, clusterToSplit);
 
           iterationCount++;
       }
 
       //Step 4: Run the final k-means
-      double finalResultSse = runKMeans(dataPoints, maxIterations, centroids, groundTruth);
+      double finalResultSse = runKMeans(dataPoints, maxIterations, centroids, tracker, KM_STAGE_FINAL);
 
-      handleLoggingAndTracking(start, trackProgress,
-          dataPoints, centroids, groundTruth, iterationCount, outputDirectory, createCsv, csvFile, SIZE_MAX, 4);
+      trackerRecord(tracker, iterationCount, "final", dataPoints, centroids, SIZE_MAX);
 
       // Cleanup
       free(SseList);
@@ -3223,37 +3440,27 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Runs baseline k-means multiple times and aggregates CI/SSE/time.
+   * @brief K-means runs firstRun..loopCount-1 (0-based): initial centroids by `init`, k-means until the SSE stops improving.
    *
-   * For each run, seeds K centroids uniformly from the data, performs k-means with
-   * early stopping on non-improving SSE, then records SSE, CI vs. ground truth, and
-   * elapsed time. Writes one “perfect” and one “failed” example to disk for inspection.
-   *
-   * @param dataPoints Dataset clustered in-place; partitions get reassigned every run.
-   * @param groundTruth Reference centroids for CI; dimensions must match data (may be NULL).
-   * @param numCentroids Target K; must be 1..N.
-   * @param maxIterations Maximum k-means iterations (early stop on no improvement).
-   * @param loopCount Number of independent k-means runs (with new random seeds).
-   * @param scaling SSE divisor for CSV (kept for parity; not used in printing).
-   * @param fileName Base name for CSV summary file (without extension).
-   * @param outputDirectory Destination directory for outputs.
-   * @return void
-   * @errors Exits on allocation failures; validates basic inputs to prevent invalid K.
-   * @note Uses uniform seeding; switch to KMeans++ by replacing the seeding call.
+   * Shared by the six algorithm wrappers: run i uses rng_derive_seed(seed, i); the stopwatch measures the run
+   * (tracking paused); after each run one `_runs.csv` row and, for the first run with CI = 0 and with CI > 0,
+   * the example snapshots; at the end the console statistics and the summary row (SSE divided by `scaling`).
+   * `groundTruth` may be empty (CI is then NA); K must be 1..N (main checks it). Exits on allocation or file errors.
+   * KM tracking: one row per k-means iteration (runKMeansWithTracking).
    */
-  void runKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, uint64_t seed)
+  void runKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t firstRun, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, const TrackOptions* track, InitMethod init, uint64_t seed)
   {
       Statistics stats;
       initializeStatistics(&stats);
 
-      clock_t start, end;
+      Tracker tracker = trackerCreate(ALGO_KM, outputDirectory, groundTruth, track);
       double duration;
       bool savedZeroResults = false;
       bool savedNonZeroResults = false;
 
       printf("K-means\n");
 
-      for (size_t i = 0; i < loopCount; ++i)
+      for (size_t i = firstRun; i < loopCount; ++i)
       {
           if (logLevel >= 2) printf("Round %zu\n", i + 1);
 
@@ -3266,15 +3473,13 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
           Centroids centroids = allocateCentroids(numCentroids, dataPoints->points[0].dimensions);
 
-          start = clock();
+          trackerBeginRun(&tracker, i);
 
-          generateRandomCentroids(numCentroids, dataPoints, &centroids, rng);
-          //generateKMeansPlusPlusCentroids(numCentroids, dataPoints, &centroids, rng);
+          initialCentroids(init, numCentroids, dataPoints, &centroids, rng);
 
-          double resultSse = runKMeans(dataPoints, maxIterations, &centroids, groundTruth);
+          double resultSse = runKMeansWithTracking(dataPoints, maxIterations, &centroids, &tracker);
 
-          end = clock();
-          duration = ((double)(end - start)) / CLOCKS_PER_MS;
+          duration = trackerEndRun(&tracker);
 
           size_t centroidIndex = centroidIndexOrNA(&centroids, groundTruth);
 
@@ -3288,48 +3493,34 @@ void freeDataPointArray(DataPoint* points, size_t size)
           freeCentroids(&centroids);
       }
 
-      printStatistics("K-means", stats, loopCount, numCentroids, scaling);
-      writeResultsToFile(fileName, stats, numCentroids, "KM", loopCount, scaling, outputDirectory);
+      trackerFree(&tracker);
+
+      printStatistics("K-means", stats, loopCount - firstRun, numCentroids, scaling);
+      writeResultsToFile(fileName, stats, numCentroids, "KM", loopCount - firstRun, scaling, outputDirectory);
   }
 
   /**
-   * @brief Runs the repeated k-means algorithm on the given data points and centroids.
+   * @brief Repeated k-means runs firstRun..loopCount-1 (see runKMeansAlgorithm for the shared run loop and outputs).
    *
-   * This function iterates through partition and centroid steps, calculates the SSE,
-   * and returns the best SSE obtained during the iterations.
-   *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
-   * @param numCentroids The number of centroids to generate.
-   * @param maxIterations The maximum number of iterations for the k-means algorithm.
-   * @param maxRepeats The maximum number of repeats for the k-means algorithm.
-   * @param loopCount The number of loops to run the k-means algorithm.
-   * @param scaling A scaling factor for the SSE values.
-   * @param fileName The name of the file to write the results to.
-   * @param outputDirectory The directory where the results file is located.
+   * Each run makes `maxRepeats` k-means from new initial centroids (by `init`) and keeps the lowest SSE; the points
+   * are then relabelled with the best centroids for the snapshots. Tracking: one row per repeat with the best SSE
+   * and CI so far (CI only when tracking), snapshots at the improvements.
    */
-  void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t maxRepeats, size_t loopCount, size_t scaling,
-      const char* fileName, const char* outputDirectory, bool trackProgress, uint64_t seed)
+  void runRepeatedKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t maxRepeats, size_t firstRun, size_t loopCount, size_t scaling,
+      const char* fileName, const char* outputDirectory, const TrackOptions* track, InitMethod init, uint64_t seed)
   {
       Statistics stats;
       initializeStatistics(&stats);
 
-      clock_t start, end;
+      Tracker tracker = trackerCreate(ALGO_RKM, outputDirectory, groundTruth, track);
       double duration;
 
 	  bool savedZeroResults = false;
 	  bool savedNonZeroResults = false;
 
-      char csvFile[PATH_MAX] = "";
-      if (trackProgress)
-      {
-          initializeCsvFile(7, outputDirectory, csvFile, sizeof(csvFile));
-
-      }
-
       printf("Repeated K-means\n");
 
-      for (size_t i = 0; i < loopCount; ++i)
+      for (size_t i = firstRun; i < loopCount; ++i)
       {
           if (logLevel >= 2) printf("Round %zu\n", i + 1);
 
@@ -3341,58 +3532,34 @@ void freeDataPointArray(DataPoint* points, size_t size)
           double bestSse = DBL_MAX;
           size_t bestCI = CI_NA;
 
-          size_t iterationCount = 0; //Helper for tracking progress
-          bool firstRun = true;
-
           Centroids bestCentroids = allocateCentroids(numCentroids, dataPoints->points[0].dimensions);
 
-          start = clock();
+          trackerBeginRun(&tracker, i);
 
           for (size_t j = 0; j < maxRepeats; ++j)
           {
               if (logLevel >= 3) printf("Repeat %zu\n", j + 1);
               Centroids centroids = allocateCentroids(numCentroids, dataPoints->points[0].dimensions);
-              generateRandomCentroids(numCentroids, dataPoints, &centroids, rng);
-              //generateKMeansPlusPlusCentroids(numCentroids, dataPoints, &centroids, rng);
-              double resultSse = runKMeansWithTracking(dataPoints, maxIterations, &centroids, groundTruth, outputDirectory, (i == 0 && trackProgress), start, trackProgress, &iterationCount, firstRun, csvFile);
+              initialCentroids(init, numCentroids, dataPoints, &centroids, rng);
+              double resultSse = runKMeans(dataPoints, maxIterations, &centroids, &tracker, KM_STAGE_NONE);
 
               if (resultSse < bestSse)
               {
                   bestSse = resultSse;
                   deepCopyCentroids(&centroids, &bestCentroids);
 
-                  // Also on the first repeat: later non-improving rows report the CI of the best solution
-                  bestCI = centroidIndexOrNA(&centroids, groundTruth);
+                  // CI of the new best solution, only for the rows (stopwatch paused)
+                  if (tracker.logRows) bestCI = trackerCi(&tracker, &centroids);
+                  trackerSnapshot(&tracker, j + 1, "step", dataPoints, &centroids, SIZE_MAX);
+              }
 
-                  if (!firstRun)
-                  {
-                      if (trackProgress)
-                      {
-                          clock_t iterEnd = clock();
-                          double elapsedMs = ((double)(iterEnd - start)) / CLOCKS_PER_MS;
-                          appendLogCsv(csvFile, iterationCount, bestCI, resultSse, elapsedMs);
-                      }
-                  }
-                  else
-                  {
-                      firstRun = false;
-                  }
-              }
-              else
-              {
-                  if (trackProgress)
-                  {
-                      clock_t iterEnd = clock();
-                      double elapsedMs = ((double)(iterEnd - start)) / CLOCKS_PER_MS;
-                      appendLogCsv(csvFile, iterationCount, bestCI, bestSse, elapsedMs);
-                  }
-              }
+              // One row per repeat (count = repeat): the best solution so far
+              trackerAddRow(&tracker, j + 1, bestSse, bestCI);
 
               freeCentroids(&centroids);
           }
 
-          end = clock();
-          duration = ((double)(end - start)) / CLOCKS_PER_MS;
+          duration = trackerEndRun(&tracker);
 
           // The labels are from the last repeat; the snapshot needs those of the best centroids
           partitionStep(dataPoints, &bestCentroids);
@@ -3409,32 +3576,25 @@ void freeDataPointArray(DataPoint* points, size_t size)
           freeCentroids(&bestCentroids);
       }
 
-      printStatistics("Repeated K-means", stats, loopCount, numCentroids, scaling);
-      writeResultsToFile(fileName, stats, numCentroids, "RKM", loopCount, scaling, outputDirectory);
+      trackerFree(&tracker);
+
+      printStatistics("Repeated K-means", stats, loopCount - firstRun, numCentroids, scaling);
+      writeResultsToFile(fileName, stats, numCentroids, "RKM", loopCount - firstRun, scaling, outputDirectory);
   }
 
+
   /**
-   * @brief Runs the repeated k-means algorithm on the given data points and centroids.
+   * @brief Random Swap runs firstRun..loopCount-1 (see runKMeansAlgorithm for the shared run loop and outputs).
    *
-   * This function iterates through partition and centroid steps, calculates the SSE,
-   * and returns the best SSE obtained during the iterations.
-   *
-   * @param dataPoints A pointer to the DataPoints structure containing the data points.
-   * @param groundTruth A pointer to the Centroids structure containing the ground truth centroids.
-   * @param numCentroids The number of centroids to generate.
-   * @param maxIterations The maximum number of iterations for the k-means algorithm.
-   * @param maxRepeats The maximum number of repeats for the k-means algorithm.
-   * @param loopCount The number of loops to run the k-means algorithm.
-   * @param scaling A scaling factor for the SSE values.
-   * @param fileName The name of the file to write the results to.
-   * @param outputDirectory The directory where the results file is located.
+   * Each run starts from initial centroids by `init` and their optimal partition and makes `maxSwaps` trial swaps
+   * (randomSwap). Tracking: the initial solution and every improvement, with its swap number.
    */
-  void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxSwaps, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, bool trackProgress, uint64_t seed)
+  void runRandomSwapAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxSwaps, size_t firstRun, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, const TrackOptions* track, InitMethod init, uint64_t seed)
   {
       Statistics stats;
       initializeStatistics(&stats);
 
-      clock_t start, end;
+      Tracker tracker = trackerCreate(ALGO_RS, outputDirectory, groundTruth, track);
       double duration;
 
       bool savedZeroResults = false;
@@ -3442,7 +3602,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       printf("Random swap\n");
 
-      for (size_t i = 0; i < loopCount; ++i)
+      for (size_t i = firstRun; i < loopCount; ++i)
       {
           if (logLevel >= 2) printf("Round %zu\n", i + 1);
 
@@ -3453,16 +3613,14 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
           Centroids centroids = allocateCentroids(numCentroids, dataPoints->points[0].dimensions);
 
-          start = clock();
+          trackerBeginRun(&tracker, i);
 
-          generateRandomCentroids(numCentroids, dataPoints, &centroids, rng);
-          //generateKMeansPlusPlusCentroids(numCentroids, dataPoints, &centroids, rng);
+          initialCentroids(init, numCentroids, dataPoints, &centroids, rng);
           partitionStep(dataPoints, &centroids); //Local repartition requires this
 
-          double resultSse = randomSwap(dataPoints, &centroids, maxSwaps, groundTruth, outputDirectory, (i == 0 && trackProgress), start, trackProgress, rng);
+          double resultSse = randomSwap(dataPoints, &centroids, maxSwaps, &tracker, rng);
 
-          end = clock();
-          duration = ((double)(end - start)) / CLOCKS_PER_MS;
+          duration = trackerEndRun(&tracker);
 
           size_t centroidIndex = centroidIndexOrNA(&centroids, groundTruth);
 
@@ -3476,36 +3634,25 @@ void freeDataPointArray(DataPoint* points, size_t size)
           freeCentroids(&centroids);
       }
 
-      printStatistics("Random Swap", stats, loopCount, numCentroids, scaling);
-      writeResultsToFile(fileName, stats, numCentroids, "RS", loopCount, scaling, outputDirectory);
+      trackerFree(&tracker);
+
+      printStatistics("Random Swap", stats, loopCount - firstRun, numCentroids, scaling);
+      writeResultsToFile(fileName, stats, numCentroids, "RS", loopCount - firstRun, scaling, outputDirectory);
   }
 
+
   /**
-   * @brief Runs Random Split k-means and aggregates CI/SSE/time across runs.
+   * @brief Random Split runs firstRun..loopCount-1 (see runKMeansAlgorithm for the shared run loop and outputs).
    *
-   * Seeds centroids, grows K by intra-cluster k-means splits via `runRandomSplit`,
-   * and accumulates SSE, CI vs. ground truth, and elapsed time over `loopCount` runs.
-   * Writes one “perfect” and one “failed” snapshot for inspection.
-   *
-   * @param dataPoints Dataset clustered in-place; partitions updated per run.
-   * @param groundTruth Reference centroids for CI (may be NULL if CI not needed).
-   * @param numCentroids Target K; must satisfy 1 <= K <= N.
-   * @param maxIterations Upper bound for local/global refinement iterations.
-   * @param loopCount Number of independent runs (new seeds each run).
-   * @param scaling SSE divisor for CSV summary (consistency with other wrappers).
-   * @param fileName Base name for the CSV summary file.
-   * @param outputDirectory Destination directory for outputs.
-   * @param trackProgress When true, enables per-iteration logging in the first run.
-   * @return void
-   * @errors Exits on allocation failures via helpers; validates inputs to preempt invalid runs.
-   * @note `runRandomSplit` may fail to progress if no cluster has ≥2 points; consider a retry budget there.
+   * Each run starts from one random data point and calls runRandomSplit (a random cluster with at least 2 points
+   * is split by local 2-means until K, then a final k-means).
    */
-  void runRandomSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, bool trackProgress, uint64_t seed)
+  void runRandomSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t firstRun, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, const TrackOptions* track, uint64_t seed)
   {
       Statistics stats;
       initializeStatistics(&stats);
 
-      clock_t start, end;
+      Tracker tracker = trackerCreate(ALGO_SKM_RANDOM, outputDirectory, groundTruth, track);
       double duration;
 
       bool savedZeroResults = false;
@@ -3513,7 +3660,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       printf("Random Split k-means\n");
 
-      for (size_t i = 0; i < loopCount; ++i)
+      for (size_t i = firstRun; i < loopCount; ++i)
       {
           if (logLevel >= 2) printf("Round %zu\n", i + 1);
 
@@ -3526,14 +3673,13 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
           Centroids centroids = allocateCentroids(1, dataPoints->points[0].dimensions);
 
-          start = clock();
+          trackerBeginRun(&tracker, i);
 
           generateRandomCentroids(centroids.size, dataPoints, &centroids, rng);
 
-          double resultSse = runRandomSplit(dataPoints, &centroids, numCentroids, maxIterations, groundTruth, outputDirectory, (i == 0 && trackProgress), start, trackProgress, rng);
+          double resultSse = runRandomSplit(dataPoints, &centroids, numCentroids, maxIterations, &tracker, rng);
 
-          end = clock();
-          duration = ((double)(end - start)) / CLOCKS_PER_MS;
+          duration = trackerEndRun(&tracker);
 
           size_t centroidIndex = centroidIndexOrNA(&centroids, groundTruth);
 
@@ -3547,37 +3693,25 @@ void freeDataPointArray(DataPoint* points, size_t size)
           freeCentroids(&centroids);
       }
 
-      printStatistics("Random Split", stats, loopCount, numCentroids, scaling);
-      writeResultsToFile(fileName, stats, numCentroids, "SKM_Random", loopCount, scaling, outputDirectory);
+      trackerFree(&tracker);
+
+      printStatistics("Random Split", stats, loopCount - firstRun, numCentroids, scaling);
+      writeResultsToFile(fileName, stats, numCentroids, "SKM_Random", loopCount - firstRun, scaling, outputDirectory);
   }
 
+
   /**
-   * @brief Runs SSE-based Split k-means and aggregates CI/SSE/time across runs.
+   * @brief SSE-based split k-means runs firstRun..loopCount-1 (see runKMeansAlgorithm for the shared run loop and outputs).
    *
-   * Wraps `runSseSplit` for three strategies (intra-cluster, global, local repartition)
-   * and reports aggregate statistics over `loopCount` runs. Produces one failed and one
-   * perfect snapshot to aid diagnostics.
-   *
-   * @param dataPoints Dataset clustered in-place; partitions updated during runs.
-   * @param groundTruth Reference centroids for CI (may be NULL).
-   * @param numCentroids Target K; must satisfy 1 <= K <= N.
-   * @param maxIterations Upper bound for refinements inside the split strategy.
-   * @param loopCount Number of independent runs.
-   * @param scaling SSE divisor for CSV summary.
-   * @param fileName Base name for the CSV summary file.
-   * @param outputDirectory Destination directory for outputs.
-   * @param splitType Strategy: 0=IntraCluster, 1=Global, 2=LocalRepartition.
-   * @param trackProgress Enable per-iteration logging in the first run.
-   * @return void
-   * @errors Exits on allocation failures via helpers; validates inputs to preempt invalid runs.
-   * @note Timing buffer is allocated only when requested.
+   * Each run starts from one random data point and calls runSseSplit with `splitType` (SKM-Intra, SKM-Global,
+   * SKM-Global-Basic or SKM-Local).
    */
-  void runSseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, size_t splitType, bool trackProgress, uint64_t seed)
+  void runSseSplitAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t firstRun, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, Algorithm splitType, const TrackOptions* track, uint64_t seed)
   {
       Statistics stats;
       initializeStatistics(&stats);
 
-      clock_t start, end;
+      Tracker tracker = trackerCreate(splitType, outputDirectory, groundTruth, track);
       double duration;
 
       const char* splitTypeName = getAlgorithmName(splitType);
@@ -3587,7 +3721,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       printf("%s\n", splitTypeName);
 
-      for (size_t i = 0; i < loopCount; ++i)
+      for (size_t i = firstRun; i < loopCount; ++i)
       {
           if (logLevel >= 2) printf("Round %zu\n", i + 1);
 
@@ -3600,14 +3734,13 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
           Centroids centroids = allocateCentroids(1, dataPoints->points[0].dimensions);
 
-          start = clock();
+          trackerBeginRun(&tracker, i);
 
           generateRandomCentroids(centroids.size, dataPoints, &centroids, rng);
 
-          double resultSse = runSseSplit(dataPoints, &centroids, numCentroids, maxIterations, groundTruth, splitType, outputDirectory, (i == 0 && trackProgress), start, trackProgress, rng);
+          double resultSse = runSseSplit(dataPoints, &centroids, numCentroids, maxIterations, splitType, &tracker, rng);
 
-          end = clock();
-          duration = ((double)(end - start)) / CLOCKS_PER_MS;
+          duration = trackerEndRun(&tracker);
 
           size_t centroidIndex = centroidIndexOrNA(&centroids, groundTruth);
 
@@ -3621,37 +3754,24 @@ void freeDataPointArray(DataPoint* points, size_t size)
           freeCentroids(&centroids);
       }
 
-      printStatistics(splitTypeName, stats, loopCount, numCentroids, scaling);
-      writeResultsToFile(fileName, stats, numCentroids, splitTypeName, loopCount, scaling, outputDirectory);
+      trackerFree(&tracker);
+
+      printStatistics(splitTypeName, stats, loopCount - firstRun, numCentroids, scaling);
+      writeResultsToFile(fileName, stats, numCentroids, splitTypeName, loopCount - firstRun, scaling, outputDirectory);
   }
 
+
   /**
-   * @brief Runs Bisecting k-means and aggregates CI/SSE/time across runs.
+   * @brief Bisecting k-means runs firstRun..loopCount-1 (see runKMeansAlgorithm for the shared run loop and outputs).
    *
-   * Seeds an initial centroid, executes the bisecting loop via `runBisectingKMeans`
-   * until K is reached, and aggregates SSE, CI vs. ground truth, and elapsed time
-   * over `loopCount` runs. Writes one failed and one perfect snapshot for inspection.
-   *
-   * @param dataPoints Dataset clustered in-place; partitions updated per run.
-   * @param groundTruth Reference centroids for CI (may be NULL).
-   * @param numCentroids Target K; must satisfy 1 <= K <= N.
-   * @param maxIterations Max iterations for local/global refinements in the core loop.
-   * @param loopCount Number of independent runs.
-   * @param scaling SSE divisor for CSV summary.
-   * @param fileName Base name for the CSV summary file.
-   * @param outputDirectory Destination directory for outputs.
-   * @param trackProgress Enable per-iteration logging in the first run.
-   * @param bisectingIterations Local k-means attempts per split (clamped to ≥1).
-   * @return void
-   * @errors Exits on allocation failures via helpers; validates inputs to preempt invalid runs.
-   * @note Timing buffer is allocated only when requested.
+   * Each run starts from one random data point and calls runBisectingKMeans with `bisectingIterations` tries per split.
    */
-  void runBisectingKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, bool trackProgress, size_t bisectingIterations, uint64_t seed)
+  void runBisectingKMeansAlgorithm(DataPoints* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations, size_t firstRun, size_t loopCount, size_t scaling, const char* fileName, const char* outputDirectory, const TrackOptions* track, size_t bisectingIterations, uint64_t seed)
   {
       Statistics stats;
       initializeStatistics(&stats);
 
-      clock_t start, end;
+      Tracker tracker = trackerCreate(ALGO_BISECTING, outputDirectory, groundTruth, track);
       double duration;
 
       bool savedZeroResults = false;
@@ -3659,7 +3779,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       printf("Bisecting k-means\n");
 
-      for (size_t i = 0; i < loopCount; ++i)
+      for (size_t i = firstRun; i < loopCount; ++i)
       {
           if (logLevel >= 2) printf("Round %zu\n", i + 1);
 
@@ -3672,14 +3792,13 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
           Centroids centroids = allocateCentroids(1, dataPoints->points[0].dimensions);
 
-          start = clock();
+          trackerBeginRun(&tracker, i);
 
           generateRandomCentroids(centroids.size, dataPoints, &centroids, rng);
 
-          double resultSse = runBisectingKMeans(dataPoints, &centroids, numCentroids, maxIterations, groundTruth, outputDirectory, (i == 0 && trackProgress), start, trackProgress, bisectingIterations, rng);
+          double resultSse = runBisectingKMeans(dataPoints, &centroids, numCentroids, maxIterations, bisectingIterations, &tracker, rng);
 
-          end = clock();
-          duration = ((double)(end - start)) / CLOCKS_PER_MS;
+          duration = trackerEndRun(&tracker);
 
           size_t centroidIndex = centroidIndexOrNA(&centroids, groundTruth);
 
@@ -3693,27 +3812,32 @@ void freeDataPointArray(DataPoint* points, size_t size)
           freeCentroids(&centroids);
       }
 
-      printStatistics("Bisecting", stats, loopCount, numCentroids, scaling);
-      writeResultsToFile(fileName, stats, numCentroids, "Bisecting_KM", loopCount, scaling, outputDirectory);
+      trackerFree(&tracker);
+
+      printStatistics("Bisecting", stats, loopCount - firstRun, numCentroids, scaling);
+      writeResultsToFile(fileName, stats, numCentroids, "Bisecting_KM", loopCount - firstRun, scaling, outputDirectory);
   }
 
   /////////////
   // Random //
   ///////////
 
+  static bool parseUint64(const char* text, uint64_t* out);
+
 /**
- * @brief Builds ground-truth centroids from data and a partition file.
+ * @brief Builds ground-truth centroids from data and a partition file (the gt-from-partition subcommand).
  *
- * Reads points (uniform dimensionality), then reads one 1-based partition label per point,
- * converts labels to 0-based, and computes per-cluster means. Writes centroids to a file.
- * Shrinks the dataset if the partition file has fewer entries; warns if it has more.
+ * Reads points (uniform dimensionality), then one 1-based cluster label per point (whitespace-separated
+ * integers, usually one per line), and writes the cluster means (`%f` with a trailing space). K is the
+ * largest label; an empty cluster keeps a zero centroid with a warning.
  *
  * @param dataFileName Path to data points (whitespace-separated doubles).
- * @param partitionFileName Path to partition labels (one integer per line, 1..K).
+ * @param partitionFileName Path to partition labels (integers 1..K, one per data point).
  * @param outputFileName Path to write centroids (space-separated doubles per row).
- * @return 0 on success; non-zero on invalid inputs, file I/O failures, or empty partitions.
- * @errors Prints diagnostics to stderr/stdout and returns non-zero; alloc failures exit via helpers.
- * @note Expects 1-based labels; converts to 0-based. Ignores extra partition lines beyond N.
+ * @return 0 on success; 1 when the data file has no rows, a file cannot be opened, a label is not an integer from
+ *         1 to N, or the partition file has fewer or more labels than the data file has points.
+ * @errors The data file is read by readDataPoints, which exits on its errors; lines over LINE_BUFSZ - 1 characters
+ *         and allocation failures exit.
  */
   int generateGroundTruthCentroids(const char* dataFileName, const char* partitionFileName, const char* outputFileName)
   {
@@ -3728,7 +3852,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
       printf("Read %zu data points from %s\n", dataPoints.size, dataFileName);
 
-      // Read the partition indices
+      // Read the partition labels: integers 1..N, exactly one per data point
       FILE* partitionFile;
 
       if (FOPEN(partitionFile, partitionFileName, "r") != 0)
@@ -3738,73 +3862,53 @@ void freeDataPointArray(DataPoint* points, size_t size)
           return 1;
       }
 
-      // Assign the partition indices to the data points
       size_t maxPartitionIndex = 0;
-      size_t validDataPoints = 0;
-
-      // Determine if we have a mismatch between dataPoints size and partition file entries
-      for (size_t i = 0; i < dataPoints.size; ++i)
+      size_t labelCount = 0;
+      bool valid = true;
+      char line[LINE_BUFSZ];
+      for (size_t lineNumber = 1; valid && readDataLine(line, sizeof(line), partitionFile, partitionFileName, lineNumber) != NULL; ++lineNumber)
       {
-          int partitionIndex;
-          if (fscanf(partitionFile, "%d", &partitionIndex) != 1)
+          char* context = NULL;
+          for (char* token = STRTOK(line, " \t\r\n", &context); token != NULL; token = STRTOK(NULL, " \t\r\n", &context))
           {
-              // If we can't read more partitions but still have data points, we have a mismatch
-              if (i < dataPoints.size - 1)
+              uint64_t label = 0;
+              if (!parseUint64(token, &label) || label < 1 || label > dataPoints.size)
               {
-                  printf("Warning: Partition file has fewer entries (%zu) than data points (%zu).\n",
-                      i, dataPoints.size);
-
-                  // Adjust the dataPoints size to match the valid entries we read
-                  dataPoints.size = i;
+                  fprintf(stderr, "Error: '%s' line %zu: '%s' is not a cluster label from 1 to %zu\n",
+                      partitionFileName, lineNumber, token, dataPoints.size);
+                  valid = false;
                   break;
               }
-
-              // Normal end of file
-              break;
+              if (labelCount == dataPoints.size)
+              {
+                  fprintf(stderr, "Error: '%s' has more labels than the %zu data points of '%s'\n",
+                      partitionFileName, dataPoints.size, dataFileName);
+                  valid = false;
+                  break;
+              }
+              const size_t clusterIndex = (size_t)(label - 1);
+              dataPoints.points[labelCount++].partition = clusterIndex;
+              if (clusterIndex > maxPartitionIndex)
+              {
+                  maxPartitionIndex = clusterIndex;
+              }
           }
-
-          // Subtract 1 to adjust for partitions starting from 1 instead of 0
-          partitionIndex -= 1;
-
-          // Make sure partition index is non-negative
-          if (partitionIndex < 0)
-          {
-              fprintf(stderr, "Error: Negative partition index found for data point %zu\n", i);
-              fclose(partitionFile);
-              freeDataPoints(&dataPoints);
-              return 1;
-          }
-
-          dataPoints.points[i].partition = (size_t)partitionIndex;
-
-          if (dataPoints.points[i].partition > maxPartitionIndex)
-          {
-              maxPartitionIndex = dataPoints.points[i].partition;
-          }
-
-          validDataPoints++;
       }
-
-      // Check if there are more partitions in the file than data points
-      int extraPartition;
-      if (fscanf(partitionFile, "%d", &extraPartition) == 1)
-      {
-          printf("Warning: Partition file has more entries than data points. Data file has %zu points.\n",
-              dataPoints.size);
-
-          // Count how many extra partitions there are
-          size_t extraPartitions = 1;  // We already read one
-          while (fscanf(partitionFile, "%d", &extraPartition) == 1)
-          {
-              extraPartitions++;
-          }
-          printf("Found %zu extra partition entries.\n", extraPartitions);
-      }
-
       fclose(partitionFile);
 
-      printf("Processing %zu valid data points with partitions ranging from 0 to %zu\n",
-          validDataPoints, maxPartitionIndex);
+      if (valid && labelCount != dataPoints.size)
+      {
+          fprintf(stderr, "Error: '%s' has %zu labels for the %zu data points of '%s'\n",
+              partitionFileName, labelCount, dataPoints.size, dataFileName);
+          valid = false;
+      }
+      if (!valid)
+      {
+          freeDataPoints(&dataPoints);
+          return 1;
+      }
+
+      printf("Read %zu labels, clusters 1 to %zu\n", labelCount, maxPartitionIndex + 1);
 
       // The number of centroids is maxPartitionIndex + 1 (assuming 0-based indexing)
       size_t numCentroids = maxPartitionIndex + 1;
@@ -3822,12 +3926,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
       {
           size_t clusterIndex = dataPoints.points[i].partition;
 
-          // Skip any invalid cluster indices (this is a safety check)
-          if (clusterIndex >= numCentroids)
-          {
-              fprintf(stderr, "Error: Invalid cluster index %zu for data point %zu\n", clusterIndex, i);
-              continue;
-          }
+          // Every label was checked against 1..N and K is the largest one
+          assert(clusterIndex < numCentroids);
 
           // Add the attribute values to the centroid sum
           for (size_t j = 0; j < dataPoints.points[i].dimensions; ++j)
@@ -3888,16 +3988,10 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Computes Centroid Index (CI) between a debug centroid file and ground truth.
+   * @brief Prints the Centroid Index between a centroid file and a ground-truth file, with the file names and sizes.
    *
-   * Loads both centroid sets, validates matching dimensionality and non-empty inputs,
-   * then prints the CI. Intended for quick verification of centroid files.
-   *
-   * @param debugCentroidsFile Path to candidate centroid file.
-   * @param groundTruthFile Path to ground-truth centroid file.
-   * @return void
-   * @errors Prints diagnostics and returns early on file/dimension issues; allocations exit via helpers.
-   * @note CI compares mutual nearest-neighbor coverage; lower is better, 0 means perfect match.
+   * Used by runDebuggery. Does not check that the files are non-empty or have the same dimensionality
+   * (an empty file is read out of bounds); the ci subcommand checks both.
    */
   void debugCalculateCI(const char* debugCentroidsFile, const char* groundTruthFile)
   {
@@ -3924,16 +4018,10 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
   /**
-   * @brief Computes SSE for assigning points to nearest centroids from files.
+   * @brief Prints the SSE of a data file with every point at its nearest centroid of a centroid file.
    *
-   * Loads centroids and data points, validates matching dimensionality and non-empty inputs,
-   * assigns each point to its nearest centroid, and prints the resulting SSE.
-   *
-   * @param debugCentroidsFile Path to centroid file (one centroid per line).
-   * @param dataFile Path to data file (one point per line).
-   * @return void
-   * @errors Prints diagnostics and returns early on file/dimension issues; allocations exit via helpers.
-   * @note Uses squared Euclidean distance; lower SSE indicates tighter clustering.
+   * Used by runDebuggery. Does not check that the files are non-empty or have the same dimensionality;
+   * the sse subcommand checks both.
    */
   void debugCalculateSSE(const char* debugCentroidsFile, const char* dataFile)
   {
@@ -3971,6 +4059,77 @@ void freeDataPointArray(DataPoint* points, size_t size)
       debugCalculateSSE("debuggery/output_worms_64d.txt", "data/worms_64d.txt");
   }
 
+  /////////////////
+  // Subcommands //
+  /////////////////
+
+  /** @brief Exits unless both point sets are non-empty and have the same number of dimensions. */
+  static void requireCompatible(const DataPoint* first, size_t firstCount, const char* firstFile,
+      const DataPoint* second, size_t secondCount, const char* secondFile)
+  {
+      if (firstCount == 0 || secondCount == 0)
+      {
+          fprintf(stderr, "Error: %s has no rows\n", firstCount == 0 ? firstFile : secondFile);
+          exit(EXIT_FAILURE);
+      }
+      if (first[0].dimensions != second[0].dimensions)
+      {
+          fprintf(stderr, "Error: %s has %zu dimensions, %s has %zu\n",
+              firstFile, first[0].dimensions, secondFile, second[0].dimensions);
+          exit(EXIT_FAILURE);
+      }
+  }
+
+  /** @brief `ci <centroids.txt> <ground-truth.txt>`: prints the Centroid Index of the centroids against the ground truth. */
+  static int commandCi(int argc, char* argv[])
+  {
+      if (argc != 2)
+      {
+          fprintf(stderr, "Usage: split_kmeans ci <centroids.txt> <ground-truth.txt>\n");
+          return EXIT_FAILURE;
+      }
+      Centroids centroids = readCentroids(argv[0]);
+      Centroids truth = readCentroids(argv[1]);
+      requireCompatible(centroids.points, centroids.size, argv[0], truth.points, truth.size, argv[1]);
+
+      printf("%zu\n", calculateCentroidIndex(&centroids, &truth));
+
+      freeCentroids(&centroids);
+      freeCentroids(&truth);
+      return EXIT_SUCCESS;
+  }
+
+  /** @brief `sse <data.txt> <centroids.txt>`: prints the SSE (%.17g) of the data with every point at its nearest centroid. */
+  static int commandSse(int argc, char* argv[])
+  {
+      if (argc != 2)
+      {
+          fprintf(stderr, "Usage: split_kmeans sse <data.txt> <centroids.txt>\n");
+          return EXIT_FAILURE;
+      }
+      DataPoints dataPoints = readDataPoints(argv[0]);
+      Centroids centroids = readCentroids(argv[1]);
+      requireCompatible(dataPoints.points, dataPoints.size, argv[0], centroids.points, centroids.size, argv[1]);
+
+      partitionStep(&dataPoints, &centroids);
+      printf("%.17g\n", calculateSSE(&dataPoints, &centroids));
+
+      freeDataPoints(&dataPoints);
+      freeCentroids(&centroids);
+      return EXIT_SUCCESS;
+  }
+
+  /** @brief `gt-from-partition <data.txt> <partition.txt> <out.txt>`: writes the mean of each cluster (labels 1..K, one per line). */
+  static int commandGtFromPartition(int argc, char* argv[])
+  {
+      if (argc != 3)
+      {
+          fprintf(stderr, "Usage: split_kmeans gt-from-partition <data.txt> <partition.txt> <out.txt>\n");
+          return EXIT_FAILURE;
+      }
+      return generateGroundTruthCentroids(argv[0], argv[1], argv[2]) == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+  }
+
 
   ///////////
   // Main //
@@ -3980,19 +4139,19 @@ void freeDataPointArray(DataPoint* points, size_t size)
   typedef struct
   {
       const char* name;
-      size_t id;
+      Algorithm id;
   } AlgorithmOption;
 
   /** @brief Accepted `--algo` names, in the order the algorithms run. */
   static const AlgorithmOption algorithmOptions[] =
   {
-      { "km", 6 }, { "rkm", 7 }, { "rs", 3 }, { "skm-random", 5 }, { "skm-intra", 0 },
-      { "skm-global", 1 }, { "skm-global-basic", 8 }, { "skm-local", 2 }, { "bisecting", 4 },
+      { "km", ALGO_KM }, { "rkm", ALGO_RKM }, { "rs", ALGO_RS }, { "skm-random", ALGO_SKM_RANDOM }, { "skm-intra", ALGO_SKM_INTRA },
+      { "skm-global", ALGO_SKM_GLOBAL }, { "skm-global-basic", ALGO_SKM_GLOBAL_BASIC }, { "skm-local", ALGO_SKM_LOCAL }, { "bisecting", ALGO_BISECTING },
   };
 
   #define ALGORITHM_COUNT (sizeof(algorithmOptions) / sizeof(algorithmOptions[0]))
 
-  /** @brief Command-line options. The defaults reproduce v1.0.0: SKM-Local, 100 runs, RKM and RS once. */
+  /** @brief Command-line options. The defaults reproduce v1.0.0: SKM-Local, 100 runs, RKM and RS once, 5000 swaps, 1000 repeats, 5 tries. */
   typedef struct
   {
       uint64_t seed;          /**< Master seed; run i of every algorithm uses rng_derive_seed(seed, i). */
@@ -4002,8 +4161,23 @@ void freeDataPointArray(DataPoint* points, size_t size)
       size_t maxSwaps;        /**< Random Swap trial swaps. */
       size_t maxRepeats;      /**< Repeated k-means repeats per run. */
       size_t bisectTries;     /**< Bisecting k-means tries per split. */
+      InitMethod init;        /**< Initial centroids of KM, RKM and RS. */
+      size_t firstRun;        /**< First run to make, 1-based; runs firstRun..runs keep their derived seeds. */
       bool algorithms[ALGORITHM_COUNT];
   } Options;
+
+  /** @brief True when the algorithm named `name` (an --algo name) is selected. */
+  static bool algorithmSelected(const Options* opt, const char* name)
+  {
+      for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
+      {
+          if (strcmp(algorithmOptions[a].name, name) == 0)
+          {
+              return opt->algorithms[a];
+          }
+      }
+      return false;
+  }
 
   /** @brief Parses a comma-separated `--algo` list; false on an empty list or an unknown name. */
   static bool parseAlgorithmList(const char* list, bool selected[ALGORITHM_COUNT])
@@ -4057,10 +4231,1480 @@ void freeDataPointArray(DataPoint* points, size_t size)
       return true;
   }
 
+  /** @brief Reads the value after option `argv[*i]` as an integer of at least `minimum` and advances `*i`; exits otherwise. */
+  static size_t countOption(int argc, char* argv[], int* i, uint64_t minimum)
+  {
+      const char* name = argv[*i];
+      uint64_t value = 0;
+      if (*i + 1 >= argc || !parseUint64(argv[*i + 1], &value) || value < minimum || (uint64_t)(size_t)value != value)
+      {
+          fprintf(stderr, "Error: %s requires an integer of at least %" PRIu64 "\n", name, minimum);
+          fprintf(stderr, "Use -h for help\n");
+          exit(EXIT_FAILURE);
+      }
+      ++*i;
+      return (size_t)value;
+  }
+
+  /** @brief Returns the value after option `argv[*i]` and advances `*i`; exits when it is missing. */
+  static const char* textOption(int argc, char* argv[], int* i)
+  {
+      if (*i + 1 >= argc)
+      {
+          fprintf(stderr, "Error: %s requires a value\n", argv[*i]);
+          fprintf(stderr, "Use -h for help\n");
+          exit(EXIT_FAILURE);
+      }
+      ++*i;
+      return argv[*i];
+  }
+
+  /** @brief Creates `path` and its missing parent folders (as mkdir -p); false with errno set on failure. */
+  static bool makeDirectories(const char* path)
+  {
+      char partial[PATH_MAX];
+      const size_t length = strlen(path);
+      if (length == 0 || length >= sizeof(partial))
+      {
+          errno = ENAMETOOLONG;
+          return false;
+      }
+      for (size_t i = 1; i <= length; ++i)
+      {
+          if (i < length && path[i] != '/' && path[i] != '\\')
+          {
+              continue;
+          }
+          memcpy(partial, path, i);
+          partial[i] = '\0';
+          if (i == 2 && partial[1] == ':')
+          {
+              continue; // drive root such as C:
+          }
+          if (MAKE_DIR(partial) != 0 && errno != EEXIST)
+          {
+              return false;
+          }
+      }
+      return true;
+  }
+
+  /** @brief Parses `all` or a comma-separated list of numbers and ranges such as `1,3-5` (no empty items); false on anything else. */
+  static bool parseSelection(const char* text, Selection* selection)
+  {
+      selection->all = false;
+      selection->rangeCount = 0;
+      if (strcmp(text, "all") == 0)
+      {
+          selection->all = true;
+          return true;
+      }
+
+      char buffer[256];
+      if (text[0] == '\0' || strlen(text) >= sizeof(buffer))
+      {
+          return false;
+      }
+      STRCPY(buffer, sizeof(buffer), text);
+
+      char* item = buffer;
+      while (item != NULL)
+      {
+          char* next = strchr(item, ',');
+          if (next != NULL)
+          {
+              *next++ = '\0';
+          }
+          if (selection->rangeCount == MAX_RANGES)
+          {
+              return false;
+          }
+
+          uint64_t low = 0;
+          uint64_t high = 0;
+          char* dash = strchr(item, '-');
+          if (dash != NULL)
+          {
+              *dash = '\0';
+              if (!parseUint64(item, &low) || !parseUint64(dash + 1, &high) || high < low)
+              {
+                  return false;
+              }
+          }
+          else if (!parseUint64(item, &low))
+          {
+              return false;
+          }
+          else
+          {
+              high = low;
+          }
+          if ((uint64_t)(size_t)high != high)
+          {
+              return false;
+          }
+
+          selection->low[selection->rangeCount] = (size_t)low;
+          selection->high[selection->rangeCount] = (size_t)high;
+          selection->rangeCount++;
+          item = next;
+      }
+      return true;
+  }
+
+  /**
+   * @brief Parses --snapshots: `none`, or RUNS[:ITERATIONS][:split].
+   *
+   * RUNS (1-based) and ITERATIONS (the counts of `_log.csv`) are `all` or lists such as `1,3-5`; ITERATIONS defaults
+   * to all; `split` adds the state after each two-way split. False on anything else.
+   */
+  static bool parseSnapshotSpec(const char* text, SnapshotSpec* spec)
+  {
+      spec->enabled = false;
+      spec->split = false;
+      spec->runs.all = true;
+      spec->runs.rangeCount = 0;
+      spec->counts.all = true;
+      spec->counts.rangeCount = 0;
+      if (strcmp(text, "none") == 0)
+      {
+          return true;
+      }
+
+      char buffer[256];
+      if (strlen(text) >= sizeof(buffer))
+      {
+          return false;
+      }
+      STRCPY(buffer, sizeof(buffer), text);
+
+      char* parts[4] = { NULL, NULL, NULL, NULL };
+      size_t partCount = 0;
+      for (char* part = buffer; part != NULL && partCount < 4; ++partCount)
+      {
+          parts[partCount] = part;
+          char* next = strchr(part, ':');
+          if (next != NULL)
+          {
+              *next++ = '\0';
+          }
+          part = next;
+      }
+      if (partCount > 3 || !parseSelection(parts[0], &spec->runs))
+      {
+          return false;
+      }
+      for (size_t r = 0; r < spec->runs.rangeCount; ++r)
+      {
+          if (spec->runs.low[r] == 0)
+          {
+              return false; // runs are 1-based
+          }
+      }
+
+      bool countsGiven = false;
+      for (size_t i = 1; i < partCount; ++i)
+      {
+          if (strcmp(parts[i], "split") == 0 && i == partCount - 1)
+          {
+              spec->split = true;
+          }
+          else if (!countsGiven && parseSelection(parts[i], &spec->counts))
+          {
+              countsGiven = true;
+          }
+          else
+          {
+              return false;
+          }
+      }
+
+      spec->enabled = true;
+      return true;
+  }
+
+  /** @brief Size of the run_config.txt header buffer. */
+  #define RUN_CONFIG_SIZE 8192
+
+  /**
+   * @brief Writes the shared part of run_config.txt into `text`: what must agree for every call that writes to one folder.
+   *
+   * Version, commit, compiler and flags, timer, machine, CPU, master seed, log level and the algorithm parameters.
+   */
+  static void runConfigHeader(char* text, size_t size, const Options* opt)
+  {
+      char machine[512];
+      char cpu[256];
+      char iterations[32];
+      platform_machine(machine, sizeof(machine));
+      platform_cpu(cpu, sizeof(cpu));
+      if (opt->maxIterations == SIZE_MAX)
+      {
+          snprintf(iterations, sizeof(iterations), "until the SSE stops improving");
+      }
+      else
+      {
+          snprintf(iterations, sizeof(iterations), "%zu", opt->maxIterations);
+      }
+
+  #ifdef NDEBUG
+      const char* asserts = "off (NDEBUG)";
+  #else
+      const char* asserts = "on";
+  #endif
+
+      const int length = snprintf(text, size,
+          "# Split_kMeans run configuration. Every call that writes to this folder must match the lines above \"calls:\".\n"
+          "version: %s\n"
+          "commit: %s\n"
+          "compiler: %s\n"
+          "flags: %s\n"
+          "asserts: %s\n"
+          "timer: %s\n"
+          "machine: %s\n"
+          "cpu: %s\n"
+          "seed: %" PRIu64 "\n"
+          "log-level: %d\n"
+          "max-iterations: %s\n"
+          "max-swaps: %zu\n"
+          "repeats: %zu\n"
+          "bisect-tries: %zu\n"
+          "init: %s\n"
+          "decimal-comma: %s\n"
+          "calls:\n",
+          SKM_VERSION, SKM_GIT_COMMIT, platform_compiler(), SKM_BUILD_FLAGS, asserts, platform_clock_name(),
+          machine, cpu, opt->seed, logLevel, iterations, opt->maxSwaps, opt->maxRepeats, opt->bisectTries,
+          opt->init == INIT_KMEANSPP ? "kmeans++" : "random", decimalComma ? "on" : "off");
+      if (length < 0 || (size_t)length >= size)
+      {
+          fprintf(stderr, "Error: run_config.txt header too long\n");
+          exit(EXIT_FAILURE);
+      }
+  }
+
+  /** @brief Copies line `index` (0-based) of `text` into `line`, or "(none)". */
+  static void textLine(const char* text, size_t index, char* line, size_t size)
+  {
+      for (size_t i = 0; i < index && text != NULL; ++i)
+      {
+          text = strchr(text, '\n');
+          if (text != NULL) ++text;
+      }
+      if (text == NULL || *text == '\0')
+      {
+          snprintf(line, size, "(none)");
+          return;
+      }
+      const size_t length = strcspn(text, "\n");
+      snprintf(line, size, "%.*s", (int)(length < size ? length : size - 1), text);
+  }
+
+  /**
+   * @brief Creates or extends `<outputDirectory>/run_config.txt`; exits when the folder holds results of another configuration.
+   *
+   * The shared header (runConfigHeader) must equal the one in the file; then one entry per call is appended:
+   * the time, the command line (the program by file name, without its folder) and the resolved options
+   * (mode, algorithms, runs, tracking).
+   */
+  static void writeRunConfig(const char* outputDirectory, const Options* opt, const TrackOptions* track, const char* snapshotsText, const char* datasetsText,
+      bool cliMode, int argc, char* argv[])
+  {
+      char header[RUN_CONFIG_SIZE];
+      runConfigHeader(header, sizeof(header), opt);
+
+      char path[PATH_MAX];
+      joinPath(path, sizeof(path), outputDirectory, "run_config.txt");
+
+      const bool exists = fileExists(path);
+      if (exists)
+      {
+          FILE* file;
+          if (FOPEN(file, path, "r") != 0)
+          {
+              handleFileError(path);
+          }
+          char existing[RUN_CONFIG_SIZE];
+          const size_t length = fread(existing, 1, sizeof(existing) - 1, file);
+          existing[length] = '\0';
+          fclose(file);
+
+          const size_t headerLength = strlen(header);
+          if (length < headerLength || memcmp(existing, header, headerLength) != 0)
+          {
+              size_t line = 0;
+              char ours[1024];
+              char theirs[1024];
+              do
+              {
+                  textLine(header, line, ours, sizeof(ours));
+                  textLine(existing, line, theirs, sizeof(theirs));
+                  ++line;
+              } while (strcmp(ours, theirs) == 0 && strcmp(ours, "(none)") != 0);
+              fprintf(stderr, "Error: %s belongs to another configuration; write to a new -o folder\n", path);
+              fprintf(stderr, "  this call:   %s\n  that folder: %s\n", ours, theirs);
+              exit(EXIT_FAILURE);
+          }
+      }
+
+      FILE* file;
+      if (FOPEN(file, path, exists ? "a" : "w") != 0)
+      {
+          handleFileError(path);
+      }
+      if (!exists)
+      {
+          fputs(header, file);
+      }
+
+      time_t now = time(NULL);
+      struct tm local;
+      LOCALTIME(&local, &now);
+      char stamp[32];
+      if (strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S", &local) == 0)
+      {
+          snprintf(stamp, sizeof(stamp), "unknown time");
+      }
+      fprintf(file, "%s | ", stamp);
+      // The program by file name only: argv[0] can be an absolute path with the user name (PowerShell passes one)
+      const char* program = argc > 0 && argv[0] != NULL ? argv[0] : "split_kmeans";
+      for (const char* c = program; *c != '\0'; ++c)
+      {
+          if (*c == '/' || *c == '\\')
+          {
+              program = c + 1;
+          }
+      }
+      fputs(program, file);
+      for (int i = 1; i < argc; ++i)
+      {
+          fprintf(file, " %s", argv[i]);
+      }
+      fprintf(file, "\n  mode: %s; algorithms:", cliMode ? "cli" : "batch");
+      for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
+      {
+          if (opt->algorithms[a])
+          {
+              fprintf(file, " %s", algorithmOptions[a].name);
+          }
+      }
+      fprintf(file, "; runs: %zu to %zu (RKM and RS: to %zu); datasets: %s; track-progress: %s; snapshots: %s; track-inner: %s\n",
+          opt->firstRun, opt->runs, opt->runsGiven ? opt->runs : (size_t)1, datasetsText, track->rows ? "on" : "off", snapshotsText,
+          track->inner ? "on" : "off");
+      fclose(file);
+  }
+
+  /**
+   * @brief Writes `<datasetDirectory>/dataset.txt` (data and ground-truth files, K, N, D; `report` reads K from it).
+   *
+   * Exits when the folder already describes a dataset with another K, N or D (no mixing of datasets in one folder).
+   */
+  static void writeDatasetInfo(const char* datasetDirectory, const char* dataFile, const char* gtFile, size_t k, size_t n, size_t d)
+  {
+      char path[PATH_MAX];
+      joinPath(path, sizeof(path), datasetDirectory, "dataset.txt");
+
+      char shape[128];
+      snprintf(shape, sizeof(shape), "k: %zu\nn: %zu\nd: %zu\n", k, n, d);
+
+      if (fileExists(path))
+      {
+          FILE* file;
+          if (FOPEN(file, path, "r") != 0)
+          {
+              handleFileError(path);
+          }
+          char existing[2 * PATH_MAX + 256];
+          const size_t length = fread(existing, 1, sizeof(existing) - 1, file);
+          existing[length] = '\0';
+          fclose(file);
+          if (strstr(existing, shape) == NULL)
+          {
+              fprintf(stderr, "Error: %s describes another dataset or K (this call: k %zu, n %zu, d %zu); write to a new -o folder\n",
+                  path, k, n, d);
+              exit(EXIT_FAILURE);
+          }
+          return;
+      }
+
+      FILE* file;
+      if (FOPEN(file, path, "w") != 0)
+      {
+          handleFileError(path);
+      }
+      fprintf(file, "data: %s\nground-truth: %s\n%s", dataFile, gtFile[0] != '\0' ? gtFile : "none", shape);
+      fclose(file);
+  }
+
+  /////////////
+  // Report //
+  /////////////
+
+  /** @brief One `_runs.csv` row or one `_log.csv` row (`count` is 0 for runs). */
+  typedef struct
+  {
+      size_t run;    /**< 1-based. */
+      size_t count;
+      double sse;
+      size_t ci;     /**< CI_NA when not available. */
+      double ms;
+      size_t order;  /**< Position in its ReportRows (set by reportPush), so sorting keeps the file order. */
+  } ReportRow;
+
+  /** @brief Growing array of report rows; free `rows`. */
+  typedef struct
+  {
+      ReportRow* rows;
+      size_t count;
+      size_t capacity;
+  } ReportRows;
+
+  /** @brief The runs and tracked states of one algorithm on one dataset, merged over the batch folders. */
+  typedef struct
+  {
+      ReportRows runs; /**< `_runs.csv`. */
+      ReportRows log;  /**< `_log.csv`. */
+  } ReportAlgorithm;
+
+  /** @brief One dataset of the report. */
+  typedef struct
+  {
+      char name[256];                              /**< Folder name. */
+      char display[256];                           /**< Name in the tables (--names). */
+      size_t k;                                    /**< From dataset.txt; 0 when unknown. */
+      ReportAlgorithm algorithms[ALGORITHM_COUNT]; /**< Indexed like algorithmOptions. */
+  } ReportDataset;
+
+  /** @brief Means over the runs of one algorithm on one dataset. */
+  typedef struct
+  {
+      size_t runs;
+      double sseMean;
+      double sseSd;
+      double ciMean;
+      double successPct;
+      double msMean;
+      double msSd;
+      bool ciAvailable;  /**< False when a run has no CI. */
+  } ReportSummary;
+
+  /** @brief One curve point: the time, SSE and CI at a count (means over runs for the mean curves). */
+  typedef struct
+  {
+      size_t count;
+      double ms;
+      double sse;
+      double ci;
+      bool ciAvailable;
+  } CurvePoint;
+
+  /** @brief Display name of an algorithm in the report tables, in the style of the seminar slides. */
+  static const char* reportAlgorithmName(Algorithm algorithm)
+  {
+      switch (algorithm)
+      {
+      case ALGO_KM: return "KM";
+      case ALGO_RKM: return "RKM";
+      case ALGO_RS: return "RS";
+      case ALGO_SKM_RANDOM: return "SKM - Random";
+      case ALGO_SKM_INTRA: return "SKM - Intra";
+      case ALGO_SKM_GLOBAL: return "SKM - Global";
+      case ALGO_SKM_GLOBAL_BASIC: return "SKM - Global basic";
+      case ALGO_SKM_LOCAL: return "SKM - Local";
+      case ALGO_BISECTING: return "Bisecting KM";
+      default: return "Unknown";
+      }
+  }
+
+  static void reportPush(ReportRows* rows, const ReportRow* row)
+  {
+      if (rows->count == rows->capacity)
+      {
+          const size_t grown = rows->capacity ? rows->capacity * 2 : 64;
+          ReportRow* resized = realloc(rows->rows, grown * sizeof(ReportRow));
+          handleMemoryError(resized);
+          rows->rows = resized;
+          rows->capacity = grown;
+      }
+      rows->rows[rows->count] = *row;
+      rows->rows[rows->count].order = rows->count;
+      rows->count++;
+  }
+
+  /** @brief Parses a number field; accepts a decimal comma (files written with --decimal-comma). */
+  static bool reportNumber(const char* text, double* value)
+  {
+      char buffer[NUMBER_TEXT_SIZE];
+      if (strlen(text) >= sizeof(buffer))
+      {
+          return false;
+      }
+      STRCPY(buffer, sizeof(buffer), text);
+      char* comma = strchr(buffer, ',');
+      if (comma != NULL)
+      {
+          *comma = '.';
+      }
+      return parseFiniteDouble(buffer, value);
+  }
+
+  /**
+   * @brief Appends the rows of a `_runs.csv` (run;seed;sse;ci;ms) or `_log.csv` (run;count;sse;ci;ms) file to `rows`.
+   *
+   * Skips the header line (a first line that is not the header is read as data: a file emptied by an interrupted
+   * call gets no header on the next append); exits on a malformed line. For `_runs.csv`, a run number that is
+   * already in `rows` (the same run twice, in one or two batch folders) is an error.
+   */
+  static void reportReadCsv(const char* path, bool isLog, ReportRows* rows)
+  {
+      FILE* file;
+      if (FOPEN(file, path, "r") != 0)
+      {
+          handleFileError(path);
+      }
+
+      const char* header = isLog ? "run;count;sse;ci;ms" : "run;seed;sse;ci;ms";
+      char line[1024];
+      size_t lineNumber = 0;
+      while (fgets(line, sizeof(line), file) != NULL)
+      {
+          ++lineNumber;
+          line[strcspn(line, "\r\n")] = '\0';
+          if ((lineNumber == 1 && strcmp(line, header) == 0) || line[0] == '\0')
+          {
+              continue;
+          }
+
+          char* fields[5];
+          size_t fieldCount = 0;
+          char* field = line;
+          while (field != NULL && fieldCount < 5)
+          {
+              fields[fieldCount++] = field;
+              char* next = strchr(field, ';');
+              if (next != NULL)
+              {
+                  *next++ = '\0';
+              }
+              field = next;
+          }
+
+          uint64_t run = 0;
+          uint64_t second = 0;
+          ReportRow row;
+          row.ci = CI_NA;
+          bool ok = fieldCount == 5 && field == NULL && parseUint64(fields[0], &run) && run >= 1
+              && parseUint64(fields[1], &second) && reportNumber(fields[2], &row.sse) && reportNumber(fields[4], &row.ms);
+          if (ok && strcmp(fields[3], "NA") != 0)
+          {
+              uint64_t ci = 0;
+              ok = parseUint64(fields[3], &ci);
+              row.ci = (size_t)ci;
+          }
+          if (!ok)
+          {
+              fclose(file);
+              fprintf(stderr, "Error: %s line %zu is not a %s row\n", path, lineNumber, header);
+              exit(EXIT_FAILURE);
+          }
+          row.run = (size_t)run;
+          row.count = isLog ? (size_t)second : 0;
+
+          if (!isLog)
+          {
+              for (size_t i = 0; i < rows->count; ++i)
+              {
+                  if (rows->rows[i].run == row.run)
+                  {
+                      fclose(file);
+                      fprintf(stderr, "Error: run %zu appears twice (in %s, or in it and an earlier batch folder)\n", row.run, path);
+                      exit(EXIT_FAILURE);
+                  }
+              }
+          }
+          reportPush(rows, &row);
+      }
+      fclose(file);
+  }
+
+  /** @brief Reads the shared header of `<directory>/run_config.txt` (the lines up to "calls:") into `header`; exits when missing. */
+  static void reportReadHeader(const char* directory, char* header, size_t size)
+  {
+      char path[PATH_MAX];
+      joinPath(path, sizeof(path), directory, "run_config.txt");
+      FILE* file;
+      if (FOPEN(file, path, "r") != 0)
+      {
+          fprintf(stderr, "Error: %s not found; report needs output folders written by version 2.0.0 or later\n", path);
+          exit(EXIT_FAILURE);
+      }
+      const size_t length = fread(header, 1, size - 1, file);
+      header[length] = '\0';
+      fclose(file);
+
+      // A folder written on Windows and copied (not checked out) to Linux keeps its CRLF line ends
+      size_t kept = 0;
+      for (size_t i = 0; i < length; ++i)
+      {
+          if (header[i] != '\r')
+          {
+              header[kept++] = header[i];
+          }
+      }
+      header[kept] = '\0';
+
+      char* calls = strstr(header, "\ncalls:\n");
+      if (calls == NULL)
+      {
+          fprintf(stderr, "Error: %s has no calls: line\n", path);
+          exit(EXIT_FAILURE);
+      }
+      calls[strlen("\ncalls:\n")] = '\0';
+  }
+
+  /** @brief K from `<directory>/dataset.txt`, or 0 when the file is missing. */
+  static size_t reportReadK(const char* directory)
+  {
+      char path[PATH_MAX];
+      joinPath(path, sizeof(path), directory, "dataset.txt");
+      FILE* file;
+      if (FOPEN(file, path, "r") != 0)
+      {
+          return 0;
+      }
+      char line[PATH_MAX + 32];
+      size_t k = 0;
+      while (fgets(line, sizeof(line), file) != NULL)
+      {
+          uint64_t value = 0;
+          line[strcspn(line, "\r\n")] = '\0';
+          if (strncmp(line, "k: ", 3) == 0 && parseUint64(line + 3, &value))
+          {
+              k = (size_t)value;
+          }
+      }
+      fclose(file);
+      return k;
+  }
+
+  /** @brief Means and sample standard deviations of SSE and time, mean CI and success rate of `rows`. */
+  static ReportSummary reportSummarize(const ReportRow* rows, size_t count)
+  {
+      ReportSummary summary;
+      memset(&summary, 0, sizeof(summary));
+      summary.runs = count;
+      summary.ciAvailable = count > 0;
+      if (count == 0)
+      {
+          return summary;
+      }
+
+      size_t successes = 0;
+      for (size_t i = 0; i < count; ++i)
+      {
+          summary.sseMean += rows[i].sse;
+          summary.msMean += rows[i].ms;
+          if (rows[i].ci == CI_NA)
+          {
+              summary.ciAvailable = false;
+          }
+          else
+          {
+              summary.ciMean += (double)rows[i].ci;
+              successes += rows[i].ci == 0;
+          }
+      }
+      summary.sseMean /= (double)count;
+      summary.msMean /= (double)count;
+      summary.ciMean /= (double)count;
+      summary.successPct = 100.0 * (double)successes / (double)count;
+
+      if (count > 1)
+      {
+          for (size_t i = 0; i < count; ++i)
+          {
+              summary.sseSd += (rows[i].sse - summary.sseMean) * (rows[i].sse - summary.sseMean);
+              summary.msSd += (rows[i].ms - summary.msMean) * (rows[i].ms - summary.msMean);
+          }
+          summary.sseSd = sqrt(summary.sseSd / (double)(count - 1));
+          summary.msSd = sqrt(summary.msSd / (double)(count - 1));
+      }
+      return summary;
+  }
+
+  /** @brief Order of `_log.csv` rows: by run, then count, then file order (qsort). */
+  static int compareReportRows(const void* a, const void* b)
+  {
+      const ReportRow* x = a;
+      const ReportRow* y = b;
+      if (x->run != y->run)
+      {
+          return (x->run > y->run) - (x->run < y->run);
+      }
+      if (x->count != y->count)
+      {
+          return (x->count > y->count) - (x->count < y->count);
+      }
+      return (x->order > y->order) - (x->order < y->order);
+  }
+
+  /** @brief Number of the `_log.csv` rows of `run` and, in `*first`, the index of the first; the log is sorted (reportPrepareLog). */
+  static size_t reportRunRows(const ReportRows* log, size_t run, size_t* first)
+  {
+      size_t i = 0;
+      while (i < log->count && log->rows[i].run < run)
+      {
+          ++i;
+      }
+      *first = i;
+      size_t rows = 0;
+      while (i + rows < log->count && log->rows[i + rows].run == run)
+      {
+          ++rows;
+      }
+      return rows;
+  }
+
+  /**
+   * @brief Sorts the `_log.csv` rows of one algorithm by run and count and checks them against its `_runs.csv`; exits on a mismatch.
+   *
+   * Every row must belong to a run of `_runs.csv`; every run must have rows, or none may (tracked and untracked calls
+   * in one report would mix the curves); RS must have them (its results end at the last improvement of each run);
+   * with rows, the RS and RKM curve run must exist.
+   */
+  static void reportPrepareLog(const char* dataset, ReportAlgorithm* data, Algorithm algorithm, size_t curveRun)
+  {
+      ReportRows* log = &data->log;
+      const char* name = getAlgorithmName(algorithm);
+      if (log->count > 1)
+      {
+          qsort(log->rows, log->count, sizeof(ReportRow), compareReportRows);
+      }
+
+      for (size_t i = 0; i < log->count; ++i)
+      {
+          if (i > 0 && log->rows[i].run == log->rows[i - 1].run)
+          {
+              continue;
+          }
+          bool found = false;
+          for (size_t r = 0; r < data->runs.count && !found; ++r)
+          {
+              found = (data->runs.rows[r].run == log->rows[i].run);
+          }
+          if (!found)
+          {
+              fprintf(stderr, "Error: %s %s: _log.csv has rows of run %zu, which is not in _runs.csv\n", dataset, name, log->rows[i].run);
+              exit(EXIT_FAILURE);
+          }
+      }
+
+      if (log->count == 0)
+      {
+          if (algorithm == ALGO_RS)
+          {
+              fprintf(stderr, "Error: %s RS has no _log.csv rows; its results end at the last SSE improvement of each run, "
+                  "so run RS with tracking (batch mode or --track-progress)\n", dataset);
+              exit(EXIT_FAILURE);
+          }
+          return;
+      }
+
+      size_t first = 0;
+      for (size_t r = 0; r < data->runs.count; ++r)
+      {
+          if (reportRunRows(log, data->runs.rows[r].run, &first) == 0)
+          {
+              fprintf(stderr, "Error: %s %s: run %zu has no _log.csv rows but other runs have (calls with and without tracking are mixed)\n",
+                  dataset, name, data->runs.rows[r].run);
+              exit(EXIT_FAILURE);
+          }
+      }
+      if ((algorithm == ALGO_RS || algorithm == ALGO_RKM) && reportRunRows(log, curveRun, &first) == 0)
+      {
+          fprintf(stderr, "Error: --curve-run %zu: %s %s has no run %zu\n", curveRun, dataset, name, curveRun);
+          exit(EXIT_FAILURE);
+      }
+  }
+
+  /**
+   * @brief RS values at the last SSE improvement of each run: the time of the run's last `_log.csv` row with the
+   * `_runs.csv` SSE and CI (Random Swap keeps its best solution, the one found at that swap).
+   *
+   * The log is prepared (reportPrepareLog), so every run has rows. The caller frees the rows.
+   */
+  static ReportRows reportRsAtLastImprovement(const ReportAlgorithm* rs)
+  {
+      ReportRows cut = { NULL, 0, 0 };
+      for (size_t r = 0; r < rs->runs.count; ++r)
+      {
+          ReportRow value = rs->runs.rows[r];
+          size_t first = 0;
+          const size_t rows = reportRunRows(&rs->log, value.run, &first);
+          assert(rows > 0);
+          value.ms = rs->log.rows[first + rows - 1].ms;
+          reportPush(&cut, &value);
+      }
+      return cut;
+  }
+
+  /** @brief Ascending order of counts (qsort). */
+  static int compareCounts(const void* a, const void* b)
+  {
+      const size_t x = *(const size_t*)a;
+      const size_t y = *(const size_t*)b;
+      return (x > y) - (x < y);
+  }
+
+  /** @brief Copies a `_log.csv` or `_runs.csv` row into a curve point with `count`. */
+  static void reportPoint(CurvePoint* point, const ReportRow* row, size_t count)
+  {
+      point->count = count;
+      point->ms = row->ms;
+      point->sse = row->sse;
+      point->ciAvailable = row->ci != CI_NA;
+      point->ci = point->ciAvailable ? (double)row->ci : 0.0;
+  }
+
+  /**
+   * @brief The curve of one algorithm into `points` (capacity: the log row count); returns its length. The log is prepared.
+   *
+   * RS and RKM: the `_log.csv` rows of run `curveRun` (RS: the initial solution and each improvement, so the curve ends
+   * at the last improvement; RKM: every repeat). Other algorithms: per count, the means over all runs of the state at
+   * that count; a run that has ended keeps its last row (KM runs stop at different iterations).
+   */
+  static size_t reportCurve(const ReportAlgorithm* data, Algorithm algorithm, size_t curveRun, CurvePoint* points)
+  {
+      const ReportRows* log = &data->log;
+      size_t length = 0;
+      if (algorithm == ALGO_RS || algorithm == ALGO_RKM)
+      {
+          size_t first = 0;
+          const size_t rows = reportRunRows(log, curveRun, &first);
+          for (size_t i = 0; i < rows; ++i)
+          {
+              const ReportRow* row = &log->rows[first + i];
+              reportPoint(&points[length++], row, row->count);
+          }
+          return length;
+      }
+
+      if (log->count == 0)
+      {
+          return 0;
+      }
+
+      // The rows of each run: [start, end) of the log, which is sorted by run and count; cursor = the run's state so far
+      size_t* start = malloc(log->count * sizeof(size_t));
+      size_t* end = malloc(log->count * sizeof(size_t));
+      size_t* cursor = malloc(log->count * sizeof(size_t));
+      size_t* counts = malloc(log->count * sizeof(size_t));
+      handleMemoryError(start);
+      handleMemoryError(end);
+      handleMemoryError(cursor);
+      handleMemoryError(counts);
+      size_t runCount = 0;
+      for (size_t i = 0; i < log->count; ++i)
+      {
+          if (i == 0 || log->rows[i].run != log->rows[i - 1].run)
+          {
+              start[runCount] = i;
+              cursor[runCount] = i;
+              ++runCount;
+          }
+          end[runCount - 1] = i + 1;
+          counts[i] = log->rows[i].count;
+      }
+      qsort(counts, log->count, sizeof(size_t), compareCounts);
+
+      for (size_t i = 0; i < log->count; ++i)
+      {
+          if (i > 0 && counts[i] == counts[i - 1])
+          {
+              continue;
+          }
+          CurvePoint* point = &points[length++];
+          point->count = counts[i];
+          point->ms = 0.0;
+          point->sse = 0.0;
+          point->ci = 0.0;
+          point->ciAvailable = true;
+          size_t members = 0;
+          for (size_t s = 0; s < runCount; ++s)
+          {
+              while (cursor[s] + 1 < end[s] && log->rows[cursor[s] + 1].count <= counts[i])
+              {
+                  ++cursor[s];
+              }
+              const ReportRow* row = &log->rows[cursor[s]];
+              if (row->count > counts[i])
+              {
+                  continue; // the run starts at a later count
+              }
+              ++members;
+              point->ms += row->ms;
+              point->sse += row->sse;
+              if (row->ci == CI_NA)
+              {
+                  point->ciAvailable = false;
+              }
+              else
+              {
+                  point->ci += (double)row->ci;
+              }
+          }
+          assert(members > 0);
+          point->ms /= (double)members;
+          point->sse /= (double)members;
+          point->ci /= (double)members;
+      }
+      free(start);
+      free(end);
+      free(cursor);
+      free(counts);
+      return length;
+  }
+
+  /** @brief Writes `text` to `file`, then `;`, or a line end when `last`. */
+  static void reportCell(FILE* file, const char* text, bool last)
+  {
+      fputs(text, file);
+      fputc(last ? '\n' : ';', file);
+  }
+
+  /** @brief Opens `<directory>/<name>` for writing; exits on failure. */
+  static FILE* reportOpen(const char* directory, const char* name)
+  {
+      char path[PATH_MAX];
+      joinPath(path, sizeof(path), directory, name);
+      FILE* file;
+      if (FOPEN(file, path, "w") != 0)
+      {
+          handleFileError(path);
+      }
+      return file;
+  }
+
+  /** @brief `report` options. */
+  typedef struct
+  {
+      size_t curveRun;   /**< Run of the RS and RKM curves (1-based). */
+      bool noTime;       /**< Leave out the time columns (make check compares the rest). */
+  } ReportOptions;
+
+  /** @brief Writes `curves_<dataset>.csv`: per algorithm a block of count, time, SSE (scaled) and CI; an `end` row, then the points. */
+  static void reportWriteCurves(const char* outputDirectory, const ReportDataset* dataset, const ReportSummary* summaries,
+      const ReportOptions* options)
+  {
+      CurvePoint* curves[ALGORITHM_COUNT];
+      size_t lengths[ALGORITHM_COUNT];
+      size_t longest = 0;
+      size_t lastAlgorithm = 0;
+      double smallest = DBL_MAX;
+      for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
+      {
+          const ReportAlgorithm* data = &dataset->algorithms[a];
+          curves[a] = NULL;
+          lengths[a] = 0;
+          if (data->runs.count == 0)
+          {
+              continue;
+          }
+          lastAlgorithm = a;
+          curves[a] = malloc((data->log.count + 1) * sizeof(CurvePoint));
+          handleMemoryError(curves[a]);
+          lengths[a] = reportCurve(data, algorithmOptions[a].id, options->curveRun, curves[a]);
+          if (lengths[a] > longest)
+          {
+              longest = lengths[a];
+          }
+          if (summaries[a].sseMean > 0.0 && summaries[a].sseMean < smallest)
+          {
+              smallest = summaries[a].sseMean;
+          }
+          for (size_t i = 0; i < lengths[a]; ++i)
+          {
+              if (curves[a][i].sse > 0.0 && curves[a][i].sse < smallest)
+              {
+                  smallest = curves[a][i].sse;
+              }
+          }
+      }
+
+      // SSE in units of 10^exponent, as the v1 graph axes "SSE (10^10)"
+      const int exponent = smallest < DBL_MAX ? (int)floor(log10(smallest)) : 0;
+      const double scale = pow(10.0, (double)exponent);
+
+      char name[PATH_MAX];
+      if (snprintf(name, sizeof(name), "curves_%s.csv", dataset->name) >= (int)sizeof(name))
+      {
+          fprintf(stderr, "Error: dataset name too long: %s\n", dataset->name);
+          exit(EXIT_FAILURE);
+      }
+      FILE* file = reportOpen(outputDirectory, name);
+
+      char text[NUMBER_TEXT_SIZE + 64];
+      for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
+      {
+          if (dataset->algorithms[a].runs.count == 0) continue;
+          const char* display = reportAlgorithmName(algorithmOptions[a].id);
+          snprintf(text, sizeof(text), "%s count", display);
+          reportCell(file, text, false);
+          if (!options->noTime)
+          {
+              snprintf(text, sizeof(text), "%s time (ms)", display);
+              reportCell(file, text, false);
+          }
+          snprintf(text, sizeof(text), "%s SSE (10^%d)", display, exponent);
+          reportCell(file, text, false);
+          snprintf(text, sizeof(text), "%s CI", display);
+          reportCell(file, text, a == lastAlgorithm);
+      }
+
+      // The end point: the means from _runs.csv (RS at the last improvement), the same values as the tables
+      for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
+      {
+          if (dataset->algorithms[a].runs.count == 0) continue;
+          reportCell(file, "end", false);
+          if (!options->noTime)
+          {
+              reportCell(file, formatFixed(summaries[a].msMean, 3, text), false);
+          }
+          reportCell(file, formatFixed(summaries[a].sseMean / scale, 6, text), false);
+          reportCell(file, summaries[a].ciAvailable ? formatFixed(summaries[a].ciMean, 4, text) : "NA", a == lastAlgorithm);
+      }
+
+      for (size_t i = 0; i < longest; ++i)
+      {
+          for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
+          {
+              if (dataset->algorithms[a].runs.count == 0) continue;
+              const bool last = (a == lastAlgorithm);
+              if (i >= lengths[a])
+              {
+                  reportCell(file, "", false);
+                  if (!options->noTime) reportCell(file, "", false);
+                  reportCell(file, "", false);
+                  reportCell(file, "", last);
+                  continue;
+              }
+              const CurvePoint* point = &curves[a][i];
+              snprintf(text, sizeof(text), "%zu", point->count);
+              reportCell(file, text, false);
+              if (!options->noTime)
+              {
+                  reportCell(file, formatFixed(point->ms, 3, text), false);
+              }
+              reportCell(file, formatFixed(point->sse / scale, 6, text), false);
+              reportCell(file, point->ciAvailable ? formatFixed(point->ci, 4, text) : "NA", last);
+          }
+      }
+      fclose(file);
+
+      for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
+      {
+          free(curves[a]);
+      }
+  }
+
+  /** @brief The seminar tables. */
+  typedef enum { TABLE_CI, TABLE_SUCCESS, TABLE_TIME, TABLE_SSE } ReportTable;
+
+  /** @brief Writes one seminar table (algorithms × datasets in `order`) to `<outputDirectory>/<name>`. */
+  static void reportWriteTable(const char* outputDirectory, const char* name, ReportTable table, const ReportDataset* datasets,
+      const size_t* order, size_t datasetCount, const ReportSummary* summaries)
+  {
+      FILE* file = reportOpen(outputDirectory, name);
+      reportCell(file, "Algorithm", datasetCount == 0);
+      for (size_t d = 0; d < datasetCount; ++d)
+      {
+          reportCell(file, datasets[order[d]].display, d + 1 == datasetCount);
+      }
+
+      char text[NUMBER_TEXT_SIZE];
+      for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
+      {
+          bool present = false;
+          for (size_t d = 0; d < datasetCount; ++d)
+          {
+              present = present || summaries[order[d] * ALGORITHM_COUNT + a].runs > 0;
+          }
+          if (!present) continue;
+
+          reportCell(file, reportAlgorithmName(algorithmOptions[a].id), datasetCount == 0);
+          for (size_t d = 0; d < datasetCount; ++d)
+          {
+              const ReportSummary* summary = &summaries[order[d] * ALGORITHM_COUNT + a];
+              const char* cell = "";
+              if (summary->runs > 0)
+              {
+                  switch (table)
+                  {
+                  case TABLE_CI: cell = summary->ciAvailable ? formatFixed(summary->ciMean, 2, text) : "NA"; break;
+                  case TABLE_SUCCESS: cell = summary->ciAvailable ? formatFixed(summary->successPct, 1, text) : "NA"; break;
+                  case TABLE_TIME: cell = formatFixed(summary->msMean, 2, text); break;
+                  default: cell = formatFixed(summary->sseMean, 2, text); break;
+                  }
+              }
+              reportCell(file, cell, d + 1 == datasetCount);
+          }
+      }
+      fclose(file);
+  }
+
+  /**
+   * @brief Writes the summary.csv row of one algorithm on one dataset; `fullMs` (RS only, else NULL) is the mean time of
+   * the whole runs, every swap included. The standard deviations are NA with fewer than 2 runs.
+   */
+  static void reportWriteSummaryRow(FILE* file, const ReportDataset* dataset, Algorithm algorithm, const ReportSummary* summary,
+      const double* fullMs, bool noTime)
+  {
+      char text[NUMBER_TEXT_SIZE];
+      const bool sd = summary->runs >= 2;
+      fprintf(file, "%s;%s;%zu", dataset->display, reportAlgorithmName(algorithm), summary->runs);
+      fprintf(file, ";%s", formatFixed(summary->sseMean, 6, text));
+      fprintf(file, ";%s", sd ? formatFixed(summary->sseSd, 6, text) : "NA");
+      fprintf(file, ";%s", summary->ciAvailable ? formatFixed(summary->ciMean, 4, text) : "NA");
+      fprintf(file, ";%s", summary->ciAvailable && dataset->k > 0 ? formatFixed(summary->ciMean / (double)dataset->k, 4, text) : "NA");
+      fprintf(file, ";%s", summary->ciAvailable ? formatFixed(summary->successPct, 1, text) : "NA");
+      if (!noTime)
+      {
+          fprintf(file, ";%s", formatFixed(summary->msMean, 3, text));
+          fprintf(file, ";%s", sd ? formatFixed(summary->msSd, 3, text) : "NA");
+          fprintf(file, ";%s", fullMs != NULL ? formatFixed(*fullMs, 3, text) : "");
+      }
+      fputc('\n', file);
+  }
+
+  /** @brief Reads the datasets of every batch folder into `*datasets`; returns their number. Exits on unreadable files. */
+  static size_t reportCollect(const char* const* directories, size_t directoryCount, ReportDataset** datasets)
+  {
+      size_t datasetCount = 0;
+      for (size_t f = 0; f < directoryCount; ++f)
+      {
+          char** names = NULL;
+          const size_t nameCount = list_dirs(directories[f], &names);
+          for (size_t n = 0; n < nameCount; ++n)
+          {
+              char folder[PATH_MAX];
+              joinPath(folder, sizeof(folder), directories[f], names[n]);
+
+              size_t d = 0;
+              while (d < datasetCount && strcmp((*datasets)[d].name, names[n]) != 0)
+              {
+                  ++d;
+              }
+              for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
+              {
+                  char path[PATH_MAX];
+                  algorithmFilePath(algorithmOptions[a].id, folder, "_runs.csv", path, sizeof(path));
+                  if (!fileExists(path))
+                  {
+                      continue;
+                  }
+                  if (d == datasetCount)
+                  {
+                      if (strlen(names[n]) >= sizeof((*datasets)[0].name))
+                      {
+                          fprintf(stderr, "Error: dataset name too long: %s\n", names[n]);
+                          exit(EXIT_FAILURE);
+                      }
+                      ReportDataset* grown = realloc(*datasets, (datasetCount + 1) * sizeof(ReportDataset));
+                      handleMemoryError(grown);
+                      *datasets = grown;
+                      memset(&grown[d], 0, sizeof(ReportDataset));
+                      STRCPY(grown[d].name, sizeof(grown[d].name), names[n]);
+                      STRCPY(grown[d].display, sizeof(grown[d].display), names[n]);
+                      ++datasetCount;
+                  }
+                  ReportDataset* dataset = &(*datasets)[d];
+                  reportReadCsv(path, false, &dataset->algorithms[a].runs);
+                  algorithmFilePath(algorithmOptions[a].id, folder, "_log.csv", path, sizeof(path));
+                  if (fileExists(path))
+                  {
+                      reportReadCsv(path, true, &dataset->algorithms[a].log);
+                  }
+                  const size_t k = reportReadK(folder);
+                  if (dataset->k == 0)
+                  {
+                      dataset->k = k;
+                  }
+                  else if (k != 0 && k != dataset->k)
+                  {
+                      fprintf(stderr, "Error: %s has K = %zu, another batch folder K = %zu\n", folder, k, dataset->k);
+                      exit(EXIT_FAILURE);
+                  }
+              }
+          }
+          freeStringList(names, nameCount);
+      }
+      return datasetCount;
+  }
+
+  /**
+   * @brief Dataset order and display names: the `namesFile` lines ("<dataset> [display name]") first, the rest by name.
+   *
+   * Fills `order` (datasetCount entries). Unknown or repeated names in the file are warnings.
+   */
+  static void reportOrder(const char* namesFile, ReportDataset* datasets, size_t datasetCount, size_t* order)
+  {
+      bool* placed = calloc(datasetCount, sizeof(bool));
+      handleMemoryError(placed);
+      size_t ordered = 0;
+      if (namesFile != NULL)
+      {
+          FILE* file;
+          if (FOPEN(file, namesFile, "r") != 0)
+          {
+              handleFileError(namesFile);
+          }
+          char line[512];
+          while (fgets(line, sizeof(line), file) != NULL)
+          {
+              line[strcspn(line, "\r\n")] = '\0';
+              char* name = line + strspn(line, " \t");
+              if (*name == '\0')
+              {
+                  continue;
+              }
+              char* rest = name + strcspn(name, " \t");
+              if (*rest != '\0')
+              {
+                  *rest++ = '\0';
+                  rest += strspn(rest, " \t");
+              }
+              size_t d = 0;
+              while (d < datasetCount && strcmp(datasets[d].name, name) != 0)
+              {
+                  ++d;
+              }
+              if (d == datasetCount || placed[d])
+              {
+                  fprintf(stderr, "Warning: --names: %s is not a dataset of the report or is listed twice\n", name);
+                  continue;
+              }
+              if (*rest != '\0')
+              {
+                  if (strlen(rest) >= sizeof(datasets[d].display))
+                  {
+                      fprintf(stderr, "Error: --names: the display name of %s is too long\n", name);
+                      exit(EXIT_FAILURE);
+                  }
+                  STRCPY(datasets[d].display, sizeof(datasets[d].display), rest);
+              }
+              placed[d] = true;
+              order[ordered++] = d;
+          }
+          fclose(file);
+      }
+      while (ordered < datasetCount)
+      {
+          size_t next = SIZE_MAX;
+          for (size_t d = 0; d < datasetCount; ++d)
+          {
+              if (!placed[d] && (next == SIZE_MAX || strcmp(datasets[d].name, datasets[next].name) < 0))
+              {
+                  next = d;
+              }
+          }
+          placed[next] = true;
+          order[ordered++] = next;
+      }
+      free(placed);
+  }
+
+  /**
+   * @brief `report [options] <batch dir>...`: merges batch output folders into Excel-ready tables (plan step 3.9).
+   *
+   * The folders' run_config.txt headers must agree. Writes summary.csv, table_ci.csv, table_success.csv,
+   * table_time.csv, table_sse.csv and curves_<dataset>.csv into `-o` (default `<first dir>/report`).
+   * RS results end at the last SSE improvement of each run, so RS needs its `_log.csv` rows; for every algorithm,
+   * either all runs have rows or none (reportPrepareLog).
+   */
+  static int commandReport(int argc, char* argv[])
+  {
+      ReportOptions options = { 1, false };
+      const char* outputOption = NULL;
+      const char* namesFile = NULL;
+      const char* directories[64];
+      size_t directoryCount = 0;
+
+      for (int i = 0; i < argc; ++i)
+      {
+          if (strcmp(argv[i], "-o") == 0)
+          {
+              outputOption = textOption(argc, argv, &i);
+          }
+          else if (strcmp(argv[i], "--names") == 0)
+          {
+              namesFile = textOption(argc, argv, &i);
+          }
+          else if (strcmp(argv[i], "--curve-run") == 0)
+          {
+              options.curveRun = countOption(argc, argv, &i, 1);
+          }
+          else if (strcmp(argv[i], "--decimal-comma") == 0)
+          {
+              decimalComma = true;
+          }
+          else if (strcmp(argv[i], "--no-time") == 0)
+          {
+              options.noTime = true;
+          }
+          else if (argv[i][0] == '-' || directoryCount == sizeof(directories) / sizeof(directories[0]))
+          {
+              fprintf(stderr, "Error: report: unknown option or too many folders: %s\n", argv[i]);
+              return EXIT_FAILURE;
+          }
+          else
+          {
+              directories[directoryCount++] = argv[i];
+          }
+      }
+      if (directoryCount == 0)
+      {
+          fprintf(stderr, "Usage: split_kmeans report [-o dir] [--names file] [--curve-run i] [--decimal-comma] [--no-time] <batch dir>...\n");
+          return EXIT_FAILURE;
+      }
+      if (outputOption != NULL && strlen(outputOption) >= PATH_MAX)
+      {
+          fprintf(stderr, "Error: -o path too long\n");
+          return EXIT_FAILURE;
+      }
+
+      // The folders must come from one configuration
+      char first[RUN_CONFIG_SIZE];
+      char other[RUN_CONFIG_SIZE];
+      reportReadHeader(directories[0], first, sizeof(first));
+      for (size_t f = 1; f < directoryCount; ++f)
+      {
+          reportReadHeader(directories[f], other, sizeof(other));
+          if (strcmp(first, other) != 0)
+          {
+              size_t line = 0;
+              char ours[1024];
+              char theirs[1024];
+              do
+              {
+                  textLine(first, line, ours, sizeof(ours));
+                  textLine(other, line, theirs, sizeof(theirs));
+                  ++line;
+              } while (strcmp(ours, theirs) == 0 && strcmp(ours, "(none)") != 0);
+              fprintf(stderr, "Error: %s and %s come from different configurations:\n  %s\n  %s\n",
+                  directories[0], directories[f], ours, theirs);
+              return EXIT_FAILURE;
+          }
+      }
+
+      ReportDataset* datasets = NULL;
+      const size_t datasetCount = reportCollect(directories, directoryCount, &datasets);
+      if (datasetCount == 0)
+      {
+          fprintf(stderr, "Error: no <Algo>_runs.csv files in the dataset folders of %s\n", directories[0]);
+          return EXIT_FAILURE;
+      }
+      for (size_t d = 0; d < datasetCount; ++d)
+      {
+          for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
+          {
+              if (datasets[d].algorithms[a].runs.count > 0)
+              {
+                  reportPrepareLog(datasets[d].name, &datasets[d].algorithms[a], algorithmOptions[a].id, options.curveRun);
+              }
+          }
+      }
+
+      size_t* order = malloc(datasetCount * sizeof(size_t));
+      handleMemoryError(order);
+      reportOrder(namesFile, datasets, datasetCount, order);
+
+      char outputDirectory[PATH_MAX];
+      if (outputOption != NULL)
+      {
+          STRCPY(outputDirectory, sizeof(outputDirectory), outputOption);
+      }
+      else
+      {
+          joinPath(outputDirectory, sizeof(outputDirectory), directories[0], "report");
+      }
+      if (!makeDirectories(outputDirectory))
+      {
+          // exit, as the other report errors after reading: datasets and order are still allocated
+          perror("Error: Unable to create the report folder");
+          exit(EXIT_FAILURE);
+      }
+
+      // summary.csv, and the summaries behind the tables and the curve end points
+      ReportSummary* summaries = calloc(datasetCount * ALGORITHM_COUNT, sizeof(ReportSummary));
+      handleMemoryError(summaries);
+      FILE* summaryFile = reportOpen(outputDirectory, "summary.csv");
+      fputs(options.noTime
+          ? "dataset;algorithm;runs;sse_mean;sse_sd;ci_mean;relative_ci;success_pct\n"
+          : "dataset;algorithm;runs;sse_mean;sse_sd;ci_mean;relative_ci;success_pct;time_ms_mean;time_ms_sd;full_time_ms_mean\n",
+          summaryFile);
+      for (size_t o = 0; o < datasetCount; ++o)
+      {
+          const size_t d = order[o];
+          for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
+          {
+              const ReportAlgorithm* data = &datasets[d].algorithms[a];
+              if (data->runs.count == 0) continue;
+
+              const Algorithm algorithm = algorithmOptions[a].id;
+              ReportSummary* summary = &summaries[d * ALGORITHM_COUNT + a];
+              *summary = reportSummarize(data->runs.rows, data->runs.count);
+              if (algorithm == ALGO_RS)
+              {
+                  // RS results end at the last SSE improvement of each run; full_time_ms_mean keeps the time of every swap
+                  const double fullMs = summary->msMean;
+                  ReportRows cut = reportRsAtLastImprovement(data);
+                  *summary = reportSummarize(cut.rows, cut.count);
+                  free(cut.rows);
+                  reportWriteSummaryRow(summaryFile, &datasets[d], algorithm, summary, &fullMs, options.noTime);
+              }
+              else
+              {
+                  reportWriteSummaryRow(summaryFile, &datasets[d], algorithm, summary, NULL, options.noTime);
+              }
+          }
+          reportWriteCurves(outputDirectory, &datasets[d], &summaries[d * ALGORITHM_COUNT], &options);
+      }
+      fclose(summaryFile);
+
+      reportWriteTable(outputDirectory, "table_ci.csv", TABLE_CI, datasets, order, datasetCount, summaries);
+      reportWriteTable(outputDirectory, "table_success.csv", TABLE_SUCCESS, datasets, order, datasetCount, summaries);
+      reportWriteTable(outputDirectory, "table_sse.csv", TABLE_SSE, datasets, order, datasetCount, summaries);
+      if (!options.noTime)
+      {
+          reportWriteTable(outputDirectory, "table_time.csv", TABLE_TIME, datasets, order, datasetCount, summaries);
+      }
+
+      printf("Report: %zu dataset%s from %zu folder%s -> %s\n", datasetCount, datasetCount == 1 ? "" : "s",
+             directoryCount, directoryCount == 1 ? "" : "s", outputDirectory);
+
+      for (size_t d = 0; d < datasetCount; ++d)
+      {
+          for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
+          {
+              free(datasets[d].algorithms[a].runs.rows);
+              free(datasets[d].algorithms[a].log.rows);
+          }
+      }
+      free(datasets);
+      free(order);
+      free(summaries);
+      return EXIT_SUCCESS;
+  }
+
   static void printUsage(const char* program)
   {
-      printf("Usage: %s [options] [-k <K> <data.txt> [gt.txt]]\n\n", program);
-      printf("Split k-means clustering experiments v1.0.0.\n");
+      printf("Usage: %s [options] [-k <K> <data.txt> [gt.txt]]\n", program);
+      printf("       %s ci <centroids.txt> <ground-truth.txt>       prints the Centroid Index\n", program);
+      printf("       %s sse <data.txt> <centroids.txt>              prints the SSE (nearest centroids)\n", program);
+      printf("       %s gt-from-partition <data.txt> <partition.txt> <out.txt>\n", program);
+      printf("                                writes the cluster means (labels 1..K, one per line)\n");
+      printf("       %s report [-o dir] [--names file] [--curve-run i] [--decimal-comma] [--no-time] <batch dir>...\n", program);
+      printf("                                merges batch folders into summary.csv, the seminar tables and the curves\n\n");
+      printf("Split k-means clustering experiments, version %s.\n", SKM_VERSION);
       printf("Without a data file, runs batch mode over data/, gt/ and centroids/.\n\n");
 
       printf("Single dataset:\n");
@@ -4068,15 +5712,32 @@ void freeDataPointArray(DataPoint* points, size_t size)
       printf("  <data.txt>          Input data file (whitespace-separated doubles)\n");
       printf("  [gt.txt]            Ground truth centroids for CI (optional; without it CI and success rate are NA)\n\n");
 
-      printf("Options:\n");
+      printf("Batch mode:\n");
+      printf("  --batch             Batch mode explicitly (also the default without a data file)\n");
+      printf("  --datasets <list>   Only these datasets: comma-separated data file names without .txt\n\n");
+
+      printf("Options (each at most once):\n");
       printf("  --algo <list>       Comma-separated algorithms (default: skm-local):\n");
       printf("                      km, rkm, rs, skm-random, skm-intra, skm-global,\n");
       printf("                      skm-global-basic, skm-local, bisecting\n");
       printf("  --seed <N>          Master seed (default: time-based, printed at start)\n");
-      printf("  -r, --runs <N>      Runs per dataset (default: 100; RKM and RS: 1)\n");
-      printf("  --track-progress    Per-iteration stats and snapshots (always on in batch mode)\n");
+      printf("  -r, --runs <N>      Last run per dataset (default: 100; RKM and RS: 1)\n");
+      printf("  --first-run <i>     Start at run i (default 1) with the same derived seeds, to resume or split a job\n");
+      printf("  --max-swaps <N>     Random Swap trial swaps per run (default: 5000)\n");
+      printf("  --repeats <N>       Repeated k-means repeats per run (default: 1000)\n");
+      printf("  --bisect-tries <N>  Bisecting k-means tries per split (default: 5)\n");
+      printf("  --init <method>     Initial centroids of KM, RKM and RS: random (default) or kmeans++\n");
+      printf("  --track-progress    _log.csv rows of every run (default in batch mode)\n");
+      printf("  --snapshots <spec>  Snapshot files: none, or RUNS[:ITERATIONS][:split] (default: batch mode 1,\n");
+      printf("                      CLI none). RUNS (1-based) and ITERATIONS (_log.csv counts) are all or lists\n");
+      printf("                      such as 1,3-5; split adds the state after each two-way split\n");
+      printf("  --track-inner       _inner.csv: every iteration of the k-means runs inside the split algorithms\n");
+      printf("  --no-track          No tracking rows or snapshots, also in batch mode\n");
+      printf("  --decimal-comma     Decimal comma in the Excel-facing files (summary, _log.csv, _inner.csv,\n");
+      printf("                      _iteration_stats.txt) for a Finnish Excel; _runs.csv keeps the point\n");
       printf("  --log-level <1-3>   1 basic (default), 2 progress per run, 3 debug; use 1 for timings\n");
-      printf("  -o <dir>            Output folder (default: outputs/<timestamp>); its parent must exist\n");
+      printf("  -o <dir>            Output folder, created with its parents (default: outputs/<timestamp>)\n");
+      printf("  --version           Version, commit and compiler\n");
       printf("  -h, --help          Display this help\n\n");
 
       printf("Examples:\n");
@@ -4086,21 +5747,34 @@ void freeDataPointArray(DataPoint* points, size_t size)
   }
 
 /**
- * @brief Program entry: batch mode without a data file, single-dataset (CLI) mode with one.
+ * @brief Program entry: subcommands (ci, sse, gt-from-partition, report), batch mode without a data file, CLI mode with one.
  *
  * Batch mode enumerates `data/`, `gt/`, `centroids/` and pairs files by sorted order.
  * CLI mode needs `-k <K> <data.txt>`; the ground truth file is optional.
- * Options (see printUsage) apply to both modes.
+ * Options (see printUsage) apply to both modes; all of them are validated before any output folder exists.
  *
  * @return 0 on success
  * @errors Exits on invalid arguments, file I/O errors, missing K parameter, or validation failures.
  */
   int main(int argc, char* argv[])
   {
-      //runDebuggery(); //Helper for PCA codes
-      //return 0;
-
-      //set_numeric_locale_finnish();
+      // Subcommands score finished results, for example the CBModules Split-PCA centroids (they replace runDebuggery)
+      if (argc >= 2 && strcmp(argv[1], "ci") == 0)
+      {
+          return commandCi(argc - 2, argv + 2);
+      }
+      if (argc >= 2 && strcmp(argv[1], "sse") == 0)
+      {
+          return commandSse(argc - 2, argv + 2);
+      }
+      if (argc >= 2 && strcmp(argv[1], "gt-from-partition") == 0)
+      {
+          return commandGtFromPartition(argc - 2, argv + 2);
+      }
+      if (argc >= 2 && strcmp(argv[1], "report") == 0)
+      {
+          return commandReport(argc - 2, argv + 2);
+      }
 
       Options opt;
       opt.seed = (uint64_t)time(NULL);
@@ -4110,6 +5784,8 @@ void freeDataPointArray(DataPoint* points, size_t size)
       opt.maxSwaps = 5000;
       opt.maxRepeats = 1000;
       opt.bisectTries = 5;
+      opt.init = INIT_RANDOM;
+      opt.firstRun = 1;
       for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
       {
           opt.algorithms[a] = (strcmp(algorithmOptions[a].name, "skm-local") == 0);
@@ -4121,7 +5797,12 @@ void freeDataPointArray(DataPoint* points, size_t size)
       const char* cliDataFile = NULL;
       const char* cliGtFile = NULL;
       size_t cliNumCentroids = 0;
-      bool cliTrackProgress = false;
+      bool batchGiven = false;
+      bool trackProgressGiven = false;
+      bool noTrack = false;
+      bool trackInner = false;
+      const char* snapshotsOption = NULL;
+      const char* datasetsOption = NULL;
 
       size_t dataCount = 0;
       char** dataNames = NULL;
@@ -4129,122 +5810,229 @@ void freeDataPointArray(DataPoint* points, size_t size)
       char** kNames = NULL;
 
       // ============================================================
-      // Parse arguments; a data file selects CLI mode
+      // Parse arguments; every option at most once; a data file selects CLI mode
       // ============================================================
+      const char* given[64];
+      size_t givenCount = 0;
       for (int i = 1; i < argc; ++i)
       {
-          if (strcmp(argv[i], "-k") == 0)
+          const char* arg = argv[i];
+          if (arg[0] == '-')
           {
-              uint64_t k = 0;
-              if (i + 1 >= argc || !parseUint64(argv[++i], &k) || k < 1 || (uint64_t)(size_t)k != k)
+              const char* name = strcmp(arg, "--runs") == 0 ? "-r" : (strcmp(arg, "--help") == 0 ? "-h" : arg);
+              for (size_t g = 0; g < givenCount; ++g)
               {
-                  fprintf(stderr, "Error: -k requires a positive integer\n");
-                  fprintf(stderr, "Use -h for help\n");
-                  exit(EXIT_FAILURE);
+                  if (strcmp(given[g], name) == 0)
+                  {
+                      fprintf(stderr, "Error: %s given more than once\n", arg);
+                      exit(EXIT_FAILURE);
+                  }
               }
-              cliNumCentroids = (size_t)k;
+              if (givenCount < sizeof(given) / sizeof(given[0]))
+              {
+                  given[givenCount++] = name;
+              }
           }
-          else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--runs") == 0)
+
+          if (strcmp(arg, "-h") == 0 || strcmp(arg, "--help") == 0)
           {
-              uint64_t runs = 0;
-              if (i + 1 >= argc || !parseUint64(argv[++i], &runs) || (uint64_t)(size_t)runs != runs)
-              {
-                  fprintf(stderr, "Error: -r/--runs requires a positive integer\n");
-                  exit(EXIT_FAILURE);
-              }
-              opt.runs = (size_t)runs;
+              printUsage(argv[0]);
+              exit(EXIT_SUCCESS);
+          }
+          else if (strcmp(arg, "--version") == 0)
+          {
+              printf("split_kmeans %s (commit %s, %s)\n", SKM_VERSION, SKM_GIT_COMMIT, platform_compiler());
+              exit(EXIT_SUCCESS);
+          }
+          else if (strcmp(arg, "-k") == 0)
+          {
+              cliNumCentroids = countOption(argc, argv, &i, 1);
+          }
+          else if (strcmp(arg, "-r") == 0 || strcmp(arg, "--runs") == 0)
+          {
+              opt.runs = countOption(argc, argv, &i, 1);
               opt.runsGiven = true;
           }
-          else if (strcmp(argv[i], "--seed") == 0)
+          else if (strcmp(arg, "--max-swaps") == 0)
           {
-              if (i + 1 >= argc || !parseUint64(argv[++i], &opt.seed))
+              opt.maxSwaps = countOption(argc, argv, &i, 1);
+          }
+          else if (strcmp(arg, "--repeats") == 0)
+          {
+              opt.maxRepeats = countOption(argc, argv, &i, 1);
+          }
+          else if (strcmp(arg, "--bisect-tries") == 0)
+          {
+              opt.bisectTries = countOption(argc, argv, &i, 1);
+          }
+          else if (strcmp(arg, "--first-run") == 0)
+          {
+              opt.firstRun = countOption(argc, argv, &i, 1);
+          }
+          else if (strcmp(arg, "--seed") == 0)
+          {
+              if (!parseUint64(textOption(argc, argv, &i), &opt.seed))
               {
                   fprintf(stderr, "Error: --seed requires a non-negative integer\n");
                   exit(EXIT_FAILURE);
               }
           }
-          else if (strcmp(argv[i], "--algo") == 0)
+          else if (strcmp(arg, "--init") == 0)
           {
-              if (i + 1 >= argc || !parseAlgorithmList(argv[++i], opt.algorithms))
+              const char* method = textOption(argc, argv, &i);
+              if (strcmp(method, "random") == 0)
+              {
+                  opt.init = INIT_RANDOM;
+              }
+              else if (strcmp(method, "kmeans++") == 0)
+              {
+                  opt.init = INIT_KMEANSPP;
+              }
+              else
+              {
+                  fprintf(stderr, "Error: --init requires random or kmeans++\n");
+                  exit(EXIT_FAILURE);
+              }
+          }
+          else if (strcmp(arg, "--algo") == 0)
+          {
+              if (!parseAlgorithmList(textOption(argc, argv, &i), opt.algorithms))
               {
                   fprintf(stderr, "Error: --algo requires a comma-separated list of: "
                       "km, rkm, rs, skm-random, skm-intra, skm-global, skm-global-basic, skm-local, bisecting\n");
                   exit(EXIT_FAILURE);
               }
           }
-          else if (strcmp(argv[i], "--log-level") == 0)
+          else if (strcmp(arg, "--log-level") == 0)
           {
-              uint64_t level = 0;
-              if (i + 1 >= argc || !parseUint64(argv[++i], &level) || level < 1 || level > 3)
+              const size_t level = countOption(argc, argv, &i, 1);
+              if (level > 3)
               {
                   fprintf(stderr, "Error: --log-level requires 1, 2 or 3\n");
                   exit(EXIT_FAILURE);
               }
               logLevel = (int)level;
           }
-          else if (strcmp(argv[i], "-o") == 0)
+          else if (strcmp(arg, "-o") == 0)
           {
-              if (i + 1 >= argc || strlen(argv[i + 1]) >= sizeof(outputDirectory))
+              outputOption = textOption(argc, argv, &i);
+              if (outputOption[0] == '\0' || strlen(outputOption) >= sizeof(outputDirectory))
               {
-                  fprintf(stderr, "Error: -o requires an output folder path\n");
+                  fprintf(stderr, "Error: -o requires an output folder path shorter than %d characters\n", PATH_MAX);
                   exit(EXIT_FAILURE);
               }
-              outputOption = argv[++i];
           }
-          else if (strcmp(argv[i], "--track-progress") == 0)
+          else if (strcmp(arg, "--datasets") == 0)
           {
-              cliTrackProgress = true;
+              datasetsOption = textOption(argc, argv, &i);
           }
-          else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
+          else if (strcmp(arg, "--batch") == 0)
           {
-              printUsage(argv[0]);
-              exit(EXIT_SUCCESS);
+              batchGiven = true;
           }
-          else if (argv[i][0] == '-')
+          else if (strcmp(arg, "--track-progress") == 0)
           {
-              fprintf(stderr, "Error: Unknown option: %s\n", argv[i]);
+              trackProgressGiven = true;
+          }
+          else if (strcmp(arg, "--no-track") == 0)
+          {
+              noTrack = true;
+          }
+          else if (strcmp(arg, "--track-inner") == 0)
+          {
+              trackInner = true;
+          }
+          else if (strcmp(arg, "--decimal-comma") == 0)
+          {
+              decimalComma = true;
+          }
+          else if (strcmp(arg, "--snapshots") == 0)
+          {
+              SnapshotSpec check;
+              snapshotsOption = textOption(argc, argv, &i);
+              if (!parseSnapshotSpec(snapshotsOption, &check))
+              {
+                  fprintf(stderr, "Error: --snapshots requires none or RUNS[:ITERATIONS][:split], for example 1 or 1:all:split\n");
+                  exit(EXIT_FAILURE);
+              }
+          }
+          else if (arg[0] == '-')
+          {
+              fprintf(stderr, "Error: Unknown option: %s\n", arg);
               fprintf(stderr, "Use -h for help\n");
               exit(EXIT_FAILURE);
           }
           else if (!cliDataFile)
           {
-              cliDataFile = argv[i];
+              cliDataFile = arg;
           }
           else if (!cliGtFile)
           {
-              cliGtFile = argv[i];
+              cliGtFile = arg;
           }
           else
           {
-              fprintf(stderr, "Error: Unexpected argument: %s\n", argv[i]);
+              fprintf(stderr, "Error: Unexpected argument: %s\n", arg);
               fprintf(stderr, "Use -h for help\n");
               exit(EXIT_FAILURE);
           }
       }
 
+      // ============================================================
+      // Validate everything before any output folder is created
+      // ============================================================
       const bool cliMode = (cliDataFile != NULL);
 
-      if (opt.runs < 1 || opt.maxIterations < 1 || opt.maxSwaps < 1 || opt.maxRepeats < 1 || opt.bisectTries < 1)
+      if (batchGiven && (cliMode || cliNumCentroids != 0))
       {
-          fprintf(stderr, "Error: runs, iterations, swaps, repeats and bisecting tries must be at least 1\n");
+          fprintf(stderr, "Error: --batch takes no data file and no -k\n");
+          exit(EXIT_FAILURE);
+      }
+      if (cliMode && cliNumCentroids == 0)
+      {
+          fprintf(stderr, "Error: K must be specified with -k <number>\n");
+          fprintf(stderr, "Use -h for help\n");
+          exit(EXIT_FAILURE);
+      }
+      if (!cliMode && cliNumCentroids != 0)
+      {
+          fprintf(stderr, "Error: Data file required\n");
+          exit(EXIT_FAILURE);
+      }
+      if (cliMode && datasetsOption != NULL)
+      {
+          fprintf(stderr, "Error: --datasets selects batch-mode datasets; CLI mode takes one data file\n");
+          exit(EXIT_FAILURE);
+      }
+      if (opt.firstRun > opt.runs)
+      {
+          fprintf(stderr, "Error: --first-run %zu is after the last run %zu (set the last run with -r)\n", opt.firstRun, opt.runs);
+          exit(EXIT_FAILURE);
+      }
+      if (opt.firstRun > 1 && !opt.runsGiven && (algorithmSelected(&opt, "rkm") || algorithmSelected(&opt, "rs")))
+      {
+          fprintf(stderr, "Error: --first-run with rkm or rs needs -r (they run once by default)\n");
+          exit(EXIT_FAILURE);
+      }
+      if (noTrack && (trackProgressGiven || trackInner || snapshotsOption != NULL))
+      {
+          fprintf(stderr, "Error: --no-track cannot be combined with --track-progress, --track-inner or --snapshots\n");
+          exit(EXIT_FAILURE);
+      }
+      if (cliMode && !fileExists(cliDataFile))
+      {
+          fprintf(stderr, "Error: Data file %s not found\n", cliDataFile);
+          exit(EXIT_FAILURE);
+      }
+      if (cliGtFile != NULL && !fileExists(cliGtFile))
+      {
+          fprintf(stderr, "Error: Ground-truth file %s not found\n", cliGtFile);
           exit(EXIT_FAILURE);
       }
 
+      bool* selectedSets = NULL;
       if (cliMode)
       {
-          // K must be explicitly specified via -k in CLI mode
-          if (cliNumCentroids == 0)
-          {
-              fprintf(stderr, "Error: K must be specified with -k <number>\n");
-              fprintf(stderr, "Use -h for help\n");
-              exit(EXIT_FAILURE);
-          }
-
-          printf("\n=== CLI Mode ===\n");
-          printf("Data: %s\n", cliDataFile);
-          printf("Ground truth: %s\n", cliGtFile ? cliGtFile : "None");
-          printf("K: %zu, Runs: %zu\n", cliNumCentroids, opt.runs);
-
           // Create single-file lists for unified loop
           dataCount = 1;
           dataNames = createStringList(1);
@@ -4261,12 +6049,6 @@ void freeDataPointArray(DataPoint* points, size_t size)
       }
       else
       {
-          if (cliNumCentroids != 0)
-          {
-              fprintf(stderr, "Error: Data file required\n");
-              exit(EXIT_FAILURE);
-          }
-
           // ============================================================
           // Directory batch mode
           // ============================================================
@@ -4280,19 +6062,80 @@ void freeDataPointArray(DataPoint* points, size_t size)
                   dataCount, gtCount, kCount);
               exit(EXIT_FAILURE);
           }
-
-          printf("=== Directory Batch Mode: %zu datasets ===\n", dataCount);
-
-          // Batch mode defaults
-          cliTrackProgress = true;
       }
 
+      // --datasets: a subset of the batch datasets by data file name without .txt; pairing stays by sorted position
+      selectedSets = malloc(dataCount * sizeof(bool));
+      handleMemoryError(selectedSets);
+      for (size_t i = 0; i < dataCount; ++i)
+      {
+          selectedSets[i] = (datasetsOption == NULL);
+      }
+      if (datasetsOption != NULL)
+      {
+          char list[1024];
+          if (strlen(datasetsOption) >= sizeof(list))
+          {
+              fprintf(stderr, "Error: --datasets list too long\n");
+              exit(EXIT_FAILURE);
+          }
+          STRCPY(list, sizeof(list), datasetsOption);
+          char* context = NULL;
+          size_t named = 0;
+          for (char* name = STRTOK(list, ",", &context); name != NULL; name = STRTOK(NULL, ",", &context))
+          {
+              size_t j = 0;
+              while (j < dataCount && strcmp(removeExtension(dataNames[j]), name) != 0)
+              {
+                  ++j;
+              }
+              if (j == dataCount)
+              {
+                  fprintf(stderr, "Error: --datasets: no data/%s.txt\n", name);
+                  exit(EXIT_FAILURE);
+              }
+              selectedSets[j] = true;
+              ++named;
+          }
+          if (named == 0)
+          {
+              fprintf(stderr, "Error: --datasets: no dataset names in '%s'\n", datasetsOption);
+              exit(EXIT_FAILURE);
+          }
+      }
+      size_t selectedCount = 0;
+      for (size_t i = 0; i < dataCount; ++i)
+      {
+          if (selectedSets[i])
+          {
+              ++selectedCount;
+          }
+      }
+
+      // Tracking defaults: batch mode logs the rows of every run and the snapshots of run 1; CLI mode nothing
+      TrackOptions track;
+      track.rows = !noTrack && (trackProgressGiven || !cliMode);
+      track.inner = trackInner;
+      const char* snapshotsText = noTrack ? "none" : (snapshotsOption != NULL ? snapshotsOption : (cliMode ? "none" : "1"));
+      parseSnapshotSpec(snapshotsText, &track.snapshots);
+
+      if (cliMode)
+      {
+          printf("\n=== CLI Mode ===\n");
+          printf("Data: %s\n", cliDataFile);
+          printf("Ground truth: %s\n", cliGtFile ? cliGtFile : "None");
+          printf("K: %zu, Runs: %zu\n", cliNumCentroids, opt.runs);
+      }
+      else
+      {
+          printf("=== Directory Batch Mode: %zu datasets ===\n", selectedCount);
+      }
       printf("Seed: %" PRIu64 "\n\n", opt.seed);
 
       if (outputOption != NULL)
       {
           STRCPY(outputDirectory, sizeof(outputDirectory), outputOption);
-          if (MAKE_DIR(outputDirectory) != 0 && errno != EEXIST)
+          if (!makeDirectories(outputDirectory))
           {
               perror("Error: Unable to create output folder");
               exit(EXIT_FAILURE);
@@ -4302,17 +6145,25 @@ void freeDataPointArray(DataPoint* points, size_t size)
       {
           createUniqueDirectory(outputDirectory, sizeof(outputDirectory));
       }
-      
+
+      writeRunConfig(outputDirectory, &opt, &track, snapshotsText, datasetsOption != NULL ? datasetsOption : "all", cliMode, argc, argv);
+
+      const size_t firstRun = opt.firstRun - 1;
 
 	  for (size_t i = 0; i < dataCount; ++i)
       {
+          if (!selectedSets[i])
+          {
+              continue;
+          }
+
           // Determine file paths based on mode
           char currentDataFile[PATH_MAX];
           char currentGtFile[PATH_MAX];
           char* baseName = NULL;
           size_t currentK = 0;
           size_t currentLoops = 0;
-          bool currentTrackProgress = false;
+          char currentKSource[PATH_MAX];
 
           if (cliMode)
           {
@@ -4337,7 +6188,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
 
               currentK = cliNumCentroids;
               currentLoops = opt.runs;
-              currentTrackProgress = cliTrackProgress;
+              snprintf(currentKSource, sizeof(currentKSource), "-k %zu", currentK);
           }
           else
           {
@@ -4353,7 +6204,7 @@ void freeDataPointArray(DataPoint* points, size_t size)
               baseName = removeExtension(dataNames[i]);
               currentK = readKFromFile(kFile);
               currentLoops = opt.runs;
-              currentTrackProgress = cliTrackProgress;
+              STRCPY(currentKSource, sizeof(currentKSource), kFile);
           }
 
           // Create dataset subdirectory
@@ -4388,13 +6239,22 @@ void freeDataPointArray(DataPoint* points, size_t size)
               }
           }
 
+          writeDatasetInfo(datasetDirectory, currentDataFile, currentGtFile, currentK, dataPoints.size, numDimensions);
+
+          // Batch pairing is by sorted position: show which files went together
           if (logLevel >= 2) printf("Starting process\n");
-          printf("Dataset: %s\n", baseName);
+          printf("Dataset: %s (data %s, ground truth %s, K from %s)\n", baseName, currentDataFile,
+              currentGtFile[0] != '\0' ? currentGtFile : "none", currentKSource);
+          if (groundTruth.size > 0 && groundTruth.size != currentK)
+          {
+              fprintf(stderr, "Warning: %s: the ground truth %s has %zu centroids but K is %zu; CI compares sets of different sizes\n",
+                  baseName, currentGtFile, groundTruth.size, currentK);
+          }
           printf("Dimensions: %zu, Data points: %zu, K: %zu, Runs: %zu\n\n",
               numDimensions, dataPoints.size, currentK, currentLoops);
           
           // Algorithm parameters
-          size_t scaling = 1; // (NOT USED): could be used for scaling statistics if needed
+          size_t scaling = 1; // SSE divisor of the summary row and the console statistics (1: unscaled; the report scales SSE)
           const size_t rkmRsLoops = opt.runsGiven ? currentLoops : 1;
 
           for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
@@ -4404,26 +6264,26 @@ void freeDataPointArray(DataPoint* points, size_t size)
                   continue;
               }
 
-              const size_t algorithmId = algorithmOptions[a].id;
+              const Algorithm algorithmId = algorithmOptions[a].id;
               switch (algorithmId)
               {
-              case 6:
-                  runKMeansAlgorithm(&dataPoints, &groundTruth, currentK, opt.maxIterations, currentLoops, scaling, baseName, datasetDirectory, opt.seed);
+              case ALGO_KM:
+                  runKMeansAlgorithm(&dataPoints, &groundTruth, currentK, opt.maxIterations, firstRun, currentLoops, scaling, baseName, datasetDirectory, &track, opt.init, opt.seed);
                   break;
-              case 7:
-                  runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, currentK, opt.maxIterations, opt.maxRepeats, rkmRsLoops, scaling, baseName, datasetDirectory, currentTrackProgress, opt.seed);
+              case ALGO_RKM:
+                  runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, currentK, opt.maxIterations, opt.maxRepeats, firstRun, rkmRsLoops, scaling, baseName, datasetDirectory, &track, opt.init, opt.seed);
                   break;
-              case 3:
-                  runRandomSwapAlgorithm(&dataPoints, &groundTruth, currentK, opt.maxSwaps, rkmRsLoops, scaling, baseName, datasetDirectory, currentTrackProgress, opt.seed);
+              case ALGO_RS:
+                  runRandomSwapAlgorithm(&dataPoints, &groundTruth, currentK, opt.maxSwaps, firstRun, rkmRsLoops, scaling, baseName, datasetDirectory, &track, opt.init, opt.seed);
                   break;
-              case 5:
-                  runRandomSplitAlgorithm(&dataPoints, &groundTruth, currentK, opt.maxIterations, currentLoops, scaling, baseName, datasetDirectory, currentTrackProgress, opt.seed);
+              case ALGO_SKM_RANDOM:
+                  runRandomSplitAlgorithm(&dataPoints, &groundTruth, currentK, opt.maxIterations, firstRun, currentLoops, scaling, baseName, datasetDirectory, &track, opt.seed);
                   break;
-              case 4:
-                  runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, currentK, opt.maxIterations, currentLoops, scaling, baseName, datasetDirectory, currentTrackProgress, opt.bisectTries, opt.seed);
+              case ALGO_BISECTING:
+                  runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, currentK, opt.maxIterations, firstRun, currentLoops, scaling, baseName, datasetDirectory, &track, opt.bisectTries, opt.seed);
                   break;
               default: // SKM-Intra, SKM-Global, SKM-Global-Basic, SKM-Local
-                  runSseSplitAlgorithm(&dataPoints, &groundTruth, currentK, opt.maxIterations, currentLoops, scaling, baseName, datasetDirectory, algorithmId, currentTrackProgress, opt.seed);
+                  runSseSplitAlgorithm(&dataPoints, &groundTruth, currentK, opt.maxIterations, firstRun, currentLoops, scaling, baseName, datasetDirectory, algorithmId, &track, opt.seed);
                   break;
               }
           }
@@ -4433,16 +6293,10 @@ void freeDataPointArray(DataPoint* points, size_t size)
           freeCentroids(&groundTruth);
       }
 
-      for (size_t i = 0; i < dataCount; ++i)
-      {
-          free(dataNames[i]);
-          free(gtNames[i]);
-          free(kNames[i]);
-      }
-
-      free(dataNames);
-      free(gtNames);
-      free(kNames);
+      freeStringList(dataNames, dataCount);
+      freeStringList(gtNames, dataCount);
+      freeStringList(kNames, dataCount);
+      free(selectedSets);
 
       return 0;
   }
