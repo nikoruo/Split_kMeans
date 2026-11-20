@@ -27,10 +27,10 @@ typedef struct
 /** @brief One `_log.csv` row, buffered during the run and written after it. */
 typedef struct
 {
-    size_t count;  /**< Split number, swap, repeat or iteration; 0 is the initial state. */
+    size_t count; /**< Split number, swap, repeat or iteration; 0 is the initial state. */
     double sse;
-    size_t ci;     /**< CI_NA without ground truth. */
-    double ms;     /**< Counted run time when the state was reached. */
+    size_t ci; /**< CI_NA without ground truth. */
+    double ms; /**< Counted run time when the state was reached. */
 } TrackRow;
 
 /** @brief The k-means runs that --track-inner logs (`_inner.csv` stage column); KM_STAGE_NONE logs nothing. */
