@@ -6,6 +6,7 @@
 #include "platform.h"
 #include "dataset.h"
 #include "metrics.h"
+#include "rng.h"
 #include "util.h"
 
 #include <stdbool.h>
@@ -85,6 +86,22 @@ static void testMetrics(void)
     freeCentroids(&truth);
     freeCentroids(&centroids);
     freeDataPoints(&points);
+}
+
+static void testRng(void)
+{
+    Rng first;
+    Rng second;
+    rng_seed(&first, rng_derive_seed(20261119, 3));
+    rng_seed(&second, rng_derive_seed(20261119, 3));
+    for (size_t i = 0; i < 256; ++i)
+    {
+        require(rng_u32(&first) == rng_u32(&second), "same seed did not reproduce the random stream");
+        size_t a = rng_below(&first, 7);
+        size_t b = rng_below(&second, 7);
+        require(a == b && a < 7, "bounded random selection is not reproducible or is out of range");
+    }
+    require(rng_derive_seed(20261119, 3) != rng_derive_seed(20261119, 4), "run seeds are not independent");
 }
 
 static void expectReadFailure(const char* executable, const char* mode, const char* path, const char* errorPath,
@@ -191,6 +208,7 @@ int main(int argc, char* argv[])
     testNumbers();
     testDatasetParser(argv[0], argv[1]);
     testMetrics();
-    puts("test_unit: parser and metric cases passed");
+    testRng();
+    puts("test_unit: parser, metric and RNG cases passed");
     return EXIT_SUCCESS;
 }
