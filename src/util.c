@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+int logLevel = 1;
+
 /**
  * @brief Aborts the process if an allocation returned NULL.
  *

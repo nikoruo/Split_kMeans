@@ -58,7 +58,7 @@ void resetPartitions(DataPoints* dataPoints);
 
 /* Returned datasets and centroids are owned by the caller. */
 DataPoints readDataPoints(const char* filename);
-Centroids readCentroids(const char* filename, int logLevel);
+Centroids readCentroids(const char* filename, int currentLogLevel);
 size_t readKFromFile(const char* path);
 
 #endif /* DATASET_H */

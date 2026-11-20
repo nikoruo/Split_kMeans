@@ -5,6 +5,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include "platform.h"
 #include "dataset.h"
+#include "metrics.h"
 #include "util.h"
 
 #include <stdbool.h>
@@ -52,6 +53,38 @@ static void testNumbers(void)
             exit(EXIT_FAILURE);
         }
     }
+}
+
+static void testMetrics(void)
+{
+    DataPoints points = allocateDataPoints(3, 1);
+    Centroids centroids = allocateCentroids(2, 1);
+    Centroids truth = allocateCentroids(2, 1);
+    points.points[0].attributes[0] = 0.0;
+    points.points[1].attributes[0] = 2.0;
+    points.points[2].attributes[0] = 10.0;
+    points.points[0].partition = 0;
+    points.points[1].partition = 0;
+    points.points[2].partition = 1;
+    centroids.points[0].attributes[0] = 0.0;
+    centroids.points[1].attributes[0] = 10.0;
+    truth.points[0].attributes[0] = 0.0;
+    truth.points[1].attributes[0] = 10.0;
+
+    require(calculateSSE(&points, &centroids) == 4.0, "SSE is incorrect");
+    require(calculateClusterSSE(&points, &centroids, 0) == 4.0 &&
+                calculateClusterSSE(&points, &centroids, 1) == 0.0,
+            "cluster SSE is incorrect");
+    require(calculateCentroidIndex(&centroids, &truth) == 0, "matching centroids have nonzero CI");
+    require(centroidIndexOrNA(&centroids, NULL) == CI_NA, "missing ground truth did not give NA");
+    points.points[1].attributes[0] = 5.0;
+    require(findNearestCentroid(&points.points[1], &centroids) == 0, "nearest-centroid tie did not choose first");
+    centroids.points[1].attributes[0] = 1.0;
+    require(calculateCentroidIndex(&centroids, &truth) == 1, "orphan centroid was not counted");
+
+    freeCentroids(&truth);
+    freeCentroids(&centroids);
+    freeDataPoints(&points);
 }
 
 static void expectReadFailure(const char* executable, const char* mode, const char* path, const char* errorPath,
@@ -157,6 +190,7 @@ int main(int argc, char* argv[])
     require(argc == 2, "expected a fixture directory");
     testNumbers();
     testDatasetParser(argv[0], argv[1]);
-    puts("test_unit: parser cases passed");
+    testMetrics();
+    puts("test_unit: parser and metric cases passed");
     return EXIT_SUCCESS;
 }

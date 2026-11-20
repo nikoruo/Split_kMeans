@@ -11,6 +11,8 @@
 
 #define LINE_BUFSZ 16384
 
+extern int logLevel;
+
 void handleMemoryError(void* ptr);
 void handleFileError(const char* filename);
 

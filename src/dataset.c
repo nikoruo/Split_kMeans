@@ -325,7 +325,7 @@ DataPoints readDataPoints(const char* filename)
  *         finite numbers, overlong lines). Prints the size at log level 2 and every centroid at level 3.
  * @note Skips whitespace-only lines; parsing uses the current C locale for `strtod`.
  */
-Centroids readCentroids(const char* filename, int logLevel)
+Centroids readCentroids(const char* filename, int currentLogLevel)
 {
     DataPoints points = readDataPoints(filename);
 
@@ -333,13 +333,13 @@ Centroids readCentroids(const char* filename, int logLevel)
     centroids.size = points.size;
     centroids.points = points.points;
 
-    if (logLevel >= 2 && centroids.size > 0)
+    if (currentLogLevel >= 2 && centroids.size > 0)
     {
         printf("Read %zu centroids from %s, each with %zu dimensions\n", centroids.size, filename,
                centroids.points[0].dimensions);
     }
 
-    if (logLevel >= 3)
+    if (currentLogLevel >= 3)
     {
         for (size_t i = 0; i < centroids.size; ++i)
         {
