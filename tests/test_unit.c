@@ -341,28 +341,29 @@ static void expectReadFailure(const char* executable, const char* mode, const ch
     }
 }
 
-static void testOversizedAllocations(const char* executable, const char* directory)
+static void testInvalidAllocations(const char* executable, const char* directory)
 {
     char errorPath[PATH_MAX];
     char command[2 * PATH_MAX + 64];
-    int length = snprintf(errorPath, sizeof(errorPath), "%s%coverflow.txt", directory, PATHSEP);
-    require(length >= 0 && (size_t)length < sizeof(errorPath), "overflow fixture path too long");
-    const char* modes[] = {"--overflow", "--index-overflow"};
-    const char* messages[] = {"exceeds addressable memory", "Invalid cluster index size"};
-    for (size_t i = 0; i < 2; ++i)
+    int length = snprintf(errorPath, sizeof(errorPath), "%s%cinvalid-allocation.txt", directory, PATHSEP);
+    require(length >= 0 && (size_t)length < sizeof(errorPath), "invalid allocation fixture path too long");
+    const char* modes[] = {"--overflow", "--index-overflow", "--zero-dataset", "--zero-centroid-dimensions"};
+    const char* messages[] = {"exceeds addressable memory", "Invalid cluster index size",
+                              "Invalid dataset dimensions", "Invalid dataset dimensions"};
+    for (size_t i = 0; i < sizeof(modes) / sizeof(modes[0]); ++i)
     {
         length = snprintf(command, sizeof(command), "cd . && \"%s\" %s 2> \"%s\"", executable, modes[i], errorPath);
-        require(length >= 0 && (size_t)length < sizeof(command), "overflow command too long");
+        require(length >= 0 && (size_t)length < sizeof(command), "invalid allocation command too long");
         int status = system(command);
-        require(status != -1 && status != 0, "overflowing allocation did not fail");
+        require(status != -1 && status != 0, "invalid allocation did not fail");
         FILE* errors = fopen(errorPath, "r");
-        require(errors != NULL, "could not read overflow error");
+        require(errors != NULL, "could not read allocation error");
         char line[256];
         require(fgets(line, sizeof(line), errors) != NULL && strstr(line, messages[i]) != NULL,
-                "overflowing allocation did not report its error");
+                "invalid allocation did not report its error");
         closeFixture(errors);
     }
-    require(remove(errorPath) == 0, "could not remove overflow fixture");
+    require(remove(errorPath) == 0, "could not remove allocation fixture");
 }
 
 static void testDatasetParser(const char* executable, const char* directory)
@@ -440,6 +441,18 @@ int main(int argc, char* argv[])
         freeClusterIndex(&index);
         return EXIT_SUCCESS;
     }
+    if (argc == 2 && strcmp(argv[1], "--zero-dataset") == 0)
+    {
+        Dataset points = allocateDataset(0, 1);
+        freeDataset(&points);
+        return EXIT_SUCCESS;
+    }
+    if (argc == 2 && strcmp(argv[1], "--zero-centroid-dimensions") == 0)
+    {
+        Centroids centroids = allocateCentroids(1, 0);
+        freeCentroids(&centroids);
+        return EXIT_SUCCESS;
+    }
     if (argc == 3 && strcmp(argv[1], "--data") == 0)
     {
         Dataset points = readDataset(argv[2]);
@@ -455,7 +468,7 @@ int main(int argc, char* argv[])
     require(argc == 2, "expected a fixture directory");
     testNumbers();
     testDatasetParser(argv[0], argv[1]);
-    testOversizedAllocations(argv[0], argv[1]);
+    testInvalidAllocations(argv[0], argv[1]);
     testFlatStorage();
     testMetrics();
     testRng();

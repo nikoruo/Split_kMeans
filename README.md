@@ -182,7 +182,8 @@ Determinism
 - `--algo <list>`: comma-separated, any of `km`, `rkm`, `rs`, `skm-random`, `skm-intra`, `skm-global`, `skm-global-basic`, `skm-local`, `bisecting` (default `skm-local`).
 - `-r, --runs <N>`: the last run per dataset (default 100). RKM and RS run once unless `--runs` is given.
 - `--first-run <i>` (default 1): start at run i; run i keeps the seed derived from the master seed and i, so a long job can resume or be split, for example `-r 50` and `-r 100 --first-run 51`. With `rkm` or `rs` it needs `-r`.
-- `--max-swaps <N>` (default 5000), `--repeats <N>` (default 1000), `--bisect-tries <N>` (default 5): RS swaps, RKM repeats and bisecting tries per run. k-means runs until the SSE stops improving.
+- `--max-swaps <N>` (default 5000), `--repeats <N>` (default 1000), `--bisect-tries <N>` (default 5): RS swaps and RKM repeats per run, and bisecting tries per selected cluster after the first split.
+- K-means normally runs until SSE stops strictly decreasing; there is no CLI iteration-limit option. Random Swap instead allows at most two k-means iterations per swap, with the same early-stopping rule.
 - `--init random|kmeans++` (default `random`): the initial centroids of KM, RKM and RS (the split algorithms and bisecting start from one random point either way).
 - `--batch` selects batch mode explicitly; `--datasets <list>` runs only the listed batch datasets (data file names without `.txt`, for example `--datasets s1,birch1`; an empty list is an error); pairing stays by sorted position.
 - `-o <dir>` creates the folder and its missing parents. Every option may be given once; invalid arguments stop the program before any output folder is created. `--version` prints the version, commit and compiler.
