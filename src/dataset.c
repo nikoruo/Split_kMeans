@@ -8,7 +8,6 @@
 #include "dataset.h"
 #include "util.h"
 
-#include <assert.h>
 #include <ctype.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -16,7 +15,6 @@
 
 static void checkShape(size_t size, size_t dimensions)
 {
-    assert(size > 0 && dimensions > 0);
     if (size == 0 || dimensions == 0 || size > SIZE_MAX / dimensions || size * dimensions > SIZE_MAX / sizeof(double) ||
         size > SIZE_MAX / sizeof(size_t))
     {
