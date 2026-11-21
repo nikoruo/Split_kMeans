@@ -136,7 +136,7 @@ Input discovery
 Syntax:
 split_kmeans [options] -k <K> <data.txt> [gt.txt]
 
-Options: `--algo`, `--seed`, `-r`, `--first-run`, `--max-swaps`, `--repeats`, `--bisect-tries`, `--init`, `-o`, `--track-progress`, `--snapshots`, `--track-inner`, `--no-track`, `--decimal-comma`, `--log-level`, `--version`, `-h` (see below and `-h`).
+Options: `--algo`, `--seed`, `-r`, `--first-run`, `--max-iterations`, `--max-swaps`, `--repeats`, `--bisect-tries`, `--init`, `-o`, `--track-progress`, `--snapshots`, `--track-inner`, `--no-track`, `--decimal-comma`, `--log-level`, `--version`, `-h` (see below and `-h`).
 
 The options also work in batch mode (no data file), for example `split_kmeans --algo skm-local,rs --seed 42`.
 
@@ -171,7 +171,7 @@ Locale and CSV
 
 Run configuration
 - Every output folder gets `run_config.txt`: version, git commit (`-dirty` when the working tree has changes or `src/` holds files git does not track yet), compiler and flags, assertions, timer, machine (OS and logical processors; no host name, because the file is published in `results/`) and CPU, master seed, log level, the algorithm parameters and `--decimal-comma`, then one entry per call with its time, command line (the program by file name, without its folder) and resolved options (mode, algorithms, runs, tracking).
-- A call that writes with `-o` into a folder whose `run_config.txt` has a different header (for example another seed, build, machine or log level) stops with an error, so results of different configurations are never mixed. Algorithms, runs, datasets and tracking may differ between calls.
+- A call that writes with `-o` into a folder whose `run_config.txt` has a different header (for example another seed, build, machine, log level or iteration limit) stops with an error, so results of different configurations are never mixed. Algorithms, runs, datasets and tracking may differ between calls.
 - Without `-o`, every call gets a new folder (`outputs/<timestamp>`, then `_2`, `_3`, ... within the same second).
 
 Determinism
@@ -182,8 +182,8 @@ Determinism
 - `--algo <list>`: comma-separated, any of `km`, `rkm`, `rs`, `skm-random`, `skm-intra`, `skm-global`, `skm-global-basic`, `skm-local`, `bisecting` (default `skm-local`).
 - `-r, --runs <N>`: the last run per dataset (default 100). RKM and RS run once unless `--runs` is given.
 - `--first-run <i>` (default 1): start at run i; run i keeps the seed derived from the master seed and i, so a long job can resume or be split, for example `-r 50` and `-r 100 --first-run 51`. With `rkm` or `rs` it needs `-r`.
+- `--max-iterations <N>`: positive per-call k-means iteration cap for diagnostics. It applies to KM, each RKM repeat, and every local, trial, global and final k-means call in the split algorithms and bisecting. The default is `SIZE_MAX`, so k-means stops when SSE no longer strictly decreases; it may stop earlier than the cap. A capped run may not converge, and this option is not a wall-clock timeout. Its last partition need not assign every point to the nearest updated centroid; capped RKM preserves the best repeat's partition for its example snapshot instead of reassigning it. Random Swap is unaffected and still allows at most two k-means iterations per swap.
 - `--max-swaps <N>` (default 5000), `--repeats <N>` (default 1000), `--bisect-tries <N>` (default 5): RS swaps and RKM repeats per run, and bisecting tries per selected cluster after the first split.
-- K-means normally runs until SSE stops strictly decreasing; there is no CLI iteration-limit option. Random Swap instead allows at most two k-means iterations per swap, with the same early-stopping rule.
 - `--init random|kmeans++` (default `random`): the initial centroids of KM, RKM and RS (the split algorithms and bisecting start from one random point either way).
 - `--batch` selects batch mode explicitly; `--datasets <list>` runs only the listed batch datasets (data file names without `.txt`, for example `--datasets s1,birch1`; an empty list is an error); pairing stays by sorted position.
 - `-o <dir>` creates the folder and its missing parents. Every option may be given once; invalid arguments stop the program before any output folder is created. `--version` prints the version, commit and compiler.

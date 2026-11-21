@@ -201,7 +201,8 @@ check-variants: check-outputs
 # the subcommands.
 check: check-variants $(COMPARE) $(UNIT)
 	$(call MKDIR,$(UNIT_DIR))
-	$(call fixpath,$(UNIT)) $(call fixpath,$(UNIT_DIR))
+	$(call run_in,main) --seed $(CHECK_SEED) --datasets s01_blobs2d --algo km -r 1 --max-iterations 1 --snapshots none -o $(CHECK_OUT)/cap-batch > $(NULLDEV)
+	$(call fixpath,$(UNIT)) $(call fixpath,$(UNIT_DIR)) $(call fixpath,$(TEST_BIN)) $(call fixpath,$(TEST_DIR)/main/data/s01_blobs2d.txt) $(call fixpath,$(TEST_DIR)/main/gt/s01_blobs2d.txt) $(call fixpath,$(CHECK_DIR)/cap-batch)
 	$(call fixpath,$(COMPARE)) tests/golden $(CHECK_DIR) $(GOLDEN_FILES)
 	$(call fixpath,$(COMPARE)) tests/golden $(CHECK_DIR)/notrack $(GOLDEN_EDGE)
 	$(call fixpath,$(COMPARE)) tests/golden $(CHECK_DIR)/snapshots $(GOLDEN_EDGE)

@@ -12,6 +12,7 @@
 #include "split.h"
 #include "util.h"
 
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -427,6 +428,436 @@ static void testDatasetParser(const char* executable, const char* directory)
     require(remove(path) == 0 && remove(errorPath) == 0, "could not remove test fixtures");
 }
 
+static int runCli(const char* executable, const char* arguments, const char* capture)
+{
+    char command[6 * PATH_MAX + 2048];
+    int length = snprintf(command, sizeof(command), "cd . && \"%s\" %s > \"%s\" 2>&1", executable, arguments, capture);
+    require(length >= 0 && (size_t)length < sizeof(command), "CLI test command too long");
+    return system(command);
+}
+
+static void expectCli(const char* executable, const char* arguments, const char* capture, bool success)
+{
+    int status = runCli(executable, arguments, capture);
+    if (status == -1 || (status == 0) != success)
+    {
+        fprintf(stderr, "test_unit: CLI command unexpectedly %s: %s\n", success ? "failed" : "succeeded", arguments);
+        FILE* file = fopen(capture, "r");
+        if (file != NULL)
+        {
+            char line[1024];
+            while (fgets(line, sizeof(line), file) != NULL) fputs(line, stderr);
+            fclose(file);
+        }
+        exit(EXIT_FAILURE);
+    }
+}
+
+static void expectText(const char* path, const char* expected)
+{
+    FILE* file = fopen(path, "r");
+    require(file != NULL, "could not open CLI test output");
+    char text[8192];
+    size_t length = fread(text, 1, sizeof(text) - 1, file);
+    require(!ferror(file), "could not read CLI test output");
+    text[length] = '\0';
+    closeFixture(file);
+    if (strstr(text, expected) == NULL || strstr(text, "Sanitizer") != NULL)
+    {
+        fprintf(stderr, "test_unit: expected '%s' in %s:\n%s\n", expected, path, text);
+        exit(EXIT_FAILURE);
+    }
+}
+
+static void runCapCase(const char* executable, const char* data, const char* output, const char* capture,
+                       const char* algorithms, const char* cap, size_t k)
+{
+    char arguments[3 * PATH_MAX + 1024];
+    int length = snprintf(arguments, sizeof(arguments),
+                          "--seed 42 -r 1 --max-swaps 1 --repeats 1 --bisect-tries 2 --track-progress --track-inner "
+                          "--algo %s %s -o \"%s\" -k %zu \"%s\"",
+                          algorithms, cap, output, k, data);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "CLI case too long");
+    expectCli(executable, arguments, capture, true);
+}
+
+static void caseFile(char* path, size_t size, const char* output, const char* name)
+{
+    char dataset[PATH_MAX];
+    joinPath(dataset, sizeof(dataset), output, "s01_blobs2d");
+    joinPath(path, size, dataset, name);
+}
+
+static FILE* openCaseFile(const char* output, const char* algorithm, const char* suffix)
+{
+    char name[64];
+    char path[PATH_MAX];
+    int length = snprintf(name, sizeof(name), "%s%s", algorithm, suffix);
+    require(length >= 0 && (size_t)length < sizeof(name), "algorithm file name too long");
+    caseFile(path, sizeof(path), output, name);
+    FILE* file = fopen(path, "r");
+    if (file == NULL)
+    {
+        fprintf(stderr, "test_unit: could not open %s\n", path);
+        exit(EXIT_FAILURE);
+    }
+    return file;
+}
+
+static double caseSse(const char* output, const char* algorithm)
+{
+    FILE* file = openCaseFile(output, algorithm, "_runs.csv");
+    char line[512];
+    require(fgets(line, sizeof(line), file) != NULL && fgets(line, sizeof(line), file) != NULL,
+            "missing run result");
+    size_t run = 0;
+    double sse = 0.0;
+    require(sscanf(line, "%zu;%*[^;];%lf;", &run, &sse) == 2 && run == 1 && isfinite(sse),
+            "invalid run result");
+    require(fgets(line, sizeof(line), file) == NULL && !ferror(file), "unexpected extra run result");
+    closeFixture(file);
+    return sse;
+}
+
+/* Rows must be runs 1..runs in order. */
+static void checkRunNumbers(const char* output, const char* algorithm, size_t runs)
+{
+    FILE* file = openCaseFile(output, algorithm, "_runs.csv");
+    char line[512];
+    require(fgets(line, sizeof(line), file) != NULL, "missing run results header");
+    size_t rows = 0;
+    while (fgets(line, sizeof(line), file) != NULL)
+    {
+        size_t run = 0;
+        ++rows;
+        require(sscanf(line, "%zu;", &run) == 1 && run == rows, "unexpected run number in run results");
+    }
+    require(!ferror(file) && rows == runs, "unexpected number of run results");
+    closeFixture(file);
+}
+
+/* Number of KM iterations of run 1; the log must hold only run 1 with consecutive iterations. */
+static size_t kmIterations(const char* output)
+{
+    FILE* file = openCaseFile(output, "KM", "_log.csv");
+    char line[512];
+    require(fgets(line, sizeof(line), file) != NULL, "missing KM log header");
+    size_t rows = 0;
+    while (fgets(line, sizeof(line), file) != NULL)
+    {
+        size_t run = 0;
+        size_t iteration = 0;
+        ++rows;
+        require(sscanf(line, "%zu;%zu;", &run, &iteration) == 2 && run == 1 && iteration == rows,
+                "invalid KM iteration log");
+    }
+    require(!ferror(file), "could not read KM iteration log");
+    closeFixture(file);
+    return rows;
+}
+
+enum
+{
+    STAGE_SPLIT = 1,
+    STAGE_TRY = 2,
+    STAGE_GLOBAL = 4,
+    STAGE_FINAL = 8
+};
+
+static void checkInnerIterations(const char* output, const char* algorithm, size_t limit, unsigned expectedStages)
+{
+    FILE* file = openCaseFile(output, algorithm, "_inner.csv");
+    char line[512];
+    require(fgets(line, sizeof(line), file) != NULL, "missing inner log header");
+    unsigned first = 0;
+    unsigned second = 0;
+    while (fgets(line, sizeof(line), file) != NULL)
+    {
+        size_t run = 0;
+        size_t count = 0;
+        size_t iteration = 0;
+        char stage[16];
+        require(sscanf(line, "%zu;%zu;%15[^;];%zu;", &run, &count, stage, &iteration) == 4 &&
+                    run == 1 && iteration >= 1 && iteration <= limit,
+                "inner k-means exceeded its iteration limit");
+        unsigned flag = strcmp(stage, "split") == 0    ? STAGE_SPLIT
+                        : strcmp(stage, "try") == 0   ? STAGE_TRY
+                        : strcmp(stage, "global") == 0 ? STAGE_GLOBAL
+                        : strcmp(stage, "final") == 0  ? STAGE_FINAL
+                                                       : 0;
+        require(flag != 0, "unknown inner k-means stage");
+        if (iteration == 1) first |= flag;
+        if (iteration == 2) second |= flag;
+    }
+    if (ferror(file) || first != expectedStages || second != (limit == 2 ? expectedStages : 0))
+    {
+        fprintf(stderr, "test_unit: unexpected k-means stages in %s_inner.csv under %s\n", algorithm, output);
+        exit(EXIT_FAILURE);
+    }
+    closeFixture(file);
+}
+
+static void testCappedRkmSnapshot(const char* directory, const char* executable, const char* data, const char* truth,
+                                  const char* capture)
+{
+    const size_t repeats = 2;
+    char output[PATH_MAX];
+    char name[64];
+    char bestPath[PATH_MAX];
+    char finalPath[PATH_MAX];
+    char centroidPath[PATH_MAX];
+    char arguments[4 * PATH_MAX + 512];
+    joinPath(output, sizeof(output), directory, "rkm-snapshot");
+    int length = snprintf(arguments, sizeof(arguments),
+                          "--algo rkm --seed 42 --repeats %zu --max-iterations 1 -r 1 --track-progress --snapshots 1 "
+                          "-o \"%s\" -k 4 \"%s\" \"%s\"",
+                          repeats, output, data, truth);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "RKM snapshot case too long");
+    expectCli(executable, arguments, capture, true);
+
+    // The snapshot of the last improvement holds the best repeat's labels
+    bestPath[0] = '\0';
+    for (size_t count = repeats; count >= 1 && bestPath[0] == '\0'; --count)
+    {
+        length = snprintf(name, sizeof(name), "RKM_run001_iter%04zu_step_partitions.txt", count);
+        require(length >= 0 && (size_t)length < sizeof(name), "snapshot name too long");
+        caseFile(bestPath, sizeof(bestPath), output, name);
+        if (!fileExists(bestPath)) bestPath[0] = '\0';
+    }
+    require(bestPath[0] != '\0', "missing RKM improvement snapshot");
+    caseFile(finalPath, sizeof(finalPath), output, "RKM_partitions_perfect.txt");
+    caseFile(centroidPath, sizeof(centroidPath), output, "RKM_centroids_perfect.txt");
+    if (!fileExists(finalPath))
+    {
+        caseFile(finalPath, sizeof(finalPath), output, "RKM_partitions_failed.txt");
+        caseFile(centroidPath, sizeof(centroidPath), output, "RKM_centroids_failed.txt");
+    }
+
+    FILE* best = fopen(bestPath, "r");
+    FILE* final = fopen(finalPath, "r");
+    require(best != NULL && final != NULL, "missing RKM partition snapshots");
+    Dataset points = readDataset(data);
+    Centroids centroids = readCentroids(centroidPath);
+    for (size_t i = 0; i < points.size; ++i)
+    {
+        size_t bestLabel = 0;
+        size_t finalLabel = 0;
+        require(fscanf(best, "%zu", &bestLabel) == 1 && fscanf(final, "%zu", &finalLabel) == 1 &&
+                    bestLabel == finalLabel && finalLabel < centroids.size,
+                "capped RKM example does not retain the best repeat's partition");
+        points.partitions[i] = finalLabel;
+    }
+    size_t extra = 0;
+    require(fscanf(best, "%zu", &extra) == EOF && fscanf(final, "%zu", &extra) == EOF &&
+                !ferror(best) && !ferror(final),
+            "unexpected RKM partition snapshot length");
+    closeFixture(best);
+    closeFixture(final);
+    double expected = caseSse(output, "RKM");
+    double actual = calculateSSE(&points, &centroids);
+    require(fabs(expected - actual) <= 1e-12 * fmax(1.0, fabs(expected)),
+            "capped RKM snapshot does not match its reported SSE");
+    freeCentroids(&centroids);
+    freeDataset(&points);
+}
+
+static void testCappedTrials(const char* directory, const char* executable, const char* data, const char* capture)
+{
+    char output[PATH_MAX];
+    char arguments[3 * PATH_MAX + 256];
+    joinPath(output, sizeof(output), directory, "trials");
+    int length = snprintf(arguments, sizeof(arguments),
+                          "--algo skm-intra --seed 42 -r 1 --max-iterations 1 --log-level 3 --no-track "
+                          "-o \"%s\" -k 2 \"%s\"",
+                          output, data);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "trial cap case too long");
+    expectCli(executable, arguments, capture, true);
+    FILE* file = fopen(capture, "r");
+    require(file != NULL, "could not open trial cap trace");
+    char line[1024];
+    size_t calls = 0;
+    while (fgets(line, sizeof(line), file) != NULL)
+    {
+        const char* iterationText = strstr(line, "(runKMeans)After iteration ");
+        if (iterationText != NULL)
+        {
+            size_t iteration = 0;
+            require(sscanf(iterationText, "(runKMeans)After iteration %zu:", &iteration) == 1 && iteration == 1,
+                    "a tentative or split k-means exceeded the cap");
+            ++calls;
+        }
+    }
+    require(!ferror(file) && calls >= 4, "trial cap trace did not include both tentative splits");
+    closeFixture(file);
+}
+
+static void testCappedSwapTrace(const char* directory, const char* executable, const char* data, const char* capture)
+{
+    char output[PATH_MAX];
+    char arguments[3 * PATH_MAX + 256];
+    joinPath(output, sizeof(output), directory, "rs-trace");
+    int length = snprintf(arguments, sizeof(arguments),
+                          "--algo rs --seed 42 --max-swaps 1 --max-iterations 1 --log-level 3 --no-track "
+                          "-o \"%s\" -k 4 \"%s\"",
+                          output, data);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "Random Swap trace case too long");
+    expectCli(executable, arguments, capture, true);
+    FILE* file = fopen(capture, "r");
+    require(file != NULL, "could not open Random Swap trace");
+    char line[1024];
+    size_t iterations = 0;
+    while (fgets(line, sizeof(line), file) != NULL)
+    {
+        const char* iterationText = strstr(line, "(runKMeans)After iteration ");
+        if (iterationText != NULL)
+        {
+            size_t iteration = 0;
+            ++iterations;
+            require(sscanf(iterationText, "(runKMeans)After iteration %zu:", &iteration) == 1 &&
+                        iteration == iterations && iteration <= 2,
+                    "Random Swap did not use its two-iteration limit");
+        }
+    }
+    require(!ferror(file) && iterations == 2, "Random Swap did not run both expected iterations");
+    closeFixture(file);
+}
+
+static void testCliIterationLimit(const char* directory, const char* executable, const char* data, const char* truth,
+                                  const char* batch)
+{
+    // -o appends to existing results, so every invocation writes to a new folder
+    char root[PATH_MAX];
+    unsigned attempt = 0;
+    do
+    {
+        char name[32];
+        require(++attempt <= 1000, "too many earlier iteration-limit test folders");
+        snprintf(name, sizeof(name), "cap-%u", attempt);
+        joinPath(root, sizeof(root), directory, name);
+    } while (fileExists(root));
+    require(platform_make_directories(root), "could not create the iteration-limit test folder");
+
+    char one[PATH_MAX];
+    char two[PATH_MAX];
+    char unlimited[PATH_MAX];
+    char k1[PATH_MAX];
+    char k2[PATH_MAX];
+    char invalid[PATH_MAX];
+    char report[PATH_MAX];
+    char capture[PATH_MAX];
+    char path[PATH_MAX];
+    char arguments[3 * PATH_MAX + 1024];
+    joinPath(one, sizeof(one), root, "one");
+    joinPath(two, sizeof(two), root, "two");
+    joinPath(unlimited, sizeof(unlimited), root, "unlimited");
+    joinPath(k1, sizeof(k1), root, "k1");
+    joinPath(k2, sizeof(k2), root, "k2");
+    joinPath(invalid, sizeof(invalid), root, "invalid");
+    joinPath(report, sizeof(report), root, "report");
+    joinPath(capture, sizeof(capture), root, "command.txt");
+
+    require(kmIterations(batch) == 1, "batch-mode KM did not respect its iteration limit");
+    joinPath(path, sizeof(path), batch, "run_config.txt");
+    expectText(path, "max-iterations: 1\n");
+
+    const char* badOptions[] = {"--max-iterations", "--max-iterations \"\"", "--max-iterations 0",
+                                "--max-iterations -1", "--max-iterations +1",
+                                "--max-iterations 1.5", "--max-iterations 1x", "--max-iterations nope",
+                                "--max-iterations 18446744073709551616",
+                                "--max-iterations 1 --max-iterations 2"};
+    for (size_t i = 0; i < sizeof(badOptions) / sizeof(badOptions[0]); ++i)
+    {
+        int length = snprintf(arguments, sizeof(arguments), "-o \"%s\" -k 4 \"%s\" %s", invalid, data, badOptions[i]);
+        require(length >= 0 && (size_t)length < sizeof(arguments), "invalid CLI case too long");
+        expectCli(executable, arguments, capture, false);
+        expectText(capture, "Error: --max-iterations");
+        require(!fileExists(invalid), "invalid iteration limit created an output folder");
+    }
+
+    const char* algorithms = "km,rkm,rs,skm-random,skm-intra,skm-global,skm-global-basic,skm-local,bisecting";
+    runCapCase(executable, data, one, capture, algorithms, "--max-iterations 1", 4);
+    runCapCase(executable, data, two, capture, algorithms, "--max-iterations 2", 4);
+    runCapCase(executable, data, unlimited, capture, algorithms, "", 4);
+    require(kmIterations(one) == 1 && kmIterations(two) == 2, "KM did not respect its iteration limit");
+    // With more than 2 iterations, iteration 2 improved, so caps 1 and 2 must give different results
+    require(kmIterations(unlimited) > 2, "fixture: unlimited KM must need more than 2 iterations");
+    double kmOne = caseSse(one, "KM");
+    double kmTwo = caseSse(two, "KM");
+    double kmUnlimited = caseSse(unlimited, "KM");
+    require(kmOne > kmTwo && kmTwo >= kmUnlimited, "KM cap did not change the result as expected");
+    require(caseSse(one, "RKM") == kmOne && caseSse(two, "RKM") == kmTwo && caseSse(unlimited, "RKM") == kmUnlimited,
+            "RKM did not apply the iteration limit to its repeat");
+    require(caseSse(one, "RS") == caseSse(unlimited, "RS") && caseSse(two, "RS") == caseSse(unlimited, "RS"),
+            "iteration option changed Random Swap");
+    testCappedRkmSnapshot(root, executable, data, truth, capture);
+    testCappedTrials(root, executable, data, capture);
+    testCappedSwapTrace(root, executable, data, capture);
+
+    const struct
+    {
+        const char* name;
+        unsigned stages;
+    } splitCases[] = {{"SKM_Random", STAGE_SPLIT | STAGE_FINAL},
+                      {"SKM_Intra", STAGE_SPLIT | STAGE_FINAL},
+                      {"SKM_Global", STAGE_SPLIT | STAGE_GLOBAL},
+                      {"SKM_Global_Basic", STAGE_SPLIT | STAGE_GLOBAL},
+                      {"SKM_Local", STAGE_SPLIT | STAGE_FINAL},
+                      {"Bisecting_KM", STAGE_SPLIT | STAGE_TRY | STAGE_FINAL}};
+    for (size_t i = 0; i < sizeof(splitCases) / sizeof(splitCases[0]); ++i)
+    {
+        checkInnerIterations(one, splitCases[i].name, 1, splitCases[i].stages);
+        checkInnerIterations(two, splitCases[i].name, 2, splitCases[i].stages);
+    }
+    runCapCase(executable, data, k1, capture,
+               "skm-random,skm-intra,skm-global,skm-global-basic,skm-local,bisecting", "--max-iterations 1", 1);
+    for (size_t i = 0; i < sizeof(splitCases) / sizeof(splitCases[0]); ++i)
+        checkInnerIterations(k1, splitCases[i].name, 1, STAGE_FINAL);
+    runCapCase(executable, data, k2, capture, "skm-global,skm-global-basic", "--max-iterations 1", 2);
+    checkInnerIterations(k2, "SKM_Global", 1, STAGE_SPLIT | STAGE_FINAL);
+    checkInnerIterations(k2, "SKM_Global_Basic", 1, STAGE_SPLIT | STAGE_FINAL);
+
+    joinPath(path, sizeof(path), one, "run_config.txt");
+    expectText(path, "max-iterations: 1\n");
+    joinPath(path, sizeof(path), two, "run_config.txt");
+    expectText(path, "max-iterations: 2\n");
+    joinPath(path, sizeof(path), unlimited, "run_config.txt");
+    expectText(path, "max-iterations: until the SSE stops improving\n");
+
+    int length = snprintf(arguments, sizeof(arguments),
+                          "--seed 42 --max-swaps 1 --repeats 1 --bisect-tries 2 --max-iterations 01 "
+                          "-r 2 --first-run 2 --algo km -o \"%s\" -k 4 \"%s\"",
+                          one, data);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "matching CLI case too long");
+    expectCli(executable, arguments, capture, true);
+    length = snprintf(arguments, sizeof(arguments),
+                      "--seed 42 --max-swaps 1 --repeats 1 --bisect-tries 2 --max-iterations %zu "
+                      "-r 2 --first-run 2 --algo km -o \"%s\" -k 4 \"%s\"",
+                      (size_t)SIZE_MAX, unlimited, data);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "unlimited CLI case too long");
+    expectCli(executable, arguments, capture, true);
+    checkRunNumbers(unlimited, "KM", 2);
+
+    length = snprintf(arguments, sizeof(arguments),
+                      "--seed 42 --max-swaps 1 --repeats 1 --bisect-tries 2 --max-iterations 2 "
+                      "-r 1 --algo km -o \"%s\" -k 4 \"%s\"",
+                      one, data);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "mismatched CLI case too long");
+    expectCli(executable, arguments, capture, false);
+    expectText(capture, "another configuration");
+    expectText(capture, "max-iterations: 1");
+    expectText(capture, "max-iterations: 2");
+    // The matching call appended run 2; the rejected call (run 1) must not have written a row
+    checkRunNumbers(one, "KM", 2);
+
+    length = snprintf(arguments, sizeof(arguments), "report -o \"%s\" \"%s\" \"%s\"", report, one, two);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "report CLI case too long");
+    expectCli(executable, arguments, capture, false);
+    expectText(capture, "different configurations");
+    expectText(capture, "max-iterations: 1");
+    expectText(capture, "max-iterations: 2");
+    require(remove(capture) == 0, "could not remove CLI test capture");
+}
+
 int main(int argc, char* argv[])
 {
     if (argc == 2 && strcmp(argv[1], "--overflow") == 0)
@@ -465,7 +896,8 @@ int main(int argc, char* argv[])
         freeCentroids(&centroids);
         return EXIT_SUCCESS;
     }
-    require(argc == 2, "expected a fixture directory");
+    require(argc == 2 || argc == 6,
+            "expected a fixture directory and optional CLI executable, dataset, ground truth and batch output");
     testNumbers();
     testDatasetParser(argv[0], argv[1]);
     testInvalidAllocations(argv[0], argv[1]);
@@ -477,6 +909,7 @@ int main(int argc, char* argv[])
     testRepartition();
     testSplitCapacity();
     testClusterIndex();
+    if (argc == 6) testCliIterationLimit(argv[1], argv[2], argv[3], argv[4], argv[5]);
     puts("test_unit: parser, flat data, metrics, RNG, k-means, membership and repartition cases passed");
     return EXIT_SUCCESS;
 }

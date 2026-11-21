@@ -504,6 +504,18 @@ void trackerAddRow(Tracker* tracker, size_t count, double sse, size_t ci)
     stopwatchResume(&tracker->stopwatch);
 }
 
+/** @brief Pauses the run stopwatch. */
+void trackerPause(Tracker* tracker)
+{
+    stopwatchPause(&tracker->stopwatch);
+}
+
+/** @brief Resumes the run stopwatch after trackerPause. */
+void trackerResume(Tracker* tracker)
+{
+    stopwatchResume(&tracker->stopwatch);
+}
+
 /** @brief CI of `centroids` against the ground truth, computed with the stopwatch paused; CI_NA without ground truth.
  */
 size_t trackerCi(Tracker* tracker, const Centroids* centroids)
