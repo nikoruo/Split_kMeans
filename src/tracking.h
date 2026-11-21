@@ -115,6 +115,9 @@ void trackerSnapshot(Tracker* tracker, size_t count, const char* phase, const Da
                      const Centroids* centroids, size_t splitCluster);
 void trackerInnerRow(Tracker* tracker, KMeansStage stage, size_t iteration, const Centroids* centroids, double sse);
 void trackerAddRow(Tracker* tracker, size_t count, double sse, size_t ci);
+/* Leave untimed bookkeeping inside a run out of the run time; every pause needs a resume. */
+void trackerPause(Tracker* tracker);
+void trackerResume(Tracker* tracker);
 size_t trackerCi(Tracker* tracker, const Centroids* centroids);
 void trackerSplitSnapshot(Tracker* tracker, const Dataset* dataPoints, const Centroids* centroids,
                           size_t splitCluster);

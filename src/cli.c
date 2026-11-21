@@ -577,6 +577,10 @@ static void printUsage(const char* program)
     printf("  --seed <N>          Master seed (default: time-based, printed at start)\n");
     printf("  -r, --runs <N>      Last run per dataset (default: 100; RKM and RS: 1)\n");
     printf("  --first-run <i>     Start at run i (default 1) with the same derived seeds, to resume or split a job\n");
+    printf("  --max-iterations <N>\n");
+    printf("                      Positive per-call k-means cap (default: until SSE stops improving). Capped\n");
+    printf("                      runs may not converge; not a wall-clock timeout; RS keeps at most 2 k-means\n");
+    printf("                      iterations per swap\n");
     printf("  --max-swaps <N>     Random Swap trial swaps per run (default: 5000)\n");
     printf("  --repeats <N>       Repeated k-means repeats per run (default: 1000)\n");
     printf("  --bisect-tries <N>  Bisecting k-means tries per split (default: 5)\n");
@@ -707,6 +711,10 @@ int cliMain(int argc, char* argv[])
         {
             opt.runs = countOption(argc, argv, &i, 1);
             opt.runsGiven = true;
+        }
+        else if (strcmp(arg, "--max-iterations") == 0)
+        {
+            opt.maxIterations = countOption(argc, argv, &i, 1);
         }
         else if (strcmp(arg, "--max-swaps") == 0)
         {
