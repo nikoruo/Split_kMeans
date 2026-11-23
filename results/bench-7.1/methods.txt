@@ -1,0 +1,52 @@
+Step 7.1 paired benchmarks, 2026-11-23
+
+The MinGW reference is the clean 7d71c5e release binary, built with gcc
+16.2.0, -O3, -ffp-contract=off and -Werror. Its SHA-256 is
+037959F9B90223F81EA704F4536B0D56824FE678F6AA4741A2231A95D622E7E8.
+The benchmark candidate recorded 7d71c5e-dirty and has SHA-256
+5DAB58217D9FB0123382E02F1E3CFB8678AAAF42FA989266B8E1DA2D0F292351.
+The final MinGW rebuild differs from that candidate only in the PE link
+timestamp and checksum; its normalized SHA-256 is
+d56627ae8f40b41e622d45f47682b8ded7c6be64c5a2dbc6c1d1c2389514ba48.
+Thus the three MinGW sessions also measure the final MSVC-only inline hint.
+
+The MSVC reference is the clean 7836c4a Visual Studio 2026 Release x64
+binary, SHA-256 24F129B0F11D4241CA568733946A53157D84320A5309AE686E74D30EC1E799DE.
+Its production sources, project and Makefile match 7d71c5e. The final MSVC
+candidate recorded 7d71c5e-dirty and has SHA-256
+CF6B28EF5C184D5E60D58A6EFFBC8CC02827D770292253BAB78AD68627E8B2B6.
+The source patch and exact executables are retained outside OneDrive; the
+patch SHA-256 is 678C031877E7A61E1F48FCF341F54827F5EB21F427AD6D6642F05CF777BE0541.
+source-hashes.csv records the final sources, tests and build definitions.
+
+Every session used the five 7.0 jobs, seed 20261119, log level 1, no
+tracking, 25 RKM repeats and 300 RS swaps. Four rounds alternated the
+after and before binaries, and all 64 run/seed/SSE/CI identities matched.
+The laptop was on AC power. The sums of per-run minima are:
+  compiler  session    after ms    before ms    after/before
+  MinGW       1        6206.381     6263.405       0.990896
+  MinGW       2        6173.697     6234.750       0.990208
+  MinGW       3        6166.854     6179.717       0.997919
+  MSVC        1        7270.348     7455.272       0.975196
+These small gains and individual dataset ratios include timing noise.
+comparison.csv groups the same minima by dataset and algorithm; the
+session CSVs retain every sample identity and both minima.
+
+The first scratch-only MSVC build was slower: 8673.512 ms versus 7407.237
+ms in a paired session. Its nearest-centroid helper remained out of line.
+Forcing that existing hot helper inline on MSVC restored the gain above;
+the MinGW implementation remains standard inline. A clean MSVC rebuild
+showed the same initial regression. This is measured compiler sensitivity,
+not a claim about its exact microarchitectural cause.
+
+The final MinGW/MSVC benchmark also matched all 64 identities. Its
+minima total 6133.152 ms MinGW and 7245.222 ms MSVC, retained separately
+in cross-platform.csv; those are not a before/after comparison. All 21
+input hashes remained unchanged.
+
+Commands used:
+  mingw32-make WERROR=1 bench BENCH_REF=<ROOT>\before.exe BENCH_ROOT=<ROOT>\bench
+  build\release\bench.exe <ROOT>\after-final-msvc.exe <ROOT>\before-msvc.exe <ROOT>\msvc-final-ab NUL
+  mingw32-make WERROR=1 bench BENCH_ROOT=<ROOT>\cross-final
+ROOT is %TEMP%\skm_7_1_7d71c5e_20261123_180254. Raw rounds, comparison
+scripts, diagnostic builds, tracking runs and logs remain there.

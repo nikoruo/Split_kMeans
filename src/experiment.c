@@ -270,9 +270,13 @@ void runKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_
 
         trackerBeginRun(&tracker, i);
 
-        initialCentroids(init, numCentroids, dataPoints, &centroids, rng);
+        KMeansScratch scratch = allocateKMeansScratch(numCentroids, dataPoints->dimensions);
+        InitScratch initScratch = allocateInitScratch(dataPoints->size, init);
+        initialCentroids(init, numCentroids, dataPoints, &centroids, rng, &initScratch);
+        freeInitScratch(&initScratch);
 
-        double resultSse = runKMeansWithTracking(dataPoints, maxIterations, &centroids, &tracker);
+        double resultSse = runKMeansWithTracking(dataPoints, maxIterations, &centroids, &tracker, &scratch);
+        freeKMeansScratch(&scratch);
 
         duration = trackerEndRun(&tracker);
 
@@ -341,12 +345,14 @@ void runRepeatedKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTrut
 
         trackerBeginRun(&tracker, i);
 
+        Centroids centroids = allocateCentroids(numCentroids, dataPoints->dimensions);
+        KMeansScratch scratch = allocateKMeansScratch(numCentroids, dataPoints->dimensions);
+        InitScratch initScratch = allocateInitScratch(dataPoints->size, init);
         for (size_t j = 0; j < maxRepeats; ++j)
         {
             if (logLevel >= 3) printf("Repeat %zu\n", j + 1);
-            Centroids centroids = allocateCentroids(numCentroids, dataPoints->dimensions);
-            initialCentroids(init, numCentroids, dataPoints, &centroids, rng);
-            double resultSse = runKMeans(dataPoints, maxIterations, &centroids, &tracker, KM_STAGE_NONE);
+            initialCentroids(init, numCentroids, dataPoints, &centroids, rng, &initScratch);
+            double resultSse = runKMeans(dataPoints, maxIterations, &centroids, &tracker, KM_STAGE_NONE, &scratch);
 
             if (resultSse < bestSse)
             {
@@ -363,10 +369,11 @@ void runRepeatedKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTrut
 
             // One row per repeat (count = repeat): the best solution so far
             trackerAddRow(&tracker, j + 1, bestSse, bestCI);
-
-            freeCentroids(&centroids);
         }
 
+        freeInitScratch(&initScratch);
+        freeKMeansScratch(&scratch);
+        freeCentroids(&centroids);
         duration = trackerEndRun(&tracker);
 
         // bestPartitions holds labels only after an improvement, that is, when bestSse is below DBL_MAX
@@ -434,7 +441,9 @@ void runRandomSwapAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, s
 
         trackerBeginRun(&tracker, i);
 
-        initialCentroids(init, numCentroids, dataPoints, &centroids, rng);
+        InitScratch initScratch = allocateInitScratch(dataPoints->size, init);
+        initialCentroids(init, numCentroids, dataPoints, &centroids, rng, &initScratch);
+        freeInitScratch(&initScratch);
         partitionStep(dataPoints, &centroids); // Local repartition requires this
 
         double resultSse = randomSwap(dataPoints, &centroids, maxSwaps, distinctRows, &tracker, rng);
@@ -459,10 +468,10 @@ void runRandomSwapAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, s
     writeResultsToFile(fileName, stats, numCentroids, "RS", loopCount - firstRun, scaling, outputDirectory);
 }
 
-static void initializeSplitCentroid(const Dataset* dataPoints, Centroids* centroids)
+static void initializeSplitCentroid(const Dataset* dataPoints, Centroids* centroids, KMeansScratch* scratch)
 {
     assert(centroids->size == 1);
-    centroidStep(centroids, dataPoints);
+    centroidStep(centroids, dataPoints, scratch);
     for (size_t d = 0; d < centroids->dimensions; ++d)
     {
         if (!isfinite(centroidRow(centroids, 0)[d]))
@@ -510,9 +519,11 @@ void runRandomSplitAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, 
 
         trackerBeginRun(&tracker, i);
 
-        initializeSplitCentroid(dataPoints, &centroids);
+        KMeansScratch scratch = allocateKMeansScratch(numCentroids, dataPoints->dimensions);
+        initializeSplitCentroid(dataPoints, &centroids, &scratch);
 
-        double resultSse = runRandomSplit(dataPoints, &centroids, numCentroids, maxIterations, &tracker, rng);
+        double resultSse = runRandomSplit(dataPoints, &centroids, numCentroids, maxIterations, &tracker, rng, &scratch);
+        freeKMeansScratch(&scratch);
 
         duration = trackerEndRun(&tracker);
 
@@ -575,10 +586,13 @@ void runSseSplitAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, siz
 
         trackerBeginRun(&tracker, i);
 
-        initializeSplitCentroid(dataPoints, &centroids);
+        KMeansScratch scratch = allocateKMeansScratch(numCentroids, dataPoints->dimensions);
+        initializeSplitCentroid(dataPoints, &centroids, &scratch);
 
         double resultSse =
-            runSseSplit(dataPoints, &centroids, numCentroids, maxIterations, splitType, repartition, &tracker, rng);
+            runSseSplit(dataPoints, &centroids, numCentroids, maxIterations, splitType, repartition, &tracker, rng,
+                        &scratch);
+        freeKMeansScratch(&scratch);
 
         duration = trackerEndRun(&tracker);
 
@@ -637,10 +651,12 @@ void runBisectingKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTru
 
         trackerBeginRun(&tracker, i);
 
-        initializeSplitCentroid(dataPoints, &centroids);
+        KMeansScratch scratch = allocateKMeansScratch(numCentroids, dataPoints->dimensions);
+        initializeSplitCentroid(dataPoints, &centroids, &scratch);
 
         double resultSse = runBisectingKMeans(dataPoints, &centroids, numCentroids, maxIterations, bisectingIterations,
-                                               selection, &tracker, rng);
+                                               selection, &tracker, rng, &scratch);
+        freeKMeansScratch(&scratch);
 
         duration = trackerEndRun(&tracker);
 

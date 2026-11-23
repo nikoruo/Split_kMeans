@@ -42,6 +42,20 @@ ClusteringResult allocateClusteringResult(size_t numCentroids, size_t dimensions
     return result;
 }
 
+SplitScratch allocateSplitScratch(KMeansScratch* kmeans)
+{
+    assert(kmeans != NULL && kmeans->sums.capacity >= 2);
+    SplitScratch scratch = {kmeans, allocateClusteringResult(2, kmeans->sums.dimensions)};
+    return scratch;
+}
+
+void freeSplitScratch(SplitScratch* scratch)
+{
+    if (scratch == NULL) return;
+    freeClusteringResult(&scratch->trial);
+    *scratch = (SplitScratch){0};
+}
+
 ClusterIndex allocateClusterIndex(size_t pointCount, size_t capacity)
 {
     const size_t limit = SIZE_MAX / sizeof(size_t);
@@ -169,26 +183,29 @@ static void selectSplitSeeds(const Dataset* dataPoints, const size_t* indices, s
     exit(EXIT_FAILURE);
 }
 
-static ClusteringResult localTwoMeans(Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel,
-                                      size_t iterations, Tracker* tracker, KMeansStage stage, bool prePartition,
-                                      size_t newCluster, Rng* rng, Centroids* trialCentroids, size_t* trialLabels)
+static ClusteringResult* localTwoMeans(Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel,
+                                       size_t iterations, Tracker* tracker, KMeansStage stage, bool prePartition,
+                                       size_t newCluster, Rng* rng, Centroids* trialCentroids, size_t* trialLabels,
+                                       SplitScratch* scratch)
 {
     assert(iterations > 0);
     assert((trialCentroids == NULL) == (trialLabels == NULL));
+    assert(scratch != NULL && scratch->kmeans != NULL && scratch->trial.centroids.size == 2 &&
+           scratch->trial.centroids.dimensions == dataPoints->dimensions);
     DatasetView view = clusterView(dataPoints, index, clusterLabel);
     size_t c1, c2;
     selectSplitSeeds(dataPoints, view.indices, view.size, rng, &c1, &c2);
 
-    ClusteringResult result = allocateClusteringResult(2, dataPoints->dimensions);
-    copyCoordinates(centroidRow(&result.centroids, 0), datasetViewRow(&view, c1), dataPoints->dimensions);
-    copyCoordinates(centroidRow(&result.centroids, 1), datasetViewRow(&view, c2), dataPoints->dimensions);
-    result.sse = runKMeansView(&view, iterations, &result.centroids, tracker, stage, prePartition);
+    ClusteringResult* result = &scratch->trial;
+    copyCoordinates(centroidRow(&result->centroids, 0), datasetViewRow(&view, c1), dataPoints->dimensions);
+    copyCoordinates(centroidRow(&result->centroids, 1), datasetViewRow(&view, c2), dataPoints->dimensions);
+    result->sse = runKMeansView(&view, iterations, &result->centroids, tracker, stage, prePartition, scratch->kmeans);
     if (trialCentroids != NULL)
     {
-        assert(trialCentroids->size == result.centroids.size &&
-               trialCentroids->dimensions == result.centroids.dimensions);
-        copyCoordinates(trialCentroids->coordinates, result.centroids.coordinates,
-                        result.centroids.size * result.centroids.dimensions);
+        assert(trialCentroids->size == result->centroids.size &&
+               trialCentroids->dimensions == result->centroids.dimensions);
+        copyCoordinates(trialCentroids->coordinates, result->centroids.coordinates,
+                        result->centroids.size * result->centroids.dimensions);
         for (size_t i = 0; i < view.size; ++i) trialLabels[view.indices[i]] = view.partitions[i];
     }
 
@@ -225,16 +242,16 @@ static void appendSplitCentroids(Centroids* centroids, size_t clusterToSplit, co
  * @param localMaxIterations Max iterations for the local k-means refinement; at least 1.
  * @param tracker Optional: `_inner.csv` rows of the local 2-means (stage split) and the ground truth for the level-3
  * log.
- * @errors Exits on allocation failure. Asserts a positive iteration limit and at least two distinct points.
+ * @errors Asserts a positive iteration limit, matching scratch and at least two distinct points.
  */
 void splitClusterIntraCluster(Dataset* dataPoints, const ClusterIndex* index, Centroids* centroids,
-                              size_t clusterToSplit, size_t localMaxIterations, Tracker* tracker, Rng* rng)
+                              size_t clusterToSplit, size_t localMaxIterations, Tracker* tracker, Rng* rng,
+                              SplitScratch* scratch)
 {
     assert(centroids->size < centroids->capacity && centroids->dimensions == dataPoints->dimensions);
-    ClusteringResult result = localTwoMeans(dataPoints, index, clusterToSplit, localMaxIterations, tracker,
-                                            KM_STAGE_SPLIT, true, centroids->size, rng, NULL, NULL);
-    appendSplitCentroids(centroids, clusterToSplit, &result.centroids);
-    freeClusteringResult(&result);
+    ClusteringResult* result = localTwoMeans(dataPoints, index, clusterToSplit, localMaxIterations, tracker,
+                                             KM_STAGE_SPLIT, true, centroids->size, rng, NULL, NULL, scratch);
+    appendSplitCentroids(centroids, clusterToSplit, &result->centroids);
 }
 
 /**
@@ -251,12 +268,13 @@ void splitClusterIntraCluster(Dataset* dataPoints, const ClusterIndex* index, Ce
  * @param tracker Optional: the after-split snapshot, the `_inner.csv` rows (stage global) and the ground truth for the
  * level-3 log.
  * @return SSE after global refinement.
- * @errors Exits on allocation failure. Asserts that the cluster has at least two distinct points.
+ * @errors Asserts matching scratch and that the cluster has at least two distinct points.
  * @note Runs as --algo skm-global-basic, the basic comparison for SKM-Global: global k-means starts right after
  *       the two random seeds, without the local 2-means. Step 6.7 compares the two (`results/M4/6.7/`).
  */
 double splitClusterGlobal(Dataset* dataPoints, const ClusterIndex* index, Centroids* centroids,
-                          size_t clusterToSplit, size_t globalMaxIterations, Tracker* tracker, Rng* rng)
+                          size_t clusterToSplit, size_t globalMaxIterations, Tracker* tracker, Rng* rng,
+                          KMeansScratch* scratch)
 {
     assert(centroids->size < centroids->capacity && centroids->dimensions == dataPoints->dimensions);
     assert(index->dataset == dataPoints && clusterToSplit < index->clusterCount);
@@ -284,7 +302,7 @@ double splitClusterGlobal(Dataset* dataPoints, const ClusterIndex* index, Centro
     trackerSplitSnapshot(tracker, dataPoints, centroids, clusterToSplit);
 
     // Run global k-means, this time including the new centroids
-    double resultSse = runKMeans(dataPoints, globalMaxIterations, centroids, tracker, KM_STAGE_GLOBAL);
+    double resultSse = runKMeans(dataPoints, globalMaxIterations, centroids, tracker, KM_STAGE_GLOBAL, scratch);
 
     return resultSse;
 }
@@ -400,10 +418,9 @@ size_t localRepartition(Dataset* dataPoints, ClusterIndex* index, Centroids* cen
     return splittable;
 }
 
-static double takeFiniteTrial(ClusteringResult* result, size_t clusterLabel)
+static double takeFiniteTrial(const ClusteringResult* result, size_t clusterLabel)
 {
     double sse = result->sse;
-    freeClusteringResult(result);
     if (sse == DBL_MAX || !isfinite(sse))
     {
         fprintf(stderr, "Error: Cannot evaluate split of cluster %zu: no finite trial SSE\n", clusterLabel);
@@ -424,10 +441,10 @@ static double takeFiniteTrial(ClusteringResult* result, size_t clusterLabel)
  * @param localMaxIterations Max iterations for the local k-means refinement.
  * @param originalClusterSSE Current SSE of the cluster before splitting.
  * @return SSE drop (non-negative when the split helps); 0 for a cluster without two distinct points.
- * @errors Exits on allocation failure or a non-finite cluster or trial SSE.
+ * @errors Exits on a non-finite cluster or trial SSE.
  */
 double tentativeSseDrop(Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel, size_t localMaxIterations,
-                        double originalClusterSSE, Rng* rng)
+                        double originalClusterSSE, Rng* rng, SplitScratch* scratch)
 {
     assert(index->dataset == dataPoints && clusterLabel < index->clusterCount);
     if (!index->eligible[clusterLabel]) return 0.0;
@@ -436,14 +453,14 @@ double tentativeSseDrop(Dataset* dataPoints, const ClusterIndex* index, size_t c
         fprintf(stderr, "Error: Cannot evaluate split of cluster %zu: non-finite SSE\n", clusterLabel);
         exit(EXIT_FAILURE);
     }
-    ClusteringResult result = localTwoMeans(dataPoints, index, clusterLabel, localMaxIterations, NULL, KM_STAGE_NONE,
-                                            false, SIZE_MAX, rng, NULL, NULL);
-    return originalClusterSSE - takeFiniteTrial(&result, clusterLabel);
+    ClusteringResult* result = localTwoMeans(dataPoints, index, clusterLabel, localMaxIterations, NULL, KM_STAGE_NONE,
+                                             false, SIZE_MAX, rng, NULL, NULL, scratch);
+    return originalClusterSSE - takeFiniteTrial(result, clusterLabel);
 }
 
 double cacheTentativeSplit(Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel,
                            size_t localMaxIterations, double originalClusterSSE, Centroids* trialCentroids,
-                           size_t* trialLabels, Tracker* tracker, InnerTrace* trace, Rng* rng)
+                           size_t* trialLabels, Tracker* tracker, InnerTrace* trace, Rng* rng, SplitScratch* scratch)
 {
     assert(index->dataset == dataPoints && clusterLabel < index->clusterCount);
     assert(trialCentroids != NULL && trialLabels != NULL);
@@ -461,11 +478,11 @@ double cacheTentativeSplit(Dataset* dataPoints, const ClusterIndex* index, size_
     const bool capture = tracker != NULL && tracker->inner && trace != NULL;
     InnerTrace previous = {0};
     if (capture) previous = trackerCaptureBegin(tracker, trace);
-    ClusteringResult result = localTwoMeans(dataPoints, index, clusterLabel, localMaxIterations,
-                                            capture ? tracker : NULL, capture ? KM_STAGE_SPLIT : KM_STAGE_NONE,
-                                            false, SIZE_MAX, rng, trialCentroids, trialLabels);
+    ClusteringResult* result = localTwoMeans(dataPoints, index, clusterLabel, localMaxIterations,
+                                             capture ? tracker : NULL, capture ? KM_STAGE_SPLIT : KM_STAGE_NONE,
+                                             false, SIZE_MAX, rng, trialCentroids, trialLabels, scratch);
     if (capture) trackerCaptureEnd(tracker, trace, previous);
-    return originalClusterSSE - takeFiniteTrial(&result, clusterLabel);
+    return originalClusterSSE - takeFiniteTrial(result, clusterLabel);
 }
 
 void applyTentativeSplit(Dataset* dataPoints, const ClusterIndex* index, Centroids* centroids, size_t clusterLabel,
@@ -484,12 +501,13 @@ void applyTentativeSplit(Dataset* dataPoints, const ClusterIndex* index, Centroi
 }
 
 double runBisectingTrial(Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel, size_t localMaxIterations,
-                         Centroids* trialCentroids, size_t* trialLabels, Tracker* tracker, Rng* rng)
+                         Centroids* trialCentroids, size_t* trialLabels, Tracker* tracker, Rng* rng,
+                         SplitScratch* scratch)
 {
     assert(trialCentroids != NULL && trialLabels != NULL);
-    ClusteringResult result = localTwoMeans(dataPoints, index, clusterLabel, localMaxIterations, tracker, KM_STAGE_TRY,
-                                            false, SIZE_MAX, rng, trialCentroids, trialLabels);
-    return takeFiniteTrial(&result, clusterLabel);
+    ClusteringResult* result = localTwoMeans(dataPoints, index, clusterLabel, localMaxIterations, tracker, KM_STAGE_TRY,
+                                             false, SIZE_MAX, rng, trialCentroids, trialLabels, scratch);
+    return takeFiniteTrial(result, clusterLabel);
 }
 
 /**

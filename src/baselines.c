@@ -71,7 +71,7 @@ void localRepartitionForRS(Dataset* dataPoints, const Centroids* centroids, size
         }
     }
 
-    // centroidStep(centroids, dataPoints);
+    // centroidStep(centroids, dataPoints); // historical call; the current API also requires scratch
 }
 
 static bool matchesCentroid(const double* point, const Centroids* centroids)
@@ -155,6 +155,7 @@ double randomSwap(Dataset* dataPoints, Centroids* centroids, size_t maxSwaps, si
     size_t* eligible = malloc(dataPoints->size * sizeof(*eligible));
     handleMemoryError(eligible);
     ClusterIndex membership = allocateClusterIndex(dataPoints->size, numCentroids);
+    KMeansScratch scratch = allocateKMeansScratch(numCentroids, dimensions);
 
     for (size_t i = 0; i < maxSwaps; ++i)
     {
@@ -176,7 +177,7 @@ double randomSwap(Dataset* dataPoints, Centroids* centroids, size_t maxSwaps, si
         updateAffectedCentroids(dataPoints, &membership, centroids, affected);
 
         // K-means
-        double resultSse = runKMeans(dataPoints, kMeansIterations, centroids, tracker, KM_STAGE_NONE);
+        double resultSse = runKMeans(dataPoints, kMeansIterations, centroids, tracker, KM_STAGE_NONE, &scratch);
         if (!isfinite(resultSse))
         {
             trackerPause(tracker);
@@ -221,6 +222,7 @@ double randomSwap(Dataset* dataPoints, Centroids* centroids, size_t maxSwaps, si
     free(affected);
     free(eligible);
     freeClusterIndex(&membership);
+    freeKMeansScratch(&scratch);
 
     return bestSse;
 }
@@ -243,7 +245,8 @@ double randomSwap(Dataset* dataPoints, Centroids* centroids, size_t maxSwaps, si
  *         no finite final SSE, or when no cluster with two distinct points is left to split.
  */
 double runBisectingKMeans(Dataset* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
-                          size_t bisectingIterations, BisectSelect selection, Tracker* tracker, Rng* rng)
+                          size_t bisectingIterations, BisectSelect selection, Tracker* tracker, Rng* rng,
+                          KMeansScratch* scratch)
 {
     assert(centroids->capacity >= maxCentroids);
     if (selection != BISECT_SELECT_SSE && selection != BISECT_SELECT_SIZE)
@@ -263,11 +266,13 @@ double runBisectingKMeans(Dataset* dataPoints, Centroids* centroids, size_t maxC
 
     Centroids trialCentroids = {0};
     Centroids bestSplit = {0};
+    SplitScratch splitScratch = {0};
     size_t* trialLabels = NULL;
     if (maxCentroids > 1)
     {
         trialCentroids = allocateCentroids(2, dataPoints->dimensions);
         bestSplit = allocateCentroids(2, dataPoints->dimensions);
+        splitScratch = allocateSplitScratch(scratch);
         trialLabels = malloc(dataPoints->size * sizeof(*trialLabels));
         handleMemoryError(trialLabels);
         SseList[0] = calculateClusterSSE(dataPoints, centroids, 0);
@@ -298,7 +303,7 @@ double runBisectingKMeans(Dataset* dataPoints, Centroids* centroids, size_t maxC
         for (size_t j = 0; j < bisectingIterations; ++j)
         {
             double sse = runBisectingTrial(dataPoints, &membership, clusterToSplit, maxIterations, &trialCentroids,
-                                           trialLabels, tracker, rng);
+                                           trialLabels, tracker, rng, &splitScratch);
 
             if (logLevel >= 3) printf("(Bisecting) Cluster %zu, try %zu: SSE %.0f\n", clusterToSplit, j + 1, sse);
 
@@ -324,7 +329,8 @@ double runBisectingKMeans(Dataset* dataPoints, Centroids* centroids, size_t maxC
         ++iterationCount;
     }
 
-    double finalResultSse = runKMeans(dataPoints, maxIterations, centroids, tracker, KM_STAGE_FINAL);
+    freeSplitScratch(&splitScratch);
+    double finalResultSse = runKMeans(dataPoints, maxIterations, centroids, tracker, KM_STAGE_FINAL, scratch);
     if (finalResultSse == DBL_MAX || !isfinite(finalResultSse))
     {
         fprintf(stderr, "Error: Bisecting k-means produced no finite final SSE\n");

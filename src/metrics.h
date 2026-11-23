@@ -5,6 +5,7 @@
 #ifndef METRICS_H
 #define METRICS_H
 
+#include "platform.h"
 #include "dataset.h"
 
 #include <assert.h>
@@ -31,8 +32,9 @@ static inline double calculateSquaredEuclideanDistance(const double* a, const do
  * @brief Index of the nearest centroid by squared Euclidean distance; the first one on ties.
  *
  * Requires at least one centroid (asserted) and the same dimensionality as the point (not checked). O(K·D).
+ * MSVC needs the inline hint to avoid the low-dimensional regression after scratch reuse.
  */
-static inline size_t findNearestCentroid(const double* queryPoint, const Centroids* targetCentroids)
+static SKM_HOT_INLINE size_t findNearestCentroid(const double* queryPoint, const Centroids* targetCentroids)
 {
     assert(targetCentroids->size > 0);
 

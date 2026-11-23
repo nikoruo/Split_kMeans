@@ -30,6 +30,73 @@ static void require(bool condition, const char* message)
     }
 }
 
+static KMeansScratch unitMeans;
+static SplitScratch unitSplit;
+static InitScratch unitInit[2];
+static bool unitScratchRegistered;
+
+static void freeUnitScratch(void)
+{
+    freeSplitScratch(&unitSplit);
+    freeKMeansScratch(&unitMeans);
+    freeInitScratch(&unitInit[0]);
+    freeInitScratch(&unitInit[1]);
+}
+
+static void registerUnitScratch(void)
+{
+    if (!unitScratchRegistered)
+    {
+        require(atexit(freeUnitScratch) == 0, "could not register scratch cleanup");
+        unitScratchRegistered = true;
+    }
+}
+
+static KMeansScratch* unitScratch(size_t capacity, size_t dimensions)
+{
+    registerUnitScratch();
+    if (unitMeans.sums.coordinates == NULL || unitMeans.sums.capacity < capacity ||
+        unitMeans.sums.dimensions != dimensions)
+    {
+        freeKMeansScratch(&unitMeans);
+        unitMeans = allocateKMeansScratch(capacity, dimensions);
+    }
+    return &unitMeans;
+}
+
+static KMeansScratch* unitKMeansScratch(const Centroids* centroids)
+{
+    return unitScratch(centroids->capacity, centroids->dimensions);
+}
+
+static InitScratch* unitInitScratch(const Dataset* dataPoints, InitMethod init)
+{
+    registerUnitScratch();
+    InitScratch* scratch = &unitInit[init == INIT_KMEANSPP ? 1 : 0];
+    if (scratch->capacity < dataPoints->size)
+    {
+        freeInitScratch(scratch);
+        *scratch = allocateInitScratch(dataPoints->size, init);
+    }
+    return scratch;
+}
+
+static SplitScratch* unitSplitScratch(const Dataset* dataPoints, const ClusterIndex* index)
+{
+    KMeansScratch* kmeans = unitScratch(index->capacity < 2 ? 2 : index->capacity, dataPoints->dimensions);
+    if (unitSplit.trial.centroids.coordinates == NULL ||
+        unitSplit.trial.centroids.dimensions != dataPoints->dimensions)
+    {
+        freeSplitScratch(&unitSplit);
+        unitSplit = allocateSplitScratch(kmeans);
+    }
+    else
+    {
+        unitSplit.kmeans = kmeans;
+    }
+    return &unitSplit;
+}
+
 static FILE* writeFixture(const char* path)
 {
     FILE* file = fopen(path, "w");
@@ -171,7 +238,7 @@ static void testDistinctInitialization(void)
         Rng actual, previous;
         rng_seed(&actual, seed);
         rng_seed(&previous, seed);
-        generateRandomCentroids(6, &points, &centroids, &actual);
+        generateRandomCentroids(6, &points, &centroids, &actual, unitInitScratch(&points, INIT_RANDOM));
         for (size_t i = 0; i < 6; ++i)
         {
             size_t j = i + rng_below(&previous, 32 - i);
@@ -209,7 +276,7 @@ static void testDistinctInitialization(void)
         }
         bool noCollision = values[indices[0]] != values[indices[1]] &&
                            values[indices[0]] != values[indices[2]] && values[indices[1]] != values[indices[2]];
-        generateRandomCentroids(3, &points, &centroids, &rng);
+        generateRandomCentroids(3, &points, &centroids, &rng, unitInitScratch(&points, INIT_RANDOM));
         for (size_t i = 0; i < centroids.size; ++i)
             for (size_t j = 0; j < i; ++j)
                 require(!coordinatesEqual(centroidRowConst(&centroids, i), centroidRowConst(&centroids, j), 1),
@@ -240,7 +307,7 @@ static void testDistinctInitialization(void)
     (void)rng_below(&previous, 5);
     (void)rng_below(&previous, 4);
     (void)rng_below(&previous, 3);
-    generateRandomCentroids(2, &points, &centroids, &actual);
+    generateRandomCentroids(2, &points, &centroids, &actual, unitInitScratch(&points, INIT_RANDOM));
     require(centroidRow(&centroids, 0)[0] == 0 && centroidRow(&centroids, 1)[0] == 10 &&
                 rng_u32(&actual) == rng_u32(&previous),
             "duplicate initialization did not shrink the remaining Fisher-Yates pool");
@@ -262,7 +329,7 @@ static void testKMeans(void)
     centroidRow(&centroids, 1)[0] = 10.0;
     centroidRow(&centroids, 2)[0] = 100.0;
 
-    double sse = runKMeans(&points, 10, &centroids, NULL, KM_STAGE_NONE);
+    double sse = runKMeans(&points, 10, &centroids, NULL, KM_STAGE_NONE, unitKMeansScratch(&centroids));
     require(sse == 2.0 && centroidRow(&centroids, 0)[0] == 1.0 &&
                 centroidRow(&centroids, 1)[0] == 10.0 && centroidRow(&centroids, 2)[0] == 100.0,
             "k-means result or empty-centroid retention is incorrect");
@@ -289,8 +356,8 @@ static void testKMeansView(void)
     deepCopyCentroids(&dense, &indexed);
 
     partitionStep(&copy, &dense);
-    double expected = runKMeans(&copy, 10, &dense, NULL, KM_STAGE_NONE);
-    double actual = runKMeansView(&view, 10, &indexed, NULL, KM_STAGE_NONE, true);
+    double expected = runKMeans(&copy, 10, &dense, NULL, KM_STAGE_NONE, unitKMeansScratch(&dense));
+    double actual = runKMeansView(&view, 10, &indexed, NULL, KM_STAGE_NONE, true, unitKMeansScratch(&indexed));
     require(expected == actual && memcmp(dense.coordinates, indexed.coordinates, 4 * sizeof(double)) == 0,
             "indexed k-means changed SSE or centroid coordinates");
     for (size_t i = 0; i < view.size; ++i)
@@ -302,6 +369,91 @@ static void testKMeansView(void)
     freeCentroids(&dense);
     freeDataset(&copy);
     freeDataset(&source);
+}
+
+static void testKMeansScratchReuse(void)
+{
+    const double values[] = {0.1, 2.1, 9.9, 12.1};
+    Dataset points = allocateDataset(4, 1);
+    Centroids centroids = allocateCentroids(3, 1);
+    KMeansScratch scratch = allocateKMeansScratch(3, 1);
+    for (size_t i = 0; i < points.size; ++i)
+    {
+        datasetRow(&points, i)[0] = values[i];
+        points.partitions[i] = i < 2 ? 0 : 1;
+    }
+    centroidRow(&centroids, 2)[0] = 99.0;
+    for (size_t i = 0; i < 3; ++i)
+    {
+        scratch.sums.coordinates[i] = 123.0;
+        scratch.counts[i] = 42;
+    }
+    centroidStep(&centroids, &points, &scratch);
+    const double firstMean = (values[0] + values[1]) / 2;
+    const double secondMean = (values[2] + values[3]) / 2;
+    require(centroidRow(&centroids, 0)[0] == firstMean && centroidRow(&centroids, 1)[0] == secondMean &&
+                centroidRow(&centroids, 2)[0] == 99.0,
+            "dense centroid step did not clear reused sums or retain an empty centroid");
+
+    const size_t indices[] = {0, 2, 3};
+    size_t labels[] = {SIZE_MAX, SIZE_MAX, SIZE_MAX};
+    DatasetView view = {&points, indices, labels, 3};
+    Centroids local = allocateCentroids(2, 1);
+    centroidRow(&local, 0)[0] = values[0];
+    centroidRow(&local, 1)[0] = values[2];
+    double sse = runKMeansView(&view, 10, &local, NULL, KM_STAGE_NONE, false, &scratch);
+    const double expectedSse = (values[2] - secondMean) * (values[2] - secondMean) +
+                               (values[3] - secondMean) * (values[3] - secondMean);
+    require(sse == expectedSse && centroidRow(&local, 0)[0] == values[0] &&
+                centroidRow(&local, 1)[0] == secondMean && labels[0] == 0 && labels[1] == 1 && labels[2] == 1,
+            "indexed k-means did not clear scratch reused from dense k-means");
+
+    double sum = 0.0;
+    for (size_t i = 0; i < points.size; ++i)
+    {
+        points.partitions[i] = 2;
+        sum += values[i];
+    }
+    centroidStep(&centroids, &points, &scratch);
+    require(centroidRow(&centroids, 0)[0] == firstMean && centroidRow(&centroids, 1)[0] == secondMean &&
+                centroidRow(&centroids, 2)[0] == sum / points.size,
+            "growing the active scratch range retained sums or counts from an earlier step");
+
+    freeCentroids(&local);
+    freeKMeansScratch(&scratch);
+    freeCentroids(&centroids);
+    freeDataset(&points);
+}
+
+static void testInitScratchReuse(void)
+{
+    const double values[] = {0.0, 0.0, 1.0, 2.0, 3.0, 4.0};
+    Dataset points = allocateDataset(6, 1);
+    Centroids actual = allocateCentroids(4, 1);
+    Centroids expected = allocateCentroids(4, 1);
+    for (size_t i = 0; i < points.size; ++i) datasetRow(&points, i)[0] = values[i];
+    for (size_t method = 0; method < 2; ++method)
+    {
+        InitMethod init = method == 0 ? INIT_RANDOM : INIT_KMEANSPP;
+        InitScratch reused = allocateInitScratch(points.size, init);
+        for (uint64_t seed = 0; seed < 16; ++seed)
+        {
+            InitScratch fresh = allocateInitScratch(points.size, init);
+            Rng actualRng, expectedRng;
+            rng_seed(&actualRng, seed);
+            rng_seed(&expectedRng, seed);
+            initialCentroids(init, 4, &points, &actual, &actualRng, &reused);
+            initialCentroids(init, 4, &points, &expected, &expectedRng, &fresh);
+            require(memcmp(actual.coordinates, expected.coordinates, 4 * sizeof(double)) == 0 &&
+                        rng_u32(&actualRng) == rng_u32(&expectedRng),
+                    "reused initialization scratch changed centroids or the random stream");
+            freeInitScratch(&fresh);
+        }
+        freeInitScratch(&reused);
+    }
+    freeCentroids(&expected);
+    freeCentroids(&actual);
+    freeDataset(&points);
 }
 
 static const double roundingValues[] = {
@@ -336,8 +488,8 @@ static void testLastKMeansState(void)
     copyCoordinates(denseCentroids.coordinates, roundingInitial, 3);
     copyCoordinates(viewCentroids.coordinates, roundingInitial, 3);
     copyCoordinates(trackedCentroids.coordinates, roundingInitial, 3);
-    double firstSse = runKMeans(&first, 1, &firstCentroids, NULL, KM_STAGE_NONE);
-    double denseSse = runKMeans(&dense, 10, &denseCentroids, NULL, KM_STAGE_NONE);
+    double firstSse = runKMeans(&first, 1, &firstCentroids, NULL, KM_STAGE_NONE, unitKMeansScratch(&firstCentroids));
+    double denseSse = runKMeans(&dense, 10, &denseCentroids, NULL, KM_STAGE_NONE, unitKMeansScratch(&denseCentroids));
     require(firstSse == 1879048192.0 && denseSse == 2147483648.0 &&
                 denseSse > firstSse && calculateSSE(&dense, &denseCentroids) == denseSse,
             "dense k-means did not return its last non-improving state");
@@ -345,7 +497,8 @@ static void testLastKMeansState(void)
     size_t indices[ROUNDING_COUNT], scratch[ROUNDING_COUNT];
     for (size_t i = 0; i < ROUNDING_COUNT; ++i) indices[i] = i;
     DatasetView view = {&indexed, indices, scratch, ROUNDING_COUNT};
-    double viewSse = runKMeansView(&view, 10, &viewCentroids, NULL, KM_STAGE_NONE, false);
+    double viewSse =
+        runKMeansView(&view, 10, &viewCentroids, NULL, KM_STAGE_NONE, false, unitKMeansScratch(&viewCentroids));
     for (size_t i = 0; i < indexed.size; ++i) indexed.partitions[i] = scratch[i];
     require(viewSse == denseSse && calculateSSE(&indexed, &viewCentroids) == viewSse &&
                 memcmp(viewCentroids.coordinates, denseCentroids.coordinates, 3 * sizeof(double)) == 0,
@@ -355,7 +508,8 @@ static void testLastKMeansState(void)
     options.rows = true;
     Tracker tracker = trackerCreate(ALGO_KM, ".", &denseCentroids, &options);
     trackerBeginRun(&tracker, 0);
-    double trackedSse = runKMeansWithTracking(&tracked, 10, &trackedCentroids, &tracker);
+    double trackedSse =
+        runKMeansWithTracking(&tracked, 10, &trackedCentroids, &tracker, unitKMeansScratch(&trackedCentroids));
     require(trackedSse == denseSse && calculateSSE(&tracked, &trackedCentroids) == trackedSse &&
                 tracker.rowCount == 2 && tracker.rows[1].sse == trackedSse && tracker.rows[1].ci == 0 &&
                 memcmp(trackedCentroids.coordinates, denseCentroids.coordinates, 3 * sizeof(double)) == 0,
@@ -380,7 +534,7 @@ static void testLastTrialState(void)
     Dataset points = roundingDataset();
     Centroids centroids = allocateCentroids(2, 1);
     centroids.size = 1;
-    centroidStep(&centroids, &points);
+    centroidStep(&centroids, &points, unitKMeansScratch(&centroids));
     ClusterIndex index = allocateClusterIndex(points.size, centroids.capacity);
     rebuildClusterIndex(&index, &points, centroids.size);
     double originalSse = calculateClusterSSE(&points, &centroids, 0);
@@ -391,8 +545,9 @@ static void testLastTrialState(void)
     rng_seed(&first, 182);
     rng_seed(&second, 182);
     double drop = cacheTentativeSplit(&points, &index, 0, 10, originalSse, &cached, cachedLabels,
-                                      NULL, NULL, &first);
-    double bisectSse = runBisectingTrial(&points, &index, 0, 10, &bisect, bisectLabels, NULL, &second);
+                                      NULL, NULL, &first, unitSplitScratch(&points, &index));
+    double bisectSse = runBisectingTrial(&points, &index, 0, 10, &bisect, bisectLabels, NULL, &second,
+                                         unitSplitScratch(&points, &index));
     require(bisectSse == 5905580032.0 && drop == originalSse - bisectSse &&
                 memcmp(cached.coordinates, bisect.coordinates, 2 * sizeof(double)) == 0 &&
                 rng_u32(&first) == rng_u32(&second),
@@ -423,7 +578,7 @@ static void testLastStateSplitRunners(void)
         Dataset points = roundingDataset();
         Centroids centroids = allocateCentroids(3, 1);
         centroids.size = 1;
-        centroidStep(&centroids, &points);
+        centroidStep(&centroids, &points, unitKMeansScratch(&centroids));
         TrackOptions options = {0};
         options.rows = true;
         options.inner = true;
@@ -433,11 +588,13 @@ static void testLastStateSplitRunners(void)
         rng_seed(&rng, cases[c].seed);
         double sse;
         if (cases[c].algorithm == ALGO_SKM_RANDOM)
-            sse = runRandomSplit(&points, &centroids, 3, 10, &tracker, &rng);
+            sse = runRandomSplit(&points, &centroids, 3, 10, &tracker, &rng, unitKMeansScratch(&centroids));
         else if (cases[c].algorithm == ALGO_BISECTING)
-            sse = runBisectingKMeans(&points, &centroids, 3, 10, 5, BISECT_SELECT_SSE, &tracker, &rng);
+            sse = runBisectingKMeans(&points, &centroids, 3, 10, 5, BISECT_SELECT_SSE, &tracker, &rng,
+                                     unitKMeansScratch(&centroids));
         else
-            sse = runSseSplit(&points, &centroids, 3, 10, cases[c].algorithm, REPARTITION_INWARD, &tracker, &rng);
+            sse = runSseSplit(&points, &centroids, 3, 10, cases[c].algorithm, REPARTITION_INWARD, &tracker, &rng,
+                              unitKMeansScratch(&centroids));
         KMeansStage stage = cases[c].algorithm == ALGO_SKM_GLOBAL || cases[c].algorithm == ALGO_SKM_GLOBAL_BASIC
                                 ? KM_STAGE_GLOBAL : KM_STAGE_FINAL;
         require(tracker.rowCount > 0 && tracker.innerCount > 0 && sse == calculateSSE(&points, &centroids) &&
@@ -463,7 +620,7 @@ static void testBisectingLastTrialWins(void)
     Centroids actualCentroids = allocateCentroids(2, 1);
     expectedCentroids.size = 1;
     actualCentroids.size = 1;
-    centroidStep(&expectedCentroids, &expected);
+    centroidStep(&expectedCentroids, &expected, unitKMeansScratch(&expectedCentroids));
     centroidRow(&actualCentroids, 0)[0] = centroidRowConst(&expectedCentroids, 0)[0];
     ClusterIndex index = allocateClusterIndex(expected.size, expectedCentroids.capacity);
     rebuildClusterIndex(&index, &expected, expectedCentroids.size);
@@ -473,12 +630,15 @@ static void testBisectingLastTrialWins(void)
     Rng expectedRng, actualRng;
     rng_seed(&expectedRng, 1);
     rng_seed(&actualRng, 1);
-    double firstSse = runBisectingTrial(&expected, &index, 0, 10, &first, firstLabels, NULL, &expectedRng);
-    double secondSse = runBisectingTrial(&expected, &index, 0, 10, &second, secondLabels, NULL, &expectedRng);
+    double firstSse = runBisectingTrial(&expected, &index, 0, 10, &first, firstLabels, NULL, &expectedRng,
+                                        unitSplitScratch(&expected, &index));
+    double secondSse = runBisectingTrial(&expected, &index, 0, 10, &second, secondLabels, NULL, &expectedRng,
+                                         unitSplitScratch(&expected, &index));
     require(firstSse == 5905580032.0 && secondSse == 4026531840.0 && firstSse > secondSse,
             "bisecting fixture did not distinguish the last scores of its tries");
     applyTentativeSplit(&expected, &index, &expectedCentroids, 0, &second, secondLabels);
-    double expectedSse = runKMeans(&expected, 10, &expectedCentroids, NULL, KM_STAGE_FINAL);
+    double expectedSse =
+        runKMeans(&expected, 10, &expectedCentroids, NULL, KM_STAGE_FINAL, unitKMeansScratch(&expectedCentroids));
 
     TrackOptions options = {0};
     options.rows = true;
@@ -486,7 +646,7 @@ static void testBisectingLastTrialWins(void)
     Tracker tracker = trackerCreate(ALGO_BISECTING, ".", &expectedCentroids, &options);
     trackerBeginRun(&tracker, 0);
     double actualSse = runBisectingKMeans(&actual, &actualCentroids, 2, 10, 2, BISECT_SELECT_SSE,
-                                          &tracker, &actualRng);
+                                          &tracker, &actualRng, unitKMeansScratch(&actualCentroids));
     require(actualSse == expectedSse && calculateSSE(&actual, &actualCentroids) == actualSse &&
                 tracker.rowCount == 3 && tracker.rows[1].sse == secondSse &&
                 tracker.rows[2].sse == actualSse && tracker.rows[2].ci == 0 &&
@@ -554,16 +714,16 @@ static void testKmAndRkmLastState(const char* directory)
     Centroids second = allocateCentroids(3, 1);
     Rng rng;
     rng_seed(&rng, rng_derive_seed(4, 0));
-    initialCentroids(INIT_RANDOM, 3, &reference, &first, &rng);
-    double firstSse = runKMeans(&reference, SIZE_MAX, &first, NULL, KM_STAGE_NONE);
+    initialCentroids(INIT_RANDOM, 3, &reference, &first, &rng, unitInitScratch(&reference, INIT_RANDOM));
+    double firstSse = runKMeans(&reference, SIZE_MAX, &first, NULL, KM_STAGE_NONE, unitKMeansScratch(&first));
     size_t winningLabels[ROUNDING_COUNT];
     memcpy(winningLabels, reference.partitions, sizeof(winningLabels));
     partitionStep(&nearest, &first);
     bool differsFromReassignment = false;
     for (size_t i = 0; i < reference.size; ++i)
         differsFromReassignment |= nearest.partitions[i] != winningLabels[i];
-    initialCentroids(INIT_RANDOM, 3, &reference, &second, &rng);
-    double secondSse = runKMeans(&reference, SIZE_MAX, &second, NULL, KM_STAGE_NONE);
+    initialCentroids(INIT_RANDOM, 3, &reference, &second, &rng, unitInitScratch(&reference, INIT_RANDOM));
+    double secondSse = runKMeans(&reference, SIZE_MAX, &second, NULL, KM_STAGE_NONE, unitKMeansScratch(&second));
     bool differsFromLastRepeat = false;
     for (size_t i = 0; i < reference.size; ++i)
         differsFromLastRepeat |= reference.partitions[i] != winningLabels[i];
@@ -612,8 +772,8 @@ static void testRkmNoFiniteFallback(const char* directory)
     Centroids centroids = allocateCentroids(2, 1);
     Rng rng;
     rng_seed(&rng, rng_derive_seed(0, 0));
-    initialCentroids(INIT_RANDOM, 2, &reference, &centroids, &rng);
-    double trialSse = runKMeans(&reference, 1, &centroids, NULL, KM_STAGE_NONE);
+    initialCentroids(INIT_RANDOM, 2, &reference, &centroids, &rng, unitInitScratch(&reference, INIT_RANDOM));
+    double trialSse = runKMeans(&reference, 1, &centroids, NULL, KM_STAGE_NONE, unitKMeansScratch(&centroids));
     require(!isfinite(trialSse) &&
                 (reference.partitions[0] != 0 || reference.partitions[1] != 0 || reference.partitions[2] != 0),
             "RKM fallback fixture did not produce a non-finite trial with distinct labels");
@@ -946,8 +1106,8 @@ static void testLocalRepartitionMeans(void)
     rng_seed(&rng, 19);
     require(calculateClusterSSE(&points, &centroids, 1) == 0.0 &&
                 calculateClusterSSE(&points, &centroids, 3) == 2.0 &&
-                tentativeSseDrop(&points, &index, 1, 10, 0.0, &rng) == 0.0 &&
-                tentativeSseDrop(&points, &index, 3, 10, 2.0, &rng) == 2.0,
+                tentativeSseDrop(&points, &index, 1, 10, 0.0, &rng, unitSplitScratch(&points, &index)) == 0.0 &&
+                tentativeSseDrop(&points, &index, 3, 10, 2.0, &rng, unitSplitScratch(&points, &index)) == 2.0,
             "local repartition left stale SSE or tentative drops");
     freeClusterIndex(&index);
     freeCentroids(&centroids);
@@ -970,7 +1130,7 @@ static void testLocalRepartitionMeans(void)
     localRepartition(&points, &index, &centroids, 0, REPARTITION_BOTH, emptyAffected);
     require(index.sizes[1] == 0 && emptyAffected[1] && centroidRow(&centroids, 1)[0] == 5 &&
                 calculateClusterSSE(&points, &centroids, 1) == 0.0 &&
-                tentativeSseDrop(&points, &index, 1, 10, 0.0, &rng) == 0.0,
+                tentativeSseDrop(&points, &index, 1, 10, 0.0, &rng, unitSplitScratch(&points, &index)) == 0.0,
             "emptied cluster did not retain its centroid with zero SSE and drop");
     freeClusterIndex(&index);
     freeCentroids(&centroids);
@@ -1067,7 +1227,8 @@ static void testCachedTentativeSplit(void)
     InnerTrace trace = {0};
     Rng rng;
     rng_seed(&rng, seedForPair(4, 0, 2));
-    double drop = cacheTentativeSplit(&points, &index, 0, 1, 56.75, &best, labels, &tracker, &trace, &rng);
+    double drop = cacheTentativeSplit(&points, &index, 0, 1, 56.75, &best, labels, &tracker, &trace, &rng,
+                                      unitSplitScratch(&points, &index));
     require(drop == 18.75 && centroidRow(&best, 0)[0] == 0 && centroidRow(&best, 1)[0] == 5,
             "cached trial did not retain the scored centroids");
     require(trace.count == 1 && tracker.innerCount == 0 && trace.rows[0].sse == 38,
@@ -1116,15 +1277,15 @@ static void testCachedTrialMembership(void)
     Rng rng;
     rng_seed(&rng, 91);
     cacheTentativeSplit(&points, &index, 2, 2, calculateClusterSSE(&points, &centroids, 2),
-                        &untouched, labels, NULL, NULL, &rng);
+                        &untouched, labels, NULL, NULL, &rng, unitSplitScratch(&points, &index));
     for (size_t i = 0; i < 4; ++i) expected[i] = labels[member2[i]];
     cacheTentativeSplit(&points, &index, 0, 2, calculateClusterSSE(&points, &centroids, 0),
-                        &first, labels, NULL, NULL, &rng);
+                        &first, labels, NULL, NULL, &rng, unitSplitScratch(&points, &index));
     applyTentativeSplit(&points, &index, &centroids, 0, &first, labels);
     rebuildClusterIndex(&index, &points, centroids.size);
     for (size_t c = 0; c < centroids.size; c += 3)
         cacheTentativeSplit(&points, &index, c, 2, calculateClusterSSE(&points, &centroids, c),
-                            &scratch, labels, NULL, NULL, &rng);
+                            &scratch, labels, NULL, NULL, &rng, unitSplitScratch(&points, &index));
     applyTentativeSplit(&points, &index, &centroids, 2, &untouched, labels);
     for (size_t i = 0; i < 4; ++i)
         require(points.partitions[member2[i]] == (expected[i] == 0 ? 2u : 4u),
@@ -1195,7 +1356,8 @@ static void testSelectedTrialIsApplied(const char* directory)
     rebuildClusterIndex(&index, &expected, expectedCentroids.size);
     Rng rng;
     rng_seed(&rng, seed);
-    splitClusterIntraCluster(&expected, &index, &expectedCentroids, 0, 1, NULL, &rng);
+    splitClusterIntraCluster(&expected, &index, &expectedCentroids, 0, 1, NULL, &rng,
+                             unitSplitScratch(&expected, &index));
     rebuildClusterIndex(&index, &expected, expectedCentroids.size);
     Centroids trials[2] = {allocateCentroids(2, 1), allocateCentroids(2, 1)};
     size_t labels[8] = {0};
@@ -1203,7 +1365,7 @@ static void testSelectedTrialIsApplied(const char* directory)
     for (size_t c = 0; c < 2; ++c)
         drops[c] = cacheTentativeSplit(&expected, &index, c, 1,
                                        calculateClusterSSE(&expected, &expectedCentroids, c),
-                                       &trials[c], labels, NULL, NULL, &rng);
+                                       &trials[c], labels, NULL, NULL, &rng, unitSplitScratch(&expected, &index));
     size_t selected = index.sizes[0] < 2 ? 1 : (index.sizes[1] >= 2 && drops[1] > drops[0] ? 1 : 0);
 
     Dataset legacy = allocateDataset(8, 1);
@@ -1215,7 +1377,8 @@ static void testSelectedTrialIsApplied(const char* directory)
     ClusterIndex legacyIndex = allocateClusterIndex(legacy.size, legacyCentroids.capacity);
     rebuildClusterIndex(&legacyIndex, &legacy, legacyCentroids.size);
     Rng legacyRng = rng;
-    splitClusterIntraCluster(&legacy, &legacyIndex, &legacyCentroids, selected, 1, NULL, &legacyRng);
+    splitClusterIntraCluster(&legacy, &legacyIndex, &legacyCentroids, selected, 1, NULL, &legacyRng,
+                             unitSplitScratch(&legacy, &legacyIndex));
     double rerunSse = calculateSSE(&legacy, &legacyCentroids);
 
     applyTentativeSplit(&expected, &index, &expectedCentroids, selected, &trials[selected], labels);
@@ -1226,7 +1389,8 @@ static void testSelectedTrialIsApplied(const char* directory)
     Tracker tracker = trackerCreate(ALGO_SKM_INTRA, ".", NULL, &options);
     trackerBeginRun(&tracker, 0);
     rng_seed(&rng, seed);
-    (void)runSseSplit(&actual, &actualCentroids, 3, 1, ALGO_SKM_INTRA, REPARTITION_INWARD, &tracker, &rng);
+    (void)runSseSplit(&actual, &actualCentroids, 3, 1, ALGO_SKM_INTRA, REPARTITION_INWARD, &tracker, &rng,
+                      unitKMeansScratch(&actualCentroids));
     require(tracker.rowCount == 4 && tracker.rows[2].sse == evaluatedSse,
             "SSE-split did not apply the evaluated trial");
     trackerPause(&tracker);
@@ -1242,7 +1406,8 @@ static void testSelectedTrialIsApplied(const char* directory)
     actualCentroids.size = 1;
     centroidRow(&actualCentroids, 0)[0] = 0;
     rng_seed(&rng, seed);
-    (void)runSseSplit(&actual, &actualCentroids, 3, 1, ALGO_SKM_GLOBAL, REPARTITION_INWARD, &globalTracker, &rng);
+    (void)runSseSplit(&actual, &actualCentroids, 3, 1, ALGO_SKM_GLOBAL, REPARTITION_INWARD, &globalTracker, &rng,
+                      unitKMeansScratch(&actualCentroids));
     trackerPause(&globalTracker);
     trackerFree(&globalTracker);
 
@@ -1288,14 +1453,14 @@ static void testLocalCachedTrialAcrossSplits(const char* directory)
         initial.partitions[i] = 0;
         actual.partitions[i] = 0;
     }
-    centroidStep(&initialCentroids, &initial);
+    centroidStep(&initialCentroids, &initial, unitKMeansScratch(&initialCentroids));
     centroidRow(&actualCentroids, 0)[0] = centroidRowConst(&initialCentroids, 0)[0];
 
     ClusterIndex index = allocateClusterIndex(initial.size, initialCentroids.capacity);
     rebuildClusterIndex(&index, &initial, initialCentroids.size);
     Rng rng;
     rng_seed(&rng, 3);
-    splitClusterIntraCluster(&initial, &index, &initialCentroids, 0, 1, NULL, &rng);
+    splitClusterIntraCluster(&initial, &index, &initialCentroids, 0, 1, NULL, &rng, unitSplitScratch(&initial, &index));
     bool affected[5] = {false};
     localRepartition(&initial, &index, &initialCentroids, 0, REPARTITION_INWARD, affected);
     size_t retained = initial.partitions[8];
@@ -1309,7 +1474,7 @@ static void testLocalCachedTrialAcrossSplits(const char* directory)
     for (size_t c = 0; c < 2; ++c)
         (void)cacheTentativeSplit(&initial, &index, c, 1,
                                   calculateClusterSSE(&initial, &initialCentroids, c),
-                                  &trials[c], labels, NULL, NULL, &rng);
+                                  &trials[c], labels, NULL, NULL, &rng, unitSplitScratch(&initial, &index));
 
     char output[PATH_MAX];
     joinPath(output, sizeof(output), directory, "cached-local");
@@ -1318,7 +1483,8 @@ static void testLocalCachedTrialAcrossSplits(const char* directory)
     Tracker tracker = trackerCreate(ALGO_SKM_LOCAL, output, NULL, &options);
     trackerBeginRun(&tracker, 0);
     rng_seed(&rng, 3);
-    (void)runSseSplit(&actual, &actualCentroids, 5, 1, ALGO_SKM_LOCAL, REPARTITION_INWARD, &tracker, &rng);
+    (void)runSseSplit(&actual, &actualCentroids, 5, 1, ALGO_SKM_LOCAL, REPARTITION_INWARD, &tracker, &rng,
+                      unitKMeansScratch(&actualCentroids));
     trackerPause(&tracker);
     trackerFree(&tracker);
 
@@ -1404,7 +1570,7 @@ static void testSplitSeedFallback(void)
         require(rng_below(&withoutFallback, points.size) < 3 && rng_below(&expected, 2) == rank,
                 "split fallback fixture did not exercise the eligible-row selection");
 
-        splitClusterIntraCluster(&points, &index, &centroids, 0, 1, NULL, &actual);
+        splitClusterIntraCluster(&points, &index, &centroids, 0, 1, NULL, &actual, unitSplitScratch(&points, &index));
         require(centroids.size == 2 && centroidRowConst(&centroids, 0)[0] == firstMeans[rank] &&
                     centroidRowConst(&centroids, 1)[0] == secondMeans[rank],
                 "split seed fallback did not select the expected distinct row");
@@ -1438,7 +1604,7 @@ static void testRandomSplitRankFallback(void)
         expected.partitions[i] = labels[i];
         actual.partitions[i] = labels[i];
     }
-    centroidStep(&expectedCentroids, &expected);
+    centroidStep(&expectedCentroids, &expected, unitKMeansScratch(&expectedCentroids));
     copyCoordinates(actualCentroids.coordinates, expectedCentroids.coordinates, 4);
     ClusterIndex index = allocateClusterIndex(expected.size, expectedCentroids.capacity);
     require(rebuildClusterIndex(&index, &expected, expectedCentroids.size) == 2 &&
@@ -1454,14 +1620,17 @@ static void testRandomSplitRankFallback(void)
     require(rng_below(&withoutFallback, 4) == 2 && rng_below(&expectedRng, 2) == 1,
             "random split fallback fixture did not select the second eligible cluster");
 
-    splitClusterIntraCluster(&expected, &index, &expectedCentroids, 3, 1, NULL, &expectedRng);
+    splitClusterIntraCluster(&expected, &index, &expectedCentroids, 3, 1, NULL, &expectedRng,
+                             unitSplitScratch(&expected, &index));
     double expectedStepSse = calculateSSE(&expected, &expectedCentroids);
-    double expectedFinalSse = runKMeans(&expected, 1, &expectedCentroids, NULL, KM_STAGE_FINAL);
+    double expectedFinalSse =
+        runKMeans(&expected, 1, &expectedCentroids, NULL, KM_STAGE_FINAL, unitKMeansScratch(&expectedCentroids));
     TrackOptions options = {0};
     options.rows = true;
     Tracker tracker = trackerCreate(ALGO_SKM_RANDOM, ".", NULL, &options);
     trackerBeginRun(&tracker, 0);
-    double actualSse = runRandomSplit(&actual, &actualCentroids, 5, 1, &tracker, &actualRng);
+    double actualSse =
+        runRandomSplit(&actual, &actualCentroids, 5, 1, &tracker, &actualRng, unitKMeansScratch(&actualCentroids));
     require(tracker.rowCount == 3 && tracker.rows[1].sse == expectedStepSse && actualSse == expectedFinalSse,
             "random split fallback did not split the selected eligible cluster");
     for (size_t c = 0; c < actualCentroids.size; ++c)
@@ -1519,7 +1688,8 @@ static void testBisectingFirstTries(void)
     Tracker tracker = trackerCreate(ALGO_BISECTING, ".", NULL, &options);
     trackerBeginRun(&tracker, 0);
     rng_seed(&rng, seed);
-    double sse = runBisectingKMeans(&points, &centroids, 2, 1, 3, BISECT_SELECT_SSE, &tracker, &rng);
+    double sse = runBisectingKMeans(&points, &centroids, 2, 1, 3, BISECT_SELECT_SSE, &tracker, &rng,
+                                    unitKMeansScratch(&centroids));
     require(tracker.rowCount == 3 && fabs(tracker.rows[1].sse - 14.0 / 3.0) < 1e-12 &&
                 fabs(sse - 14.0 / 3.0) < 1e-12 && calculateSSE(&points, &centroids) == sse,
             "bisecting did not apply the best first-split try");
@@ -1544,14 +1714,14 @@ static double bisectSecondSplitSse(const double* values, size_t count, size_t se
         datasetRow(&points, i)[0] = values[i];
         points.partitions[i] = 0;
     }
-    centroidStep(&centroids, &points);
+    centroidStep(&centroids, &points, unitKMeansScratch(&centroids));
     TrackOptions options = {0};
     options.rows = true;
     Tracker tracker = trackerCreate(ALGO_BISECTING, ".", NULL, &options);
     trackerBeginRun(&tracker, 0);
     Rng rng;
     rng_seed(&rng, seedForPair(count, 0, secondSeed));
-    (void)runBisectingKMeans(&points, &centroids, 3, 1, 1, selection, &tracker, &rng);
+    (void)runBisectingKMeans(&points, &centroids, 3, 1, 1, selection, &tracker, &rng, unitKMeansScratch(&centroids));
     require(tracker.rowCount == 4, "bisecting selection fixture did not record both splits");
     double sse = tracker.rows[2].sse;
     trackerPause(&tracker);
@@ -1593,7 +1763,8 @@ static void testLocalFirstAndFinalSplit(void)
 
     Rng rng;
     rng_seed(&rng, seedForPair(4, 0, 2));
-    double sse = runSseSplit(&points, &centroids, 2, 1, ALGO_SKM_LOCAL, REPARTITION_INWARD, &tracker, &rng);
+    double sse = runSseSplit(&points, &centroids, 2, 1, ALGO_SKM_LOCAL, REPARTITION_INWARD, &tracker, &rng,
+                             unitKMeansScratch(&centroids));
     require(tracker.rowCount == 3 && tracker.rows[1].sse == 26.5 && fabs(sse - 14.0 / 3.0) < 1e-12 &&
                 fabs(calculateSSE(&points, &centroids) - sse) < 1e-12,
             "first/final local split was not repartitioned before the capped final k-means");
@@ -1620,7 +1791,7 @@ static void testSplitCapacity(void)
     rng_seed(&rng, 7);
     ClusterIndex index = allocateClusterIndex(points.size, centroids.capacity);
     rebuildClusterIndex(&index, &points, centroids.size);
-    splitClusterIntraCluster(&points, &index, &centroids, 0, 10, NULL, &rng);
+    splitClusterIntraCluster(&points, &index, &centroids, 0, 10, NULL, &rng, unitSplitScratch(&points, &index));
     require(centroids.size == 2 && centroids.capacity == 4 && centroids.coordinates == original,
             "split did not use the preallocated centroid capacity");
     for (size_t i = 0; i < points.size; ++i)
@@ -1656,14 +1827,14 @@ static void testClusterIndex(void)
     Rng untouched;
     rng_seed(&rng, 42);
     rng_seed(&untouched, 42);
-    require(tentativeSseDrop(&points, &index, 1, 10, 1.0, &rng) == 0.0 &&
-                tentativeSseDrop(&points, &index, 3, 10, 1.0, &rng) == 0.0 &&
+    require(tentativeSseDrop(&points, &index, 1, 10, 1.0, &rng, unitSplitScratch(&points, &index)) == 0.0 &&
+                tentativeSseDrop(&points, &index, 3, 10, 1.0, &rng, unitSplitScratch(&points, &index)) == 0.0 &&
                 rng_u32(&rng) == rng_u32(&untouched),
             "empty or singleton trial changed SSE or the random stream");
     rng_seed(&rng, 91);
     rng_seed(&untouched, 91);
-    double first = tentativeSseDrop(&points, &index, 2, 10, 20.0, &rng);
-    double second = tentativeSseDrop(&points, &index, 2, 10, 20.0, &untouched);
+    double first = tentativeSseDrop(&points, &index, 2, 10, 20.0, &rng, unitSplitScratch(&points, &index));
+    double second = tentativeSseDrop(&points, &index, 2, 10, 20.0, &untouched, unitSplitScratch(&points, &index));
     require(first == second && rng_u32(&rng) == rng_u32(&untouched),
             "reused local-label scratch changed a tentative split");
     for (size_t i = 0; i < points.size; ++i)
@@ -1703,8 +1874,9 @@ static void testDistinctSplitEligibility(void)
     size_t savedLabels[6] = {0};
     InnerTrace trace = {0};
     trace.count = 1;
-    require(tentativeSseDrop(&points, &index, 0, 10, 0, &actual) == 0 &&
-                cacheTentativeSplit(&points, &index, 1, 10, 0, &best, savedLabels, NULL, &trace, &actual) == 0 &&
+    require(tentativeSseDrop(&points, &index, 0, 10, 0, &actual, unitSplitScratch(&points, &index)) == 0 &&
+                cacheTentativeSplit(&points, &index, 1, 10, 0, &best, savedLabels, NULL, &trace, &actual,
+                                    unitSplitScratch(&points, &index)) == 0 &&
                 trace.count == 0 && rng_u32(&actual) == rng_u32(&untouched),
             "duplicate-only trial changed the random stream or kept a stale trace");
     points.partitions[5] = 0;
@@ -1726,9 +1898,10 @@ static void testDistinctSplitEligibility(void)
         rebuildClusterIndex(&index, &points, 1);
         rng_seed(&actual, seedForPair(4, 0, 1));
         if (basic)
-            (void)splitClusterGlobal(&points, &index, &centroids, 0, 1, NULL, &actual);
+            (void)splitClusterGlobal(&points, &index, &centroids, 0, 1, NULL, &actual, unitKMeansScratch(&centroids));
         else
-            splitClusterIntraCluster(&points, &index, &centroids, 0, 1, NULL, &actual);
+            splitClusterIntraCluster(&points, &index, &centroids, 0, 1, NULL, &actual,
+                                     unitSplitScratch(&points, &index));
         require(centroids.size == 2 && centroidRow(&centroids, 0)[0] == 0 &&
                     centroidRow(&centroids, 1)[0] == 10,
                 "split selected equal-coordinate seeds");
@@ -2282,7 +2455,7 @@ static void testLocalSplitSnapshots(const char* directory, const char* executabl
             "final repartition snapshot did not record moved points");
     closeFixture(before);
     closeFixture(after);
-    centroidStep(&means, &points);
+    centroidStep(&means, &points, unitKMeansScratch(&means));
     for (size_t i = 0; i < means.size * means.dimensions; ++i)
         require(fabs(recorded.coordinates[i] - means.coordinates[i]) <= 1e-6,
                 "final repartition snapshot has stale centroids");
@@ -2507,7 +2680,7 @@ static void testSplitMeanStart(const char* directory, const char* executable, co
     Centroids legacyCentroids = allocateCentroids(2, 1);
     expectedCentroids.size = 1;
     legacyCentroids.size = 1;
-    centroidStep(&expectedCentroids, &expected);
+    centroidStep(&expectedCentroids, &expected, unitKMeansScratch(&expectedCentroids));
     ClusterIndex expectedIndex = allocateClusterIndex(expected.size, 2);
     ClusterIndex legacyIndex = allocateClusterIndex(legacy.size, 2);
     rebuildClusterIndex(&expectedIndex, &expected, 1);
@@ -2515,9 +2688,11 @@ static void testSplitMeanStart(const char* directory, const char* executable, co
     Rng expectedRng, legacyRng;
     rng_seed(&expectedRng, rng_derive_seed(42, 0));
     rng_seed(&legacyRng, rng_derive_seed(42, 0));
-    generateRandomCentroids(1, &legacy, &legacyCentroids, &legacyRng);
-    splitClusterIntraCluster(&expected, &expectedIndex, &expectedCentroids, 0, 1, NULL, &expectedRng);
-    splitClusterIntraCluster(&legacy, &legacyIndex, &legacyCentroids, 0, 1, NULL, &legacyRng);
+    generateRandomCentroids(1, &legacy, &legacyCentroids, &legacyRng, unitInitScratch(&legacy, INIT_RANDOM));
+    splitClusterIntraCluster(&expected, &expectedIndex, &expectedCentroids, 0, 1, NULL, &expectedRng,
+                             unitSplitScratch(&expected, &expectedIndex));
+    splitClusterIntraCluster(&legacy, &legacyIndex, &legacyCentroids, 0, 1, NULL, &legacyRng,
+                             unitSplitScratch(&legacy, &legacyIndex));
     require(memcmp(expected.partitions, legacy.partitions, expected.size * sizeof(*expected.partitions)) != 0 ||
                 memcmp(expectedCentroids.coordinates, legacyCentroids.coordinates, 2 * sizeof(double)) != 0,
             "split-seed fixture did not distinguish the old initial RNG draw");
@@ -3010,18 +3185,18 @@ int main(int argc, char* argv[])
         Dataset points = {&coordinate, &partition, 1, 1};
         Centroids centroids = {&coordinate, 1, 1, 1};
         if (strcmp(argv[1], "--zero-kmeans-core") == 0)
-            (void)runKMeans(&points, 0, &centroids, NULL, KM_STAGE_NONE);
+            (void)runKMeans(&points, 0, &centroids, NULL, KM_STAGE_NONE, unitKMeansScratch(&centroids));
         else if (strcmp(argv[1], "--zero-kmeans-view") == 0)
         {
             size_t index = 0;
             DatasetView view = {&points, &index, &partition, 1};
-            (void)runKMeansView(&view, 0, &centroids, NULL, KM_STAGE_NONE, false);
+            (void)runKMeansView(&view, 0, &centroids, NULL, KM_STAGE_NONE, false, unitKMeansScratch(&centroids));
         }
         else
         {
             TrackOptions options = {0};
             Tracker tracker = trackerCreate(ALGO_KM, ".", NULL, &options);
-            (void)runKMeansWithTracking(&points, 0, &centroids, &tracker);
+            (void)runKMeansWithTracking(&points, 0, &centroids, &tracker, unitKMeansScratch(&centroids));
         }
         return EXIT_SUCCESS;
     }
@@ -3035,7 +3210,8 @@ int main(int argc, char* argv[])
         Tracker tracker = trackerCreate(ALGO_SKM_INTRA, ".", NULL, &options);
         Rng rng;
         rng_seed(&rng, 1);
-        (void)runSseSplit(&points, &centroids, 1, 0, ALGO_SKM_INTRA, REPARTITION_INWARD, &tracker, &rng);
+        (void)runSseSplit(&points, &centroids, 1, 0, ALGO_SKM_INTRA, REPARTITION_INWARD, &tracker, &rng,
+                          unitKMeansScratch(&centroids));
         return EXIT_SUCCESS;
     }
     if (argc == 2 && (strcmp(argv[1], "--zero-bisect-iterations") == 0 ||
@@ -3051,7 +3227,8 @@ int main(int argc, char* argv[])
         rng_seed(&rng, 1);
         size_t iterations = strcmp(argv[1], "--zero-bisect-iterations") == 0 ? 0 : 1;
         size_t tries = strcmp(argv[1], "--zero-bisect-tries") == 0 ? 0 : 1;
-        (void)runBisectingKMeans(&points, &centroids, 1, iterations, tries, BISECT_SELECT_SSE, &tracker, &rng);
+        (void)runBisectingKMeans(&points, &centroids, 1, iterations, tries, BISECT_SELECT_SSE, &tracker, &rng,
+                                 unitKMeansScratch(&centroids));
         return EXIT_SUCCESS;
     }
     if (argc == 2 && strcmp(argv[1], "--nonfinite-rs-initial") == 0)
@@ -3079,7 +3256,8 @@ int main(int argc, char* argv[])
         Tracker tracker = trackerCreate(ALGO_BISECTING, ".", NULL, &options);
         Rng rng;
         rng_seed(&rng, 1);
-        (void)runBisectingKMeans(&points, &centroids, 1, 1, 1, BISECT_SELECT_SSE, &tracker, &rng);
+        (void)runBisectingKMeans(&points, &centroids, 1, 1, 1, BISECT_SELECT_SSE, &tracker, &rng,
+                                 unitKMeansScratch(&centroids));
         return EXIT_SUCCESS;
     }
     if (argc == 2 && (strcmp(argv[1], "--nonfinite-kmeans-tracked") == 0 ||
@@ -3096,11 +3274,12 @@ int main(int argc, char* argv[])
         Rng rng;
         rng_seed(&rng, 1);
         if (strcmp(argv[1], "--nonfinite-kmeans-tracked") == 0)
-            (void)runKMeansWithTracking(&points, 1, &centroids, &tracker);
+            (void)runKMeansWithTracking(&points, 1, &centroids, &tracker, unitKMeansScratch(&centroids));
         else if (strcmp(argv[1], "--nonfinite-random-final") == 0)
-            (void)runRandomSplit(&points, &centroids, 1, 1, &tracker, &rng);
+            (void)runRandomSplit(&points, &centroids, 1, 1, &tracker, &rng, unitKMeansScratch(&centroids));
         else
-            (void)runSseSplit(&points, &centroids, 1, 1, ALGO_SKM_INTRA, REPARTITION_INWARD, &tracker, &rng);
+            (void)runSseSplit(&points, &centroids, 1, 1, ALGO_SKM_INTRA, REPARTITION_INWARD, &tracker, &rng,
+                              unitKMeansScratch(&centroids));
         return EXIT_SUCCESS;
     }
     if (argc == 2 && (strcmp(argv[1], "--nonfinite-basic-original") == 0 ||
@@ -3114,7 +3293,7 @@ int main(int argc, char* argv[])
         Rng rng;
         rng_seed(&rng, 1);
         double originalSse = strcmp(argv[1], "--nonfinite-basic-original") == 0 ? INFINITY : 0.0;
-        (void)tentativeSseDrop(&points, &index, 0, 1, originalSse, &rng);
+        (void)tentativeSseDrop(&points, &index, 0, 1, originalSse, &rng, unitSplitScratch(&points, &index));
         freeClusterIndex(&index);
         return EXIT_SUCCESS;
     }
@@ -3151,7 +3330,8 @@ int main(int argc, char* argv[])
         Tracker tracker = trackerCreate(ALGO_SKM_INTRA, ".", NULL, &options);
         Rng rng;
         rng_seed(&rng, 1);
-        (void)runSseSplit(&points, &centroids, 2, 1, ALGO_SKM_INTRA, REPARTITION_INWARD, &tracker, &rng);
+        (void)runSseSplit(&points, &centroids, 2, 1, ALGO_SKM_INTRA, REPARTITION_INWARD, &tracker, &rng,
+                          unitKMeansScratch(&centroids));
         return EXIT_SUCCESS;
     }
     if (argc == 2 && strcmp(argv[1], "--too-few-distinct-init") == 0)
@@ -3163,7 +3343,7 @@ int main(int argc, char* argv[])
         Centroids centroids = {initial, 3, 3, 1};
         Rng rng;
         rng_seed(&rng, 1);
-        generateRandomCentroids(3, &points, &centroids, &rng);
+        generateRandomCentroids(3, &points, &centroids, &rng, unitInitScratch(&points, INIT_RANDOM));
         return EXIT_SUCCESS;
     }
     if (argc == 3 && (strcmp(argv[1], "--zero-kmeans") == 0 || strcmp(argv[1], "--zero-rkm") == 0 ||
@@ -3186,7 +3366,7 @@ int main(int argc, char* argv[])
             Rng rng;
             rng_seed(&rng, 1);
             size_t k = strcmp(argv[1], "--zero-random-k1") == 0 ? 1 : 2;
-            (void)runRandomSplit(&points, &centroids, k, 0, &tracker, &rng);
+            (void)runRandomSplit(&points, &centroids, k, 0, &tracker, &rng, unitKMeansScratch(&centroids));
         }
         return EXIT_SUCCESS;
     }
@@ -3215,6 +3395,8 @@ int main(int argc, char* argv[])
     testDistinctInitialization();
     testKMeans();
     testKMeansView();
+    testKMeansScratchReuse();
+    testInitScratchReuse();
     testLastKMeansState();
     testLastTrialState();
     testLastStateSplitRunners();
