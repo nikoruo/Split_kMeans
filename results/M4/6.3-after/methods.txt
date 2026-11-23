@@ -1,0 +1,20 @@
+Step 6.3 bisecting milestone, 2026-11-21
+
+Both runs used MinGW release, seed 20261119, log level 1, tracking rows,
+no selected snapshots, five tries per split and convergence defaults.
+The five small main datasets and all four hard datasets have 100 runs;
+worms_2d has 10. The six main-group before files match M3a exactly.
+
+The final global k-means is retained, so this is bisecting plus final
+refinement rather than the unrefined bisecting variant. The new code also
+restores the best scored final centroid-and-label state. Before and after
+were measured in separate blocks; timing differences include noise.
+Changing the number of random draws means matching run seeds do not keep
+the subsequent random streams identical.
+
+The before and after reports include mean and sample SD of SSE and time,
+mean and relative CI and success rate. The 23 changed intermediate golden
+curve lines are listed in golden-changes.txt; final golden run files match.
+Full tracking runs remain outside OneDrive:
+%TEMP%\skm_M4_6_3_before_20261121_161948
+%TEMP%\skm_M4_6_3_after_20261121_165305

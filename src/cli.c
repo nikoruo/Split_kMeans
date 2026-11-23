@@ -562,7 +562,7 @@ static void printUsage(const char* program)
     printf("Without a data file, runs batch mode over data/, gt/ and centroids/.\n\n");
 
     printf("Single dataset:\n");
-    printf("  -k <K>              Number of clusters (required with a data file)\n");
+    printf("  -k <K>              Number of clusters, at most the distinct data points (required with a data file)\n");
     printf("  <data.txt>          Input data file (whitespace-separated doubles)\n");
     printf("  [gt.txt]            Ground truth centroids for CI (optional; without it CI and success rate are NA)\n\n");
 
@@ -584,7 +584,11 @@ static void printUsage(const char* program)
     printf("  --max-swaps <N>     Random Swap trial swaps per run (default: 5000)\n");
     printf("  --repeats <N>       Repeated k-means repeats per run (default: 1000)\n");
     printf("  --bisect-tries <N>  Bisecting k-means tries per split (default: 5)\n");
+    printf("  --bisect-select <mode>\n");
+    printf("                      Bisecting cluster selection: sse (default) or size\n");
     printf("  --init <method>     Initial centroids of KM, RKM and RS: random (default) or kmeans++\n");
+    printf("  --repartition <mode>\n");
+    printf("                      SKM-Local: inward (default), inward-nonchild, or both\n");
     printf("  --track-progress    _log.csv rows of every run (default in batch mode)\n");
     printf("  --snapshots <spec>  Snapshot files: none, or RUNS[:ITERATIONS][:split] (default: batch mode 1,\n");
     printf("                      CLI none). RUNS (1-based) and ITERATIONS (_log.csv counts) are all or lists\n");
@@ -643,7 +647,9 @@ int cliMain(int argc, char* argv[])
     opt.maxSwaps = 5000;
     opt.maxRepeats = 1000;
     opt.bisectTries = 5;
+    opt.bisectSelect = BISECT_SELECT_SSE;
     opt.init = INIT_RANDOM;
+    opt.repartition = REPARTITION_INWARD;
     opt.firstRun = 1;
     for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
     {
@@ -728,6 +734,19 @@ int cliMain(int argc, char* argv[])
         {
             opt.bisectTries = countOption(argc, argv, &i, 1);
         }
+        else if (strcmp(arg, "--bisect-select") == 0)
+        {
+            const char* mode = textOption(argc, argv, &i);
+            if (strcmp(mode, "sse") == 0)
+                opt.bisectSelect = BISECT_SELECT_SSE;
+            else if (strcmp(mode, "size") == 0)
+                opt.bisectSelect = BISECT_SELECT_SIZE;
+            else
+            {
+                fprintf(stderr, "Error: --bisect-select requires sse or size\n");
+                exit(EXIT_FAILURE);
+            }
+        }
         else if (strcmp(arg, "--first-run") == 0)
         {
             opt.firstRun = countOption(argc, argv, &i, 1);
@@ -754,6 +773,21 @@ int cliMain(int argc, char* argv[])
             else
             {
                 fprintf(stderr, "Error: --init requires random or kmeans++\n");
+                exit(EXIT_FAILURE);
+            }
+        }
+        else if (strcmp(arg, "--repartition") == 0)
+        {
+            const char* mode = textOption(argc, argv, &i);
+            if (strcmp(mode, "inward") == 0)
+                opt.repartition = REPARTITION_INWARD;
+            else if (strcmp(mode, "inward-nonchild") == 0)
+                opt.repartition = REPARTITION_INWARD_NONCHILD;
+            else if (strcmp(mode, "both") == 0)
+                opt.repartition = REPARTITION_BOTH;
+            else
+            {
+                fprintf(stderr, "Error: --repartition requires inward, inward-nonchild or both\n");
                 exit(EXIT_FAILURE);
             }
         }
@@ -1078,10 +1112,6 @@ int cliMain(int argc, char* argv[])
             STRCPY(currentKSource, sizeof(currentKSource), kFile);
         }
 
-        // Create dataset subdirectory
-        char datasetDirectory[PATH_MAX];
-        createDatasetDirectory(outputDirectory, baseName, datasetDirectory, sizeof(datasetDirectory));
-
         // Read data and ground truth
         Dataset dataPoints = readDataset(currentDataFile);
         if (dataPoints.size == 0)
@@ -1098,6 +1128,15 @@ int cliMain(int argc, char* argv[])
             exit(EXIT_FAILURE);
         }
 
+        const size_t distinctLimit = currentK < dataPoints.size ? currentK + 1 : currentK;
+        const size_t distinctRows = countDistinctRowsUpTo(&dataPoints, distinctLimit);
+        if (distinctRows < currentK)
+        {
+            fprintf(stderr, "Error: K (%zu) exceeds the number of distinct data points (%zu) in %s\n",
+                    currentK, distinctRows, currentDataFile);
+            exit(EXIT_FAILURE);
+        }
+
         Centroids groundTruth = {0};
         if (currentGtFile[0] != '\0')
         {
@@ -1110,6 +1149,8 @@ int cliMain(int argc, char* argv[])
             }
         }
 
+        char datasetDirectory[PATH_MAX];
+        createDatasetDirectory(outputDirectory, baseName, datasetDirectory, sizeof(datasetDirectory));
         writeDatasetInfo(datasetDirectory, currentDataFile, currentGtFile, currentK, dataPoints.size, numDimensions);
 
         // Batch pairing is by sorted position: show which files went together
@@ -1152,7 +1193,7 @@ int cliMain(int argc, char* argv[])
                     break;
                 case ALGO_RS:
                     runRandomSwapAlgorithm(&dataPoints, &groundTruth, currentK, opt.maxSwaps, firstRun, rkmRsLoops,
-                                           scaling, baseName, datasetDirectory, &track, opt.init, opt.seed);
+                                           scaling, baseName, datasetDirectory, &track, opt.init, distinctRows, opt.seed);
                     break;
                 case ALGO_SKM_RANDOM:
                     runRandomSplitAlgorithm(&dataPoints, &groundTruth, currentK, opt.maxIterations, firstRun,
@@ -1161,11 +1202,12 @@ int cliMain(int argc, char* argv[])
                 case ALGO_BISECTING:
                     runBisectingKMeansAlgorithm(&dataPoints, &groundTruth, currentK, opt.maxIterations, firstRun,
                                                 currentLoops, scaling, baseName, datasetDirectory, &track,
-                                                opt.bisectTries, opt.seed);
+                                                opt.bisectTries, opt.bisectSelect, opt.seed);
                     break;
                 default: // SKM-Intra, SKM-Global, SKM-Global-Basic, SKM-Local
                     runSseSplitAlgorithm(&dataPoints, &groundTruth, currentK, opt.maxIterations, firstRun, currentLoops,
-                                         scaling, baseName, datasetDirectory, algorithmId, &track, opt.seed);
+                                         scaling, baseName, datasetDirectory, algorithmId, opt.repartition, &track,
+                                         opt.seed);
                     break;
             }
         }

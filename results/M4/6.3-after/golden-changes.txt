@@ -1,0 +1,59 @@
+Step 6.3: every changed golden line (seed 20251026)
+Bisecting now runs all tries on every split and applies the best local state without globally reassigning outsiders. The resulting RNG stream and intermediate partitions change. The final regression run files remain unchanged.
+Changed files: 5; changed lines: 23.
+
+report\curves_s01_blobs2d.csv
+  line 4:
+    Bisecting KM SSE (10^5): 1076.739686 -> 1007.146872
+  line 5:
+    Bisecting KM SSE (10^5): 507.039860 -> 508.313474
+
+report\curves_s02_blobs8d.csv
+  line 4:
+    Bisecting KM SSE (10^7): 2198.886626 -> 2084.338962
+  line 5:
+    Bisecting KM SSE (10^7): 1233.633875 -> 1197.414203
+
+report\curves_s03_overlap.csv
+  line 4:
+    Bisecting KM SSE (10^7): 3.636432 -> 3.636111
+  line 5:
+    Bisecting KM SSE (10^7): 2.407616 -> 2.526402
+  line 6:
+    Bisecting KM SSE (10^7): 1.634247 -> 1.612619
+  line 7:
+    Bisecting KM SSE (10^7): 1.339436 -> 1.425634
+
+report\curves_s04_unbalanced.csv
+  line 4:
+    Bisecting KM SSE (10^5): 1432.541887 -> 1355.566105
+
+report\curves_s05_k15.csv
+  line 4:
+    Bisecting KM SSE (10^5): 1755.957327 -> 1752.973333
+  line 5:
+    Bisecting KM SSE (10^5): 1302.385524 -> 1299.109680
+  line 6:
+    Bisecting KM SSE (10^5): 1002.285003 -> 1000.406707
+  line 7:
+    Bisecting KM SSE (10^5): 767.261876 -> 766.878055
+  line 8:
+    Bisecting KM SSE (10^5): 569.290500 -> 547.053159
+  line 9:
+    Bisecting KM SSE (10^5): 453.103234 -> 445.059165
+  line 10:
+    Bisecting KM SSE (10^5): 355.095055 -> 348.904449
+  line 11:
+    Bisecting KM SSE (10^5): 302.942386 -> 298.546014
+  line 12:
+    Bisecting KM SSE (10^5): 251.337350 -> 248.675826
+  line 13:
+    Bisecting KM SSE (10^5): 200.941311 -> 198.997948
+  line 14:
+    Bisecting KM SSE (10^5): 151.156358 -> 149.712509
+  line 15:
+    Bisecting KM SSE (10^5): 101.650125 -> 100.706531
+  line 16:
+    Bisecting KM SSE (10^5): 52.458259 -> 51.844969
+  line 17:
+    Bisecting KM SSE (10^5): 3.481164 -> 3.451605

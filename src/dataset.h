@@ -6,6 +6,7 @@
 #define DATASET_H
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
 
@@ -57,12 +58,21 @@ static inline void copyCoordinates(double* destination, const double* source, si
     if (destination != source) memcpy(destination, source, dimensions * sizeof(double));
 }
 
+static inline bool coordinatesEqual(const double* first, const double* second, size_t dimensions)
+{
+    for (size_t d = 0; d < dimensions; ++d)
+        if (first[d] != second[d]) return false;
+    return true;
+}
+
 Dataset allocateDataset(size_t size, size_t dimensions);
 Centroids allocateCentroids(size_t size, size_t dimensions);
 void freeDataset(Dataset* dataset);
 void freeCentroids(Centroids* centroids);
 void deepCopyCentroids(const Centroids* source, Centroids* destination);
 void resetPartitions(Dataset* dataset);
+/* Returns the number of distinct rows, stopping at limit. */
+size_t countDistinctRowsUpTo(const Dataset* dataset, size_t limit);
 
 /* Returned datasets and centroids are owned by the caller. */
 Dataset readDataset(const char* filename);

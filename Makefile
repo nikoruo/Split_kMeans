@@ -76,7 +76,10 @@ EDGE_SETS    := e01_k1 e02_k_equals_n e03_duplicates e04_tiny e05_constant_dim e
 GOLDEN_ALGOS := KM RKM RS SKM_Random SKM_Intra SKM_Global SKM_Global_Basic SKM_Local Bisecting_KM
 GOLDEN_EDGE  := $(foreach s,$(EDGE_SETS),$(foreach a,$(GOLDEN_ALGOS),edge/$(s)/$(a)_runs.csv))
 GOLDEN_FILES := $(foreach s,$(MAIN_SETS),$(foreach a,$(GOLDEN_ALGOS),main/$(s)/$(a)_runs.csv)) $(GOLDEN_EDGE)
-GOLDEN_DIRS  := $(addprefix tests/golden/main/,$(MAIN_SETS)) $(addprefix tests/golden/edge/,$(EDGE_SETS)) tests/golden/report
+REPARTITION_MODES := inward inward-nonchild both
+REPARTITION_FILES := $(foreach m,$(REPARTITION_MODES),modes/$(m)/s03_overlap/SKM_Local_runs.csv)
+BISECT_SIZE_FILE := modes/bisect-size/s03_overlap/Bisecting_KM_runs.csv
+GOLDEN_DIRS  := $(addprefix tests/golden/main/,$(MAIN_SETS)) $(addprefix tests/golden/edge/,$(EDGE_SETS)) tests/golden/report $(foreach m,$(REPARTITION_MODES),tests/golden/modes/$(m)/s03_overlap) tests/golden/modes/bisect-size/s03_overlap
 # The report of the main group without time columns (whole lines are compared)
 REPORT_FILES := $(addprefix report/,summary.csv table_ci.csv table_success.csv table_sse.csv $(foreach s,$(MAIN_SETS),curves_$(s).csv))
 # Tracking, snapshots and logging must not change the results: the edge group runs again with each.
@@ -137,7 +140,7 @@ ifneq ($(filter-out clean help,$(or $(MAKECMDGOALS),all)),)
 endif
 
 # --- Targets ----------------------------------------------------------------
-.PHONY: all run check check-outputs check-variants debug asan ubsan bench clean help golden-update testdata
+.PHONY: all run check check-outputs check-variants check-modes debug asan ubsan bench clean help golden-update testdata
 
 all: $(BIN)
 
@@ -196,10 +199,16 @@ check-variants: check-outputs
 	$(call run_in,edge) --seed $(CHECK_SEED) -r 5 --algo $(CHECK_ALGOS) $(VARIANT_log3) -o $(CHECK_OUT)/log3/edge > $(NULLDEV) 2> $(NULLDEV)
 	$(call run_in,edge) --seed $(CHECK_SEED) --algo rkm,rs $(VARIANT_log3) -o $(CHECK_OUT)/log3/edge > $(NULLDEV) 2> $(NULLDEV)
 
+check-modes: check-outputs
+	$(call run_in,main) --seed $(CHECK_SEED) --datasets s03_overlap --algo skm-local -r 5 --max-iterations 1 --repartition inward --snapshots none -o $(CHECK_OUT)/modes/inward > $(NULLDEV)
+	$(call run_in,main) --seed $(CHECK_SEED) --datasets s03_overlap --algo skm-local -r 5 --max-iterations 1 --repartition inward-nonchild --snapshots none -o $(CHECK_OUT)/modes/inward-nonchild > $(NULLDEV)
+	$(call run_in,main) --seed $(CHECK_SEED) --datasets s03_overlap --algo skm-local -r 5 --max-iterations 1 --repartition both --snapshots none -o $(CHECK_OUT)/modes/both > $(NULLDEV)
+	$(call run_in,main) --seed $(CHECK_SEED) --datasets s03_overlap --algo bisecting -r 5 --max-iterations 1 --bisect-select size --snapshots none -o $(CHECK_OUT)/modes/bisect-size > $(NULLDEV)
+
 # Unit tests (fixtures in $(UNIT_DIR)), golden comparison (also of the tracking variants and of the
 # report), then smoke tests of the two default invocations (CLI with and without ground truth) and of
 # the subcommands.
-check: check-variants $(COMPARE) $(UNIT)
+check: check-variants check-modes $(COMPARE) $(UNIT)
 	$(call MKDIR,$(UNIT_DIR))
 	$(call run_in,main) --seed $(CHECK_SEED) --datasets s01_blobs2d --algo km -r 1 --max-iterations 1 --snapshots none -o $(CHECK_OUT)/cap-batch > $(NULLDEV)
 	$(call fixpath,$(UNIT)) $(call fixpath,$(UNIT_DIR)) $(call fixpath,$(TEST_BIN)) $(call fixpath,$(TEST_DIR)/main/data/s01_blobs2d.txt) $(call fixpath,$(TEST_DIR)/main/gt/s01_blobs2d.txt) $(call fixpath,$(CHECK_DIR)/cap-batch)
@@ -207,6 +216,8 @@ check: check-variants $(COMPARE) $(UNIT)
 	$(call fixpath,$(COMPARE)) tests/golden $(CHECK_DIR)/notrack $(GOLDEN_EDGE)
 	$(call fixpath,$(COMPARE)) tests/golden $(CHECK_DIR)/snapshots $(GOLDEN_EDGE)
 	$(call fixpath,$(COMPARE)) tests/golden $(CHECK_DIR)/log3 $(GOLDEN_EDGE)
+	$(call fixpath,$(COMPARE)) tests/golden $(CHECK_DIR) $(REPARTITION_FILES)
+	$(call fixpath,$(COMPARE)) tests/golden $(CHECK_DIR) $(BISECT_SIZE_FILE)
 	$(call run_in,main) report --no-time -o $(CHECK_OUT)/report $(CHECK_OUT)/main > $(NULLDEV)
 	$(call fixpath,$(COMPARE)) --whole tests/golden $(CHECK_DIR) $(REPORT_FILES)
 	$(call run_in,main) > $(NULLDEV)
@@ -218,8 +229,10 @@ check: check-variants $(COMPARE) $(UNIT)
 $(GOLDEN_DIRS):
 	$(call MKDIR,$@)
 
-golden-update: check-outputs $(COMPARE) | $(GOLDEN_DIRS)
+golden-update: check-modes $(COMPARE) | $(GOLDEN_DIRS)
 	$(call fixpath,$(COMPARE)) --update tests/golden $(CHECK_DIR) $(GOLDEN_FILES)
+	$(call fixpath,$(COMPARE)) --update tests/golden $(CHECK_DIR) $(REPARTITION_FILES)
+	$(call fixpath,$(COMPARE)) --update tests/golden $(CHECK_DIR) $(BISECT_SIZE_FILE)
 	$(call run_in,main) report --no-time -o $(CHECK_OUT)/report $(CHECK_OUT)/main > $(NULLDEV)
 	$(call fixpath,$(COMPARE)) --update --whole tests/golden $(CHECK_DIR) $(REPORT_FILES)
 

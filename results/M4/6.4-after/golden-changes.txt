@@ -1,0 +1,54 @@
+Step 6.4: every changed golden line (seed 20251026)
+Random Swap now compares against the initial SSE and updates affected means before its two k-means iterations. Its accepted improvements and intermediate curves change; the final regression run files remain unchanged.
+Changed files: 3; changed lines: 14.
+
+report\curves_s03_overlap.csv
+  line 4:
+    RS SSE (10^7): 1.728222 -> 1.613744
+  line 5:
+    RS SSE (10^7): 1.337637 -> 1.305508
+  line 6:
+    RS count: 10 -> 27
+    RS SSE (10^7): 1.313216 -> 1.301029
+  line 7:
+    RS count: 27 -> 47
+    RS SSE (10^7): 1.302234 -> 1.300676
+  line 8:
+    RS count: 47 -> (empty)
+    RS SSE (10^7): 1.300676 -> (empty)
+    RS CI: 0.0000 -> (empty)
+
+report\curves_s04_unbalanced.csv
+  line 4:
+    RS SSE (10^5): 500.821570 -> 500.663551
+
+report\curves_s05_k15.csv
+  line 7:
+    RS count: 20 -> 15
+    RS SSE (10^5): 52.896042 -> 53.351512
+  line 8:
+    RS count: 34 -> 23
+    RS SSE (10^5): 52.886951 -> 52.459732
+  line 9:
+    RS count: 38 -> 34
+    RS SSE (10^5): 52.876696 -> 52.447479
+  line 10:
+    RS count: 41 -> 35
+    RS SSE (10^5): 7.449930 -> 52.435706
+    RS CI: 0.0000 -> 1.0000
+  line 11:
+    RS count: 43 -> 37
+    RS SSE (10^5): 5.505084 -> 52.433582
+    RS CI: 0.0000 -> 1.0000
+  line 12:
+    RS count: 46 -> 51
+    RS SSE (10^5): 3.451605 -> 52.329015
+    RS CI: 0.0000 -> 1.0000
+  line 13:
+    RS count:  -> 62
+    RS SSE (10^5):  -> 52.184598
+    RS CI:  -> 1.0000
+  line 14:
+    RS count:  -> 67
+    RS SSE (10^5):  -> 3.451605
+    RS CI:  -> 0.0000

@@ -55,6 +55,14 @@ typedef struct
     double ms;
 } InnerRow;
 
+/* Owns captured inner rows; free its rows after use. */
+typedef struct
+{
+    InnerRow* rows;
+    size_t count;
+    size_t capacity;
+} InnerTrace;
+
 #define MAX_RANGES 32
 
 /** @brief A set of 1-based runs or of counts, given as `all` or a list such as `1,3-5`. */
@@ -114,6 +122,9 @@ size_t trackerRecord(Tracker* tracker, size_t count, const char* phase, const Da
 void trackerSnapshot(Tracker* tracker, size_t count, const char* phase, const Dataset* dataPoints,
                      const Centroids* centroids, size_t splitCluster);
 void trackerInnerRow(Tracker* tracker, KMeansStage stage, size_t iteration, const Centroids* centroids, double sse);
+InnerTrace trackerCaptureBegin(Tracker* tracker, InnerTrace* trace);
+void trackerCaptureEnd(Tracker* tracker, InnerTrace* trace, InnerTrace previous);
+void trackerAppendTrace(Tracker* tracker, const InnerTrace* trace, size_t count);
 void trackerAddRow(Tracker* tracker, size_t count, double sse, size_t ci);
 /* Leave untimed bookkeeping inside a run out of the run time; every pause needs a resume. */
 void trackerPause(Tracker* tracker);

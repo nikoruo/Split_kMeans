@@ -11,24 +11,23 @@
 
 #include <assert.h>
 #include <float.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /**
- * @brief Picks K different data points uniformly and copies them as initial centroids.
+ * @brief Picks K coordinate-distinct data points by a partial Fisher-Yates shuffle.
  *
- * Uses a partial Fisher–Yates shuffle to select `numCentroids` distinct indices from
- * `dataPoints` without replacement (duplicate points in the data can still give equal
- * coordinates, 6.6), then deep-copies those points into `centroids`.
- * Selection of swap index uses rejection sampling (no modulo bias).
+ * A row equal to an already selected centroid is removed from the remaining pool.
  *
  * @param numCentroids Number of centroids to select (K); must be <= dataPoints->size and > 0.
  * @param dataPoints Source dataset; `dataPoints->size` must be > 0.
  * @param centroids Destination centroid container; must have at least K elements.
  * @return void
  * @errors Asserts valid K and destination size; exits on allocation failure.
- * @note O(N) init + O(K) swaps.
+ * @note Collision-free draws match the original partial Fisher-Yates shuffle.
  */
 void generateRandomCentroids(size_t numCentroids, const Dataset* dataPoints, Centroids* centroids, Rng* rng)
 {
@@ -53,19 +52,41 @@ void generateRandomCentroids(size_t numCentroids, const Dataset* dataPoints, Cen
         indices[i] = i;
     }
 
+    size_t poolEnd = N;
     for (size_t i = 0; i < numCentroids; ++i)
     {
-        size_t j = i + rng_below(rng, dataPoints->size - i);
-        size_t temp = indices[i];
-        indices[i] = indices[j];
-        indices[j] = temp;
-    }
-
-    /* Copy selected points into centroids */
-    for (size_t i = 0; i < numCentroids; ++i)
-    {
-        size_t idx = indices[i];
-        copyCoordinates(centroidRow(centroids, i), datasetRowConst(dataPoints, idx), dataPoints->dimensions);
+        for (;;)
+        {
+            if (poolEnd == i)
+            {
+                free(indices);
+                fprintf(stderr, "Error: K (%zu) exceeds the number of distinct data points\n", numCentroids);
+                exit(EXIT_FAILURE);
+            }
+            size_t j = i + rng_below(rng, poolEnd - i);
+            const double* candidate = datasetRowConst(dataPoints, indices[j]);
+            bool duplicate = false;
+            for (size_t c = 0; c < i; ++c)
+            {
+                if (coordinatesEqual(candidate, centroidRowConst(centroids, c), dataPoints->dimensions))
+                {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (duplicate)
+            {
+                size_t temp = indices[--poolEnd];
+                indices[poolEnd] = indices[j];
+                indices[j] = temp;
+                continue;
+            }
+            size_t temp = indices[i];
+            indices[i] = indices[j];
+            indices[j] = temp;
+            copyCoordinates(centroidRow(centroids, i), candidate, dataPoints->dimensions);
+            break;
+        }
     }
 
     free(indices);
@@ -75,8 +96,7 @@ void generateRandomCentroids(size_t numCentroids, const Dataset* dataPoints, Cen
  * @brief k-means++ seeding (--init kmeans++): the first centroid uniformly, each next one with probability
  * proportional to the squared distance to the nearest chosen centroid.
  *
- * A pick at distance 0 (an already chosen coordinate) is drawn again. Exits when no point is left at a
- * positive distance, that is when the data have fewer than K distinct points (it looped forever before 3.5).
+ * A chosen coordinate has zero weight. Reports insufficient distinct points or non-representable distances.
  * Requires 0 < K <= N and room for K centroids. O(K·N·D) with a distance cache.
  */
 void generateKMeansPlusPlusCentroids(size_t numCentroids, const Dataset* dataPoints, Centroids* centroids, Rng* rng)
@@ -110,30 +130,37 @@ void generateKMeansPlusPlusCentroids(size_t numCentroids, const Dataset* dataPoi
             distSum += dist2[i];
         }
 
-        // Every point coincides with a chosen centroid: no new distinct centroid exists
+        if (!isfinite(distSum))
+        {
+            free(dist2);
+            fprintf(stderr, "Error: k-means++ squared-distance sum exceeds the numeric range\n");
+            exit(EXIT_FAILURE);
+        }
         if (distSum == 0.0)
         {
-            fprintf(stderr, "Error: k-means++ found only %zu distinct points for K = %zu\n", chosen, numCentroids);
+            size_t distinct = countDistinctRowsUpTo(dataPoints, numCentroids);
+            free(dist2);
+            if (distinct < numCentroids)
+                fprintf(stderr, "Error: K (%zu) exceeds the number of distinct data points (%zu)\n",
+                        numCentroids, distinct);
+            else
+                fprintf(stderr, "Error: k-means++ squared distances underflow for distinct data points\n");
             exit(EXIT_FAILURE);
         }
 
         // 3. Select a new centroid with probability r
         double r = rng_unit(rng) * distSum;
         double cumulative = 0.0;
-        size_t picked = dataPoints->size - 1; /* fallback to last point */
+        size_t picked = SIZE_MAX;
 
         for (size_t i = 0; i < dataPoints->size; ++i)
         {
+            if (dist2[i] == 0.0) continue;
             cumulative += dist2[i];
-            if (cumulative >= r)
-            {
-                picked = i;
-                break;
-            }
+            picked = i;
+            if (cumulative > r) break;
         }
-
-        // Debug: If the chosen point is already a centroid, skip and choose again
-        if (dist2[picked] == 0.0) continue;
+        assert(picked != SIZE_MAX);
 
         // 4. Add the selected point as the next centroid
         copyCoordinates(centroidRow(centroids, chosen), datasetRowConst(dataPoints, picked), dataPoints->dimensions);
@@ -342,8 +369,12 @@ static bool updateKMeansBest(double sse, double* bestSse, size_t iteration, cons
  * @param stage Which k-means this is for --track-inner; KM_STAGE_NONE logs no rows.
  * @return Best SSE observed during the run.
  */
-double runKMeans(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage)
+static double runKMeansImpl(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker,
+                            KMeansStage stage, Centroids* bestCentroids, size_t* bestLabels, double* lastSse)
 {
+    assert((bestCentroids == NULL) == (bestLabels == NULL));
+    assert(bestCentroids == NULL || (bestCentroids->size == centroids->size &&
+                                     bestCentroids->dimensions == centroids->dimensions));
     double bestSse = DBL_MAX;
     double sse = DBL_MAX;
     const Centroids* groundTruth = tracker != NULL ? tracker->groundTruth : NULL;
@@ -354,19 +385,61 @@ double runKMeans(Dataset* dataPoints, size_t iterations, Centroids* centroids, T
         centroidStep(centroids, dataPoints);
 
         sse = calculateSSE(dataPoints, centroids);
+        if (lastSse != NULL) *lastSse = sse;
 
         trackerInnerRow(tracker, stage, iteration + 1, centroids, sse);
 
         if (!updateKMeansBest(sse, &bestSse, iteration, centroids, groundTruth)) break;
+        if (bestCentroids != NULL)
+        {
+            copyCoordinates(bestCentroids->coordinates, centroids->coordinates,
+                            centroids->size * centroids->dimensions);
+            memcpy(bestLabels, dataPoints->partitions, dataPoints->size * sizeof(*bestLabels));
+        }
     }
 
     return bestSse;
 }
 
-double runKMeansView(DatasetView* view, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage,
-                     bool prePartition)
+double runKMeans(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage)
+{
+    return runKMeansImpl(dataPoints, iterations, centroids, tracker, stage, NULL, NULL, NULL);
+}
+
+double runKMeansBest(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage,
+                     Centroids* bestCentroids, size_t* bestLabels)
+{
+    assert(bestCentroids != NULL && bestLabels != NULL);
+    double sse = runKMeansImpl(dataPoints, iterations, centroids, tracker, stage, bestCentroids, bestLabels, NULL);
+    if (sse == DBL_MAX)
+    {
+        fprintf(stderr, "Error: K-means produced no finite best SSE\n");
+        exit(EXIT_FAILURE);
+    }
+    copyCoordinates(centroids->coordinates, bestCentroids->coordinates, centroids->size * centroids->dimensions);
+    memcpy(dataPoints->partitions, bestLabels, dataPoints->size * sizeof(*bestLabels));
+    return sse;
+}
+
+double runKMeansLast(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage)
+{
+    if (iterations == 0)
+    {
+        fprintf(stderr, "Error: K-means requires at least one iteration\n");
+        exit(EXIT_FAILURE);
+    }
+    double sse = DBL_MAX;
+    (void)runKMeansImpl(dataPoints, iterations, centroids, tracker, stage, NULL, NULL, &sse);
+    return sse;
+}
+
+static double runKMeansViewImpl(DatasetView* view, size_t iterations, Centroids* centroids, Tracker* tracker,
+                                KMeansStage stage, bool prePartition, Centroids* bestCentroids, size_t* bestLabels)
 {
     assert(view->size > 0 && centroids->size > 0 && view->source->dimensions == centroids->dimensions);
+    assert((bestCentroids == NULL) == (bestLabels == NULL));
+    assert(bestCentroids == NULL || (bestCentroids->size == centroids->size &&
+                                     bestCentroids->dimensions == centroids->dimensions));
     double bestSse = DBL_MAX;
     const Centroids* groundTruth = tracker != NULL ? tracker->groundTruth : NULL;
     if (prePartition) partitionView(view, centroids);
@@ -378,8 +451,27 @@ double runKMeansView(DatasetView* view, size_t iterations, Centroids* centroids,
         double sse = calculateSSEView(view, centroids);
         trackerInnerRow(tracker, stage, iteration + 1, centroids, sse);
         if (!updateKMeansBest(sse, &bestSse, iteration, centroids, groundTruth)) break;
+        if (bestCentroids != NULL)
+        {
+            copyCoordinates(bestCentroids->coordinates, centroids->coordinates,
+                            centroids->size * centroids->dimensions);
+            for (size_t i = 0; i < view->size; ++i) bestLabels[view->indices[i]] = view->partitions[i];
+        }
     }
     return bestSse;
+}
+
+double runKMeansView(DatasetView* view, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage,
+                     bool prePartition)
+{
+    return runKMeansViewImpl(view, iterations, centroids, tracker, stage, prePartition, NULL, NULL);
+}
+
+double runKMeansViewBest(DatasetView* view, size_t iterations, Centroids* centroids, Tracker* tracker,
+                         KMeansStage stage, bool prePartition, Centroids* bestCentroids, size_t* bestLabels)
+{
+    assert(bestCentroids != NULL && bestLabels != NULL);
+    return runKMeansViewImpl(view, iterations, centroids, tracker, stage, prePartition, bestCentroids, bestLabels);
 }
 
 /**

@@ -1,0 +1,5 @@
+data: data/birch1.txt
+ground-truth: gt/b1-gt.txt
+k: 100
+n: 100000
+d: 2

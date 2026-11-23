@@ -1,0 +1,32 @@
+Step 6.1b repartition comparison, 2026-11-21
+
+All three modes used the same MinGW release build, seed 20261119,
+log level 1, tracking rows, no selected snapshots and convergence defaults.
+Each of the ten main and hard datasets has 100 completed runs per mode,
+including worms_2d. Runs 1-25, 26-50, 51-75 and 76-100 were executed in
+alternating mode orders. The program writes its first perfect/failed example
+snapshots after the timed region, even with --snapshots none.
+
+The mode folders retain run_config.txt, per-run SSE and CI, dataset metadata,
+and report tables with mean and sample SD of SSE and time, mean and relative
+CI and success rate. paired-comparison.csv compares inward with both on
+matching run indices and seeds. Different assignments can consume random
+draws differently, so matching seeds do not imply identical random streams.
+Timing differences include machine and ordering noise.
+
+inward and inward-nonchild matched exactly on all 1000 converged runs
+(run, seed, SSE, CI). The separate capped goldens demonstrate their difference
+when child points are not already optimally assigned. Explicit both matched
+the preceding 6.1 milestone on its nine 100-run datasets and the ten
+worms_2d runs.
+
+repartition_diagnostics.csv comes from separate log-level-3 replays of all
+3000 runs; those timings were discarded. Every replay matched its level-1
+run, seed, SSE and CI, and produced K-1 repartition events per run. Touched
+counts include both split children even if nothing moved and therefore are
+not a count of Voronoi neighbours. pass1 and pass2 are moves per split;
+child is the subset of pass2 moves between children. No such child switch
+occurred in these converged runs.
+
+Full tracking and diagnostic logs are outside OneDrive:
+%TEMP%\skm_M4_6_1b_compare_20261121_124854

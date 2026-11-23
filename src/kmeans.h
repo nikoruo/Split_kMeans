@@ -9,7 +9,7 @@
 #include "rng.h"
 #include "tracking.h"
 
-/** @brief Initial centroids of KM, RKM and RS (--init). */
+/** @brief Coordinate-distinct initial centroids of KM, RKM and RS (--init). */
 typedef enum
 {
     INIT_RANDOM,
@@ -38,9 +38,17 @@ void initialCentroids(InitMethod init, size_t numCentroids, const Dataset* dataP
 void partitionStep(Dataset* dataPoints, const Centroids* centroids);
 void centroidStep(Centroids* centroids, const Dataset* dataPoints);
 double runKMeans(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage);
+/* Restores the best scored centroids and labels using caller-owned scratch. */
+double runKMeansBest(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage,
+                     Centroids* bestCentroids, size_t* bestLabels);
+/* Returns the SSE of the last state, including a non-improving final iteration. */
+double runKMeansLast(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage);
 /* prePartition preserves the intra split's initial assignment. */
 double runKMeansView(DatasetView* view, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage,
                      bool prePartition);
+/* Saves the best centroids and labels indexed by source-dataset row. */
+double runKMeansViewBest(DatasetView* view, size_t iterations, Centroids* centroids, Tracker* tracker,
+                         KMeansStage stage, bool prePartition, Centroids* bestCentroids, size_t* bestLabels);
 double runKMeansWithTracking(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker);
 
 #endif /* KMEANS_H */
