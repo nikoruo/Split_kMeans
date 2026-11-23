@@ -1,0 +1,39 @@
+Phase 7.0 real-data reference, 2026-11-23
+
+The clean MinGW gcc 16.2.0 release executable was built from commit
+7836c4a5a59b94d860f9d1e693b6b3401a16c770 with -O3,
+-ffp-contract=off and -Werror. Its SHA-256 was
+14C799033A464065564FC22D8B4EF3B5E9C3EA35B1C48311691E59DFB3181F12.
+The run configurations record 7836c4a without -dirty. source-hashes.csv
+includes the later benchmark-harness edit; no production source changed.
+All runs use master seed 20261119, log level 1, progress tracking and no
+selected snapshots. Commands and full run folders are recorded below.
+
+The default folder explicitly uses inward repartition and SSE-based
+bisecting. On s1, s4, a3, unbalance and dim064, KM, Random, Intra,
+Global, Global-Basic, Local and bisecting each have 100 runs; RKM and RS
+have one run each, with 1000 repeats and 5000 swaps respectively.
+worms_2d has 10 runs each of KM, Random, Intra, Global-Basic, Local and
+bisecting; Global, RKM and RS are omitted. local-both holds Local with
+both repartition, and bisect-size holds bisecting with size selection:
+each has 100 runs on the five small datasets and 10 on worms_2d.
+
+The 63 run files contain 4590 runs. Each mode has its own run_config.txt
+and report; progress rows remain in the full run folder, so report can
+end RS times at the last SSE improvement. Dataset metadata and reports
+were copied byte-for-byte with the run files. All 21 input hashes were
+checked after the runs; birch1's three files are for the benchmark only.
+
+All 4590 paired run/seed/SSE/CI values match prior Phase 6 results:
+default non-RS against 6b.3-after, RS against 6.6-after, both against
+6.7/local-both, and size against 6.6b-after/size. Where a prior file has
+100 worms_2d runs, only the first 10 are compared. The 64 benchmark
+identities match both builds and all four rounds, including 50 that also
+match this clean MinGW milestone. reference-validation.txt has counts.
+
+commands.txt contains the exact invocations. The executable, validation
+and orchestration scripts, full tracking output and console logs remain at
+%TEMP%\skm_7_0_7836c4a_20261123_173143. Use new output folders for any
+repeat: existing run CSVs are appended to. After 7.3 compare each mode's
+run files with the matching folder here using compare_runs; elapsed time
+is intentionally excluded from that exact comparison.

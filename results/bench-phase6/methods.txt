@@ -1,0 +1,49 @@
+Phase 6b benchmark reference, 2026-11-23
+
+Source revision: 7836c4a5a59b94d860f9d1e693b6b3401a16c770.
+The benchmark primary is MinGW gcc 16.2.0, -O3, -ffp-contract=off,
+-Werror; the reference is Visual Studio 2026 Release x64, toolset v145.
+The laptop was on AC power. The run-config files record flags, CPU and timer.
+
+The only tracked edit when make bench ran was the new tests/bench.c job.
+It made the MinGW executable record 7836c4a-dirty, although production
+sources and build flags were unchanged. Its SHA-256 was
+B16DD0E99775B0FF0D695910763CD1B5226B09916DDE7C18C6218116754005EC.
+The clean MSVC reference recorded 7836c4a and had SHA-256
+24F129B0F11D4241CA568733946A53157D84320A5309AE686E74D30EC1E799DE.
+The separately built clean MinGW executable used for M3b-ref had SHA-256
+14C799033A464065564FC22D8B4EF3B5E9C3EA35B1C48311691E59DFB3181F12.
+Fifty overlapping benchmark identities match that clean executable's
+milestone output exactly on run, seed, SSE and CI.
+
+All jobs use seed 20261119, log level 1, no tracking, 25 RKM repeats,
+300 RS swaps, inward repartition and SSE-based bisecting. There are four
+rounds, alternating MinGW/MSVC and MSVC/MinGW by round. The existing jobs
+are unchanged:
+  s1 and dim064: all nine algorithms, three runs each
+  worms_2d: KM, Random, Intra, Local and bisecting, one run each
+  birch1: Intra and Local, one run each
+The added job is a3, K=50, SKM-Global, three runs.
+
+All 64 identities match across both builds and all four rounds.
+summary.csv records each run's minimum time over those rounds:
+                   MinGW ms    MSVC ms
+  s1                507.900     623.283
+  dim064            842.105     882.200
+  worms_2d         3252.134    3979.001
+  birch1           1298.524    1590.425
+  a3                389.286     477.995
+  all jobs         6289.949    7552.904
+  original jobs    5900.663    7074.909
+
+The original-job subtotal is comparable in job definition with bench-after,
+but the intervening Phase 6 algorithm changes and separate sessions mean
+its timing difference is not a pure performance comparison. The first
+benchmark session gave 6270.587 ms MinGW and 7578.037 ms MSVC. It was
+repeated after adding the birch1 input hashes; the second session above is
+the recorded reference. All 21 input hashes remained unchanged afterward.
+
+Exact first-round commands are in commands.txt; the raw four-round folders
+and first session remain outside OneDrive:
+%TEMP%\skm_7_0_7836c4a_20261123_173143\bench
+See results/M3b-ref/reference-validation.txt for independent checks.

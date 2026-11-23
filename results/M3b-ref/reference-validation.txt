@@ -1,0 +1,7 @@
+default: 51 run files and 51 report rows
+local-both: 6 run files and 6 report rows
+bisect-size: 6 run files and 6 report rows
+Milestone: 63 files, 4590 runs, 107057 progress rows; seeds and input metadata verified.
+Benchmark: 64 identities match all four rounds and both builds; 50 match the clean milestone.
+Prior Phase 6 references: 63 files, 4590 paired runs, 0 SSE/CI differences.
+All 21 benchmark and milestone input hashes unchanged.
