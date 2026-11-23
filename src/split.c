@@ -171,8 +171,10 @@ static void selectSplitSeeds(const Dataset* dataPoints, const size_t* indices, s
 
 static ClusteringResult localTwoMeans(Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel,
                                       size_t iterations, Tracker* tracker, KMeansStage stage, bool prePartition,
-                                      size_t newCluster, Rng* rng, Centroids* bestCentroids, size_t* bestLabels)
+                                      size_t newCluster, Rng* rng, Centroids* trialCentroids, size_t* trialLabels)
 {
+    assert(iterations > 0);
+    assert((trialCentroids == NULL) == (trialLabels == NULL));
     DatasetView view = clusterView(dataPoints, index, clusterLabel);
     size_t c1, c2;
     selectSplitSeeds(dataPoints, view.indices, view.size, rng, &c1, &c2);
@@ -180,11 +182,15 @@ static ClusteringResult localTwoMeans(Dataset* dataPoints, const ClusterIndex* i
     ClusteringResult result = allocateClusteringResult(2, dataPoints->dimensions);
     copyCoordinates(centroidRow(&result.centroids, 0), datasetViewRow(&view, c1), dataPoints->dimensions);
     copyCoordinates(centroidRow(&result.centroids, 1), datasetViewRow(&view, c2), dataPoints->dimensions);
-    if (bestCentroids != NULL)
-        result.sse = runKMeansViewBest(&view, iterations, &result.centroids, tracker, stage, prePartition,
-                                       bestCentroids, bestLabels);
-    else
-        result.sse = runKMeansView(&view, iterations, &result.centroids, tracker, stage, prePartition);
+    result.sse = runKMeansView(&view, iterations, &result.centroids, tracker, stage, prePartition);
+    if (trialCentroids != NULL)
+    {
+        assert(trialCentroids->size == result.centroids.size &&
+               trialCentroids->dimensions == result.centroids.dimensions);
+        copyCoordinates(trialCentroids->coordinates, result.centroids.coordinates,
+                        result.centroids.size * result.centroids.dimensions);
+        for (size_t i = 0; i < view.size; ++i) trialLabels[view.indices[i]] = view.partitions[i];
+    }
 
     if (newCluster != SIZE_MAX)
     {
@@ -216,10 +222,10 @@ static void appendSplitCentroids(Centroids* centroids, size_t clusterToSplit, co
  * @param dataPoints All points with current partitions.
  * @param centroids Global centroids; updated in-place (size increases by one).
  * @param clusterToSplit Index of the cluster to split.
- * @param localMaxIterations Max iterations for the local k-means refinement.
+ * @param localMaxIterations Max iterations for the local k-means refinement; at least 1.
  * @param tracker Optional: `_inner.csv` rows of the local 2-means (stage split) and the ground truth for the level-3
  * log.
- * @errors Exits on allocation failure. Asserts that the cluster has at least two distinct points.
+ * @errors Exits on allocation failure. Asserts a positive iteration limit and at least two distinct points.
  */
 void splitClusterIntraCluster(Dataset* dataPoints, const ClusterIndex* index, Centroids* centroids,
                               size_t clusterToSplit, size_t localMaxIterations, Tracker* tracker, Rng* rng)
@@ -229,38 +235,6 @@ void splitClusterIntraCluster(Dataset* dataPoints, const ClusterIndex* index, Ce
                                             KM_STAGE_SPLIT, true, centroids->size, rng, NULL, NULL);
     appendSplitCentroids(centroids, clusterToSplit, &result.centroids);
     freeClusteringResult(&result);
-}
-
-/**
- * @brief Retained local-then-global split helper; the SKM-Global runner applies its cached trial instead.
- *
- * The two local seeds have distinct coordinates. The local result replaces the old centroid and is appended
- * as the new one; global k-means
- * then runs until the SSE stops improving (localMaxIterations is SIZE_MAX by default).
- *
- * @param dataPoints All points with current partitions.
- * @param centroids Global centroids; updated in place (size increases by one).
- * @param clusterToSplit Index of the cluster to split; it has at least two distinct points (asserted).
- * @param localMaxIterations Max iterations for both the local and the global k-means.
- * @param tracker Optional: the after-split snapshot, the `_inner.csv` rows (stages split and global) and the ground
- * truth for the level-3 log.
- * @return SSE after the global k-means.
- */
-double splitClusterGlobalV2(Dataset* dataPoints, const ClusterIndex* index, Centroids* centroids,
-                            size_t clusterToSplit, size_t localMaxIterations, Tracker* tracker, Rng* rng)
-{
-    assert(centroids->size < centroids->capacity && centroids->dimensions == dataPoints->dimensions);
-    ClusteringResult result = localTwoMeans(dataPoints, index, clusterToSplit, localMaxIterations, tracker,
-                                            KM_STAGE_SPLIT, false, centroids->size, rng, NULL, NULL);
-    appendSplitCentroids(centroids, clusterToSplit, &result.centroids);
-
-    trackerSplitSnapshot(tracker, dataPoints, centroids, clusterToSplit);
-
-    double sse = runKMeans(dataPoints, localMaxIterations, centroids, tracker, KM_STAGE_GLOBAL);
-
-    freeClusteringResult(&result);
-
-    return sse;
 }
 
 /**
@@ -279,7 +253,7 @@ double splitClusterGlobalV2(Dataset* dataPoints, const ClusterIndex* index, Cent
  * @return SSE after global refinement.
  * @errors Exits on allocation failure. Asserts that the cluster has at least two distinct points.
  * @note Runs as --algo skm-global-basic, the basic comparison for SKM-Global: global k-means starts right after
- *       the two random seeds, without the local 2-means. Whether this gives worse results is measured in 6.7.
+ *       the two random seeds, without the local 2-means. Step 6.7 compares the two (`results/M4/6.7/`).
  */
 double splitClusterGlobal(Dataset* dataPoints, const ClusterIndex* index, Centroids* centroids,
                           size_t clusterToSplit, size_t globalMaxIterations, Tracker* tracker, Rng* rng)
@@ -346,11 +320,12 @@ size_t updateAffectedCentroids(Dataset* dataPoints, ClusterIndex* index, Centroi
  * and both children; inward-nonchild skips the children. Rebuild membership and update touched means once.
  *
  * @param dataPoints Dataset with current partitions.
+ * @param index Reusable membership index, rebuilt after the moves.
  * @param centroids Global centroids; the new centroid is at index `centroids->size - 1`.
  * @param clusterToSplit Index of the cluster that was split.
- * @param index Reusable membership index, rebuilt after the moves.
+ * @param mode Repartition mode (--repartition).
  * @param clustersAffected Initially clear array (size >= number of clusters), filled with touched clusters.
- * @return Number of clusters with at least two points.
+ * @return Number of clusters with at least two distinct coordinates.
  */
 size_t localRepartition(Dataset* dataPoints, ClusterIndex* index, Centroids* centroids, size_t clusterToSplit,
                         RepartitionMode mode, bool* clustersAffected)
@@ -425,32 +400,6 @@ size_t localRepartition(Dataset* dataPoints, ClusterIndex* index, Centroids* cen
     return splittable;
 }
 
-/**
- * @brief Estimates SSE improvement from splitting one cluster with local k-means.
- *
- * Views the points of `clusterLabel`, initializes two seeds from that set,
- * runs k-means with K=2 locally, and returns the decrease relative to the
- * original single-cluster SSE (`originalClusterSSE - localSseAfterSplit`).
- *
- * @param dataPoints Dataset with current partitions; used to extract the cluster’s points.
- * @param clusterLabel Cluster id to test a tentative split for.
- * @param localMaxIterations Max iterations for the local k-means refinement.
- * @param originalClusterSSE Current SSE of the cluster before splitting.
- * @return SSE drop (non-negative when the split helps); 0 for a cluster without two distinct points.
- * @errors Exits on allocation failure.
- */
-double tentativeSseDrop(Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel, size_t localMaxIterations,
-                        double originalClusterSSE, Rng* rng)
-{
-    assert(index->dataset == dataPoints && clusterLabel < index->clusterCount);
-    if (!index->eligible[clusterLabel]) return 0.0;
-    ClusteringResult result = localTwoMeans(dataPoints, index, clusterLabel, localMaxIterations, NULL, KM_STAGE_NONE,
-                                            false, SIZE_MAX, rng, NULL, NULL);
-    double sseDrop = originalClusterSSE - result.sse;
-    freeClusteringResult(&result);
-    return sseDrop;
-}
-
 static double takeFiniteTrial(ClusteringResult* result, size_t clusterLabel)
 {
     double sse = result->sse;
@@ -463,12 +412,41 @@ static double takeFiniteTrial(ClusteringResult* result, size_t clusterLabel)
     return sse;
 }
 
-double cacheTentativeSplit(Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel,
-                           size_t localMaxIterations, double originalClusterSSE, Centroids* bestCentroids,
-                           size_t* bestLabels, Tracker* tracker, InnerTrace* trace, Rng* rng)
+/**
+ * @brief Estimates SSE improvement from splitting one cluster with local k-means.
+ *
+ * Views the points of `clusterLabel`, initializes two seeds from that set,
+ * runs k-means with K=2 locally, and returns the decrease relative to the
+ * original single-cluster SSE (`originalClusterSSE - localSseAfterSplit`).
+ *
+ * @param dataPoints Dataset with current partitions; used to extract the cluster’s points.
+ * @param clusterLabel Cluster id to test a tentative split for.
+ * @param localMaxIterations Max iterations for the local k-means refinement.
+ * @param originalClusterSSE Current SSE of the cluster before splitting.
+ * @return SSE drop (non-negative when the split helps); 0 for a cluster without two distinct points.
+ * @errors Exits on allocation failure or a non-finite cluster or trial SSE.
+ */
+double tentativeSseDrop(Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel, size_t localMaxIterations,
+                        double originalClusterSSE, Rng* rng)
 {
     assert(index->dataset == dataPoints && clusterLabel < index->clusterCount);
-    assert(bestCentroids != NULL && bestLabels != NULL);
+    if (!index->eligible[clusterLabel]) return 0.0;
+    if (!isfinite(originalClusterSSE))
+    {
+        fprintf(stderr, "Error: Cannot evaluate split of cluster %zu: non-finite SSE\n", clusterLabel);
+        exit(EXIT_FAILURE);
+    }
+    ClusteringResult result = localTwoMeans(dataPoints, index, clusterLabel, localMaxIterations, NULL, KM_STAGE_NONE,
+                                            false, SIZE_MAX, rng, NULL, NULL);
+    return originalClusterSSE - takeFiniteTrial(&result, clusterLabel);
+}
+
+double cacheTentativeSplit(Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel,
+                           size_t localMaxIterations, double originalClusterSSE, Centroids* trialCentroids,
+                           size_t* trialLabels, Tracker* tracker, InnerTrace* trace, Rng* rng)
+{
+    assert(index->dataset == dataPoints && clusterLabel < index->clusterCount);
+    assert(trialCentroids != NULL && trialLabels != NULL);
     if (!index->eligible[clusterLabel])
     {
         if (trace != NULL) trace->count = 0;
@@ -485,7 +463,7 @@ double cacheTentativeSplit(Dataset* dataPoints, const ClusterIndex* index, size_
     if (capture) previous = trackerCaptureBegin(tracker, trace);
     ClusteringResult result = localTwoMeans(dataPoints, index, clusterLabel, localMaxIterations,
                                             capture ? tracker : NULL, capture ? KM_STAGE_SPLIT : KM_STAGE_NONE,
-                                            false, SIZE_MAX, rng, bestCentroids, bestLabels);
+                                            false, SIZE_MAX, rng, trialCentroids, trialLabels);
     if (capture) trackerCaptureEnd(tracker, trace, previous);
     return originalClusterSSE - takeFiniteTrial(&result, clusterLabel);
 }
@@ -505,32 +483,12 @@ void applyTentativeSplit(Dataset* dataPoints, const ClusterIndex* index, Centroi
     appendSplitCentroids(centroids, clusterLabel, bestCentroids);
 }
 
-/**
- * @brief One bisecting try: local k-means with K=2 on the points of `clusterLabel`.
- *
- * The seeds are two coordinate-distinct points of the cluster, drawn by row. Returns the two
- * centroids and the local SSE; the caller keeps the try with the lowest SSE and frees each result.
- *
- * @param dataPoints Dataset with current partitions; used to extract the cluster’s points.
- * @param clusterLabel Cluster id to bisect.
- * @param localMaxIterations Max iterations for the local k-means refinement.
- * @param tracker Optional: `_inner.csv` rows of the try (stage try) and the ground truth for the level-3 log.
- * @return ClusteringResult with two centroids and the SSE for the cluster's points.
- * @errors Exits on allocation failure. Asserts that the cluster has at least two distinct points.
- */
-ClusteringResult tentativeSplitterForBisecting(Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel,
-                                               size_t localMaxIterations, Tracker* tracker, Rng* rng)
-{
-    return localTwoMeans(dataPoints, index, clusterLabel, localMaxIterations, tracker, KM_STAGE_TRY, false, SIZE_MAX,
-                         rng, NULL, NULL);
-}
-
 double runBisectingTrial(Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel, size_t localMaxIterations,
-                         Centroids* bestCentroids, size_t* bestLabels, Tracker* tracker, Rng* rng)
+                         Centroids* trialCentroids, size_t* trialLabels, Tracker* tracker, Rng* rng)
 {
-    assert(bestCentroids != NULL && bestLabels != NULL);
+    assert(trialCentroids != NULL && trialLabels != NULL);
     ClusteringResult result = localTwoMeans(dataPoints, index, clusterLabel, localMaxIterations, tracker, KM_STAGE_TRY,
-                                            false, SIZE_MAX, rng, bestCentroids, bestLabels);
+                                            false, SIZE_MAX, rng, trialCentroids, trialLabels);
     return takeFiniteTrial(&result, clusterLabel);
 }
 

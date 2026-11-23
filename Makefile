@@ -46,7 +46,7 @@ GEN_DATA      := $(BUILD_DIR)/gen_data$(EXE)
 COMPARE       := $(BUILD_DIR)/compare_runs$(EXE)
 UNIT          := $(BUILD_DIR)/test_unit$(EXE)
 BENCH_RUNNER  := $(BUILD_DIR)/bench$(EXE)
-UNIT_OBJECTS  := $(addprefix $(BUILD_DIR)/,algorithms.o baselines.o dataset.o kmeans.o metrics.o platform.o rng.o split.o tracking.o util.o)
+UNIT_OBJECTS  := $(addprefix $(BUILD_DIR)/,algorithms.o baselines.o dataset.o experiment.o kmeans.o metrics.o platform.o rng.o split.o tracking.o util.o)
 TEST_DIR      := build/testdata
 TESTDATA_DIRS := $(foreach g,main edge pending,$(foreach d,data gt centroids,$(TEST_DIR)/$(g)/$(d)))
 

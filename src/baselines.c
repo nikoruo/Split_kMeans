@@ -101,10 +101,13 @@ static size_t randomDistinctSwapTarget(const Dataset* dataPoints, const Centroid
 }
 
 /**
- * @brief Random Swap: moves a random centroid to a random data point, runs two k-means iterations and keeps the swap if
- * the SSE improves.
+ * @brief Random Swap: moves a random centroid to a random data point that differs from every centroid, then keeps
+ * the swap if the SSE improves.
  *
- * A rejected swap restores the centroids and partitions. The tracker records the initial
+ * Per swap, in the step order of Fränti 2018 p. 7: local repartition, update of the affected means, then two k-means
+ * iterations (partition, then means). The rs.txt and CBModules rs.c instead run two iterations of means, then
+ * partition, with no separate mean update; the 2018 order is kept on purpose (plan, Resolved). A rejected swap
+ * restores the centroids and partitions. The tracker records the initial
  * solution (count 0) and every improvement (count = swap number); CI is computed only for
  * the tracker and the level-2 log, with the stopwatch paused.
  *
@@ -113,6 +116,7 @@ static size_t randomDistinctSwapTarget(const Dataset* dataPoints, const Centroid
  * @param maxSwaps Number of trial swaps.
  * @param distinctRows Number of distinct rows, capped at K+1.
  * @return The best SSE found.
+ * @errors Exits on allocation failure, a non-finite initial SSE or a `distinctRows` that does not match the data.
  */
 double randomSwap(Dataset* dataPoints, Centroids* centroids, size_t maxSwaps, size_t distinctRows, Tracker* tracker,
                   Rng* rng)
@@ -172,7 +176,7 @@ double randomSwap(Dataset* dataPoints, Centroids* centroids, size_t maxSwaps, si
         updateAffectedCentroids(dataPoints, &membership, centroids, affected);
 
         // K-means
-        double resultSse = runKMeansLast(dataPoints, kMeansIterations, centroids, tracker, KM_STAGE_NONE);
+        double resultSse = runKMeans(dataPoints, kMeansIterations, centroids, tracker, KM_STAGE_NONE);
         if (!isfinite(resultSse))
         {
             trackerPause(tracker);
@@ -235,7 +239,8 @@ double randomSwap(Dataset* dataPoints, Centroids* centroids, size_t maxSwaps, si
  * @param selection Select by SSE or assigned row count.
  * @param tracker Records each split (count = split number) and the final k-means; carries the ground truth for CI.
  * @return SSE after the final k-means.
- * @errors Exits on allocation failures via helpers.
+ * @errors Exits on allocation failure, an invalid selection mode, zero iterations or tries, a non-finite try SSE,
+ *         no finite final SSE, or when no cluster with two distinct points is left to split.
  */
 double runBisectingKMeans(Dataset* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
                           size_t bisectingIterations, BisectSelect selection, Tracker* tracker, Rng* rng)
@@ -267,7 +272,6 @@ double runBisectingKMeans(Dataset* dataPoints, Centroids* centroids, size_t maxC
         handleMemoryError(trialLabels);
         SseList[0] = calculateClusterSSE(dataPoints, centroids, 0);
     }
-    Centroids finalBest = allocateCentroids(maxCentroids, dataPoints->dimensions);
     size_t* bestLabels = malloc(dataPoints->size * sizeof(*bestLabels));
     handleMemoryError(bestLabels);
     trackerRecord(tracker, 0, "start", dataPoints, centroids, SIZE_MAX);
@@ -320,8 +324,12 @@ double runBisectingKMeans(Dataset* dataPoints, Centroids* centroids, size_t maxC
         ++iterationCount;
     }
 
-    double finalResultSse = runKMeansBest(dataPoints, maxIterations, centroids, tracker, KM_STAGE_FINAL,
-                                          &finalBest, bestLabels);
+    double finalResultSse = runKMeans(dataPoints, maxIterations, centroids, tracker, KM_STAGE_FINAL);
+    if (finalResultSse == DBL_MAX || !isfinite(finalResultSse))
+    {
+        fprintf(stderr, "Error: Bisecting k-means produced no finite final SSE\n");
+        exit(EXIT_FAILURE);
+    }
 
     trackerRecord(tracker, iterationCount, "final", dataPoints, centroids, SIZE_MAX);
 
@@ -329,7 +337,6 @@ double runBisectingKMeans(Dataset* dataPoints, Centroids* centroids, size_t maxC
     freeClusterIndex(&membership);
     freeCentroids(&trialCentroids);
     freeCentroids(&bestSplit);
-    freeCentroids(&finalBest);
     free(trialLabels);
     free(bestLabels);
 

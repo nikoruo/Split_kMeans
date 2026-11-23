@@ -39,6 +39,7 @@ void writeDatasetInfo(const char* datasetDirectory, const char* dataFile, const 
                       size_t d);
 void textLine(const char* text, size_t index, char* line, size_t size);
 
+/* KM and RKM require a positive k-means iteration limit. */
 void runKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations,
                         size_t firstRun, size_t loopCount, size_t scaling, const char* fileName,
                         const char* outputDirectory, const TrackOptions* track, InitMethod init, uint64_t seed);
