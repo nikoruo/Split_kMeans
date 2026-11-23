@@ -37,6 +37,7 @@ static const BenchCase cases[] = {
     {"worms_2d", "worms_2d-gt.txt", 35, 1, "km,skm-random,skm-intra,skm-local,bisecting",
      {"KM", "SKM_Random", "SKM_Intra", "SKM_Local", "Bisecting_KM"}},
     {"birch1", "b1-gt.txt", 100, 1, "skm-intra,skm-local", {"SKM_Intra", "SKM_Local"}},
+    {"a3", "a3-ga-cb.txt", 50, 3, "skm-global", {"SKM_Global"}},
 };
 
 #define CASE_COUNT (sizeof(cases) / sizeof(cases[0]))
