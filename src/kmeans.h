@@ -16,6 +16,21 @@ typedef enum
     INIT_KMEANSPP
 } InitMethod;
 
+/* Owns centroid sums and counts; free with freeKMeansScratch. */
+typedef struct KMeansScratch
+{
+    Centroids sums;
+    size_t* counts;
+} KMeansScratch;
+
+/* Owns the index or distance buffer for one initialization method; free with freeInitScratch. */
+typedef struct
+{
+    size_t* indices;
+    double* distances;
+    size_t capacity;
+} InitScratch;
+
 /* Borrows the source coordinates, row indices and local partition buffer. */
 typedef struct
 {
@@ -31,17 +46,27 @@ static inline const double* datasetViewRow(const DatasetView* view, size_t index
     return datasetRowConst(view->source, view->indices[index]);
 }
 
-void generateRandomCentroids(size_t numCentroids, const Dataset* dataPoints, Centroids* centroids, Rng* rng);
-void generateKMeansPlusPlusCentroids(size_t numCentroids, const Dataset* dataPoints, Centroids* centroids, Rng* rng);
+KMeansScratch allocateKMeansScratch(size_t capacity, size_t dimensions);
+void freeKMeansScratch(KMeansScratch* scratch);
+InitScratch allocateInitScratch(size_t pointCount, InitMethod init);
+void freeInitScratch(InitScratch* scratch);
+/* Scratch must match the initialization method and hold all dataset rows. */
+void generateRandomCentroids(size_t numCentroids, const Dataset* dataPoints, Centroids* centroids, Rng* rng,
+                             InitScratch* scratch);
+void generateKMeansPlusPlusCentroids(size_t numCentroids, const Dataset* dataPoints, Centroids* centroids, Rng* rng,
+                                     InitScratch* scratch);
 void initialCentroids(InitMethod init, size_t numCentroids, const Dataset* dataPoints, Centroids* centroids,
-                      Rng* rng);
+                      Rng* rng, InitScratch* scratch);
 void partitionStep(Dataset* dataPoints, const Centroids* centroids);
-void centroidStep(Centroids* centroids, const Dataset* dataPoints);
-/* K-means calls require positive iterations and return the SSE of the final state. */
-double runKMeans(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage);
+/* Scratch must match the dimensionality and have capacity for the current centroids. */
+void centroidStep(Centroids* centroids, const Dataset* dataPoints, KMeansScratch* scratch);
+/* K-means calls require positive iterations and matching scratch; they return the final state's SSE. */
+double runKMeans(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage,
+                 KMeansScratch* scratch);
 /* prePartition preserves the intra split's initial assignment. */
 double runKMeansView(DatasetView* view, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage,
-                     bool prePartition);
-double runKMeansWithTracking(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker);
+                     bool prePartition, KMeansScratch* scratch);
+double runKMeansWithTracking(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker,
+                             KMeansScratch* scratch);
 
 #endif /* KMEANS_H */

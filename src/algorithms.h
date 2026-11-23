@@ -45,14 +45,16 @@ typedef enum
 extern const AlgorithmOption algorithmOptions[]; /* ALGORITHM_COUNT entries, checked in algorithms.c */
 
 struct Tracker;
+struct KMeansScratch;
 
 const char* getAlgorithmName(Algorithm algorithm);
 const char* repartitionModeName(RepartitionMode mode);
 const char* bisectSelectName(BisectSelect mode);
 /* Split runners require positive maxIterations and centroid capacity of at least maxCentroids. */
 double runRandomSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
-                      struct Tracker* tracker, Rng* rng);
+                      struct Tracker* tracker, Rng* rng, struct KMeansScratch* scratch);
 double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
-                   Algorithm splitType, RepartitionMode repartition, struct Tracker* tracker, Rng* rng);
+                   Algorithm splitType, RepartitionMode repartition, struct Tracker* tracker, Rng* rng,
+                   struct KMeansScratch* scratch);
 
 #endif /* ALGORITHMS_H */

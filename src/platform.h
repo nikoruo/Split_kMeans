@@ -65,10 +65,13 @@
 * MAKE_DIR(path)         Create directory; POSIX mode 0755. Check errno == EEXIST on failure.
 * LOCALTIME(out,timep)   Thread-safe localtime variant (localtime_s/localtime_r).
 * PATHSEP                Directory separator ('\\' on Windows, '/' on POSIX).
+* SKM_HOT_INLINE         Inline hot helpers (forced for MSVC).
 * -------------------------------------------------------------------- */
 
 /* ================================ WINDOWS ============================ */
 #ifdef _MSC_VER
+
+# define SKM_HOT_INLINE __forceinline
 
 /* "Secure" CRT wrappers */
 # define STRTOK(str, delim, ctx)   strtok_s((str), (delim), (ctx))
@@ -108,6 +111,8 @@
 
 /* ================================ POSIX ============================= */
 #else  /* gcc / clang */
+
+# define SKM_HOT_INLINE inline
 
 # include <errno.h>
 # include <limits.h>

@@ -111,7 +111,7 @@ static void requireFiniteKMeansSse(double sse, Algorithm algorithm)
  * @errors Exits on a zero iteration limit, non-finite final SSE, allocation failure, or no splittable cluster.
  */
 double runRandomSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
-                      Tracker* tracker, Rng* rng)
+                      Tracker* tracker, Rng* rng, KMeansScratch* scratch)
 {
     assert(centroids->capacity >= maxCentroids);
     if (maxIterations == 0)
@@ -125,7 +125,12 @@ double runRandomSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentr
     size_t iterationCount = 1; // Helper for tracking progress
 
     ClusterIndex membership = {0};
-    if (maxCentroids > 1) membership = allocateClusterIndex(dataPoints->size, maxCentroids);
+    SplitScratch splitScratch = {0};
+    if (maxCentroids > 1)
+    {
+        membership = allocateClusterIndex(dataPoints->size, maxCentroids);
+        splitScratch = allocateSplitScratch(scratch);
+    }
 
     while (centroids->size < maxCentroids)
     {
@@ -151,7 +156,8 @@ double runRandomSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentr
             ++attempts;
         }
 
-        splitClusterIntraCluster(dataPoints, &membership, centroids, clusterToSplit, maxIterations, tracker, rng);
+        splitClusterIntraCluster(dataPoints, &membership, centroids, clusterToSplit, maxIterations, tracker, rng,
+                                 &splitScratch);
 
         if (logLevel >= 3)
         {
@@ -173,8 +179,9 @@ double runRandomSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentr
     }
 
     freeClusterIndex(&membership);
+    freeSplitScratch(&splitScratch);
 
-    double finalResultSse = runKMeans(dataPoints, maxIterations, centroids, tracker, KM_STAGE_FINAL);
+    double finalResultSse = runKMeans(dataPoints, maxIterations, centroids, tracker, KM_STAGE_FINAL, scratch);
     requireFiniteKMeansSse(finalResultSse, ALGO_SKM_RANDOM);
 
     trackerRecord(tracker, iterationCount, "final", dataPoints, centroids, SIZE_MAX);
@@ -196,13 +203,13 @@ static Centroids tentativePair(Centroids* storage, size_t cluster)
 
 static double evaluateSplitDrop(Dataset* dataPoints, const ClusterIndex* membership, size_t cluster,
                                 size_t maxIterations, double clusterSse, Centroids* storage, size_t* labels,
-                                Tracker* tracker, InnerTrace* traces, Rng* rng)
+                                Tracker* tracker, InnerTrace* traces, Rng* rng, SplitScratch* scratch)
 {
     if (storage->coordinates == NULL)
-        return tentativeSseDrop(dataPoints, membership, cluster, maxIterations, clusterSse, rng);
+        return tentativeSseDrop(dataPoints, membership, cluster, maxIterations, clusterSse, rng, scratch);
     Centroids pair = tentativePair(storage, cluster);
     return cacheTentativeSplit(dataPoints, membership, cluster, maxIterations, clusterSse, &pair, labels, tracker,
-                               traces != NULL ? &traces[cluster] : NULL, rng);
+                               traces != NULL ? &traces[cluster] : NULL, rng, scratch);
 }
 
 /**
@@ -230,7 +237,8 @@ static double evaluateSplitDrop(Dataset* dataPoints, const ClusterIndex* members
  * @errors Exits on allocation failure, a zero iteration limit, non-finite SSE, or no splittable cluster.
  */
 double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
-                   Algorithm splitType, RepartitionMode repartition, Tracker* tracker, Rng* rng)
+                   Algorithm splitType, RepartitionMode repartition, Tracker* tracker, Rng* rng,
+                   KMeansScratch* scratch)
 {
     assert(centroids->capacity >= maxCentroids);
     if (maxIterations == 0)
@@ -277,7 +285,12 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
     }
 
     ClusterIndex membership = {0};
-    if (maxCentroids > 1) membership = allocateClusterIndex(dataPoints->size, capacity);
+    SplitScratch splitScratch = {0};
+    if (maxCentroids > 1)
+    {
+        membership = allocateClusterIndex(dataPoints->size, capacity);
+        splitScratch = allocateSplitScratch(scratch);
+    }
     size_t splittable = 0;
     trackerRecord(tracker, 0, "start", dataPoints, centroids, SIZE_MAX);
 
@@ -290,7 +303,8 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
         size_t initialClusterToSplit = 0;
         splittable = rebuildClusterIndex(&membership, dataPoints, centroids->size);
         requireSplittableCluster(splittable, centroids->size, splitType);
-        splitClusterIntraCluster(dataPoints, &membership, centroids, initialClusterToSplit, maxIterations, tracker, rng);
+        splitClusterIntraCluster(dataPoints, &membership, centroids, initialClusterToSplit, maxIterations, tracker, rng,
+                                 &splitScratch);
 
         if (splitType == ALGO_SKM_LOCAL)
         {
@@ -309,7 +323,7 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
         {
             clusterSSEs[i] = calculateClusterSSE(dataPoints, centroids, i);
             SseDrops[i] = evaluateSplitDrop(dataPoints, &membership, i, maxIterations, clusterSSEs[i],
-                                            &trialCentroids, trialLabels, tracker, trialTraces, rng);
+                                            &trialCentroids, trialLabels, tracker, trialTraces, rng, &splitScratch);
         }
 
         iterationCount = 2;
@@ -335,7 +349,8 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
         if (splitType == ALGO_SKM_GLOBAL_BASIC)
         {
             finalResultSse =
-                splitClusterGlobal(dataPoints, &membership, centroids, clusterToSplit, maxIterations, tracker, rng);
+                splitClusterGlobal(dataPoints, &membership, centroids, clusterToSplit, maxIterations, tracker, rng,
+                                   scratch);
             requireFiniteKMeansSse(finalResultSse, splitType);
             refinedGlobally = true;
         }
@@ -347,7 +362,7 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
             if (splitType == ALGO_SKM_GLOBAL)
             {
                 trackerSplitSnapshot(tracker, dataPoints, centroids, clusterToSplit);
-                finalResultSse = runKMeans(dataPoints, maxIterations, centroids, tracker, KM_STAGE_GLOBAL);
+                finalResultSse = runKMeans(dataPoints, maxIterations, centroids, tracker, KM_STAGE_GLOBAL, scratch);
                 requireFiniteKMeansSse(finalResultSse, splitType);
                 refinedGlobally = true;
             }
@@ -372,11 +387,12 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
                 // Update SseDrops for the affected clusters
                 SseDrops[clusterToSplit] =
                     evaluateSplitDrop(dataPoints, &membership, clusterToSplit, maxIterations,
-                                      clusterSSEs[clusterToSplit], &trialCentroids, trialLabels, tracker, trialTraces, rng);
+                                      clusterSSEs[clusterToSplit], &trialCentroids, trialLabels, tracker, trialTraces,
+                                      rng, &splitScratch);
                 SseDrops[centroids->size - 1] =
                     evaluateSplitDrop(dataPoints, &membership, centroids->size - 1, maxIterations,
                                       clusterSSEs[centroids->size - 1], &trialCentroids, trialLabels, tracker,
-                                      trialTraces, rng);
+                                      trialTraces, rng, &splitScratch);
             }
             else if (splitType == ALGO_SKM_GLOBAL || splitType == ALGO_SKM_GLOBAL_BASIC)
             {
@@ -385,7 +401,8 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
                 {
                     clusterSSEs[i] = calculateClusterSSE(dataPoints, centroids, i);
                     SseDrops[i] = evaluateSplitDrop(dataPoints, &membership, i, maxIterations, clusterSSEs[i],
-                                                    &trialCentroids, trialLabels, tracker, trialTraces, rng);
+                                                    &trialCentroids, trialLabels, tracker, trialTraces, rng,
+                                                    &splitScratch);
                 }
             }
             else if (splitType == ALGO_SKM_LOCAL)
@@ -396,7 +413,8 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
                     {
                         clusterSSEs[i] = calculateClusterSSE(dataPoints, centroids, i);
                         SseDrops[i] = evaluateSplitDrop(dataPoints, &membership, i, maxIterations, clusterSSEs[i],
-                                                        &trialCentroids, trialLabels, tracker, trialTraces, rng);
+                                                        &trialCentroids, trialLabels, tracker, trialTraces, rng,
+                                                        &splitScratch);
                     }
                 }
             }
@@ -436,11 +454,12 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
         trackerResume(tracker);
     }
     freeClusterIndex(&membership);
+    freeSplitScratch(&splitScratch);
 
     // Global splits end with global k-means; without one (K <= 2) run it here
     if (!refinedGlobally)
     {
-        finalResultSse = runKMeans(dataPoints, maxIterations, centroids, tracker, KM_STAGE_FINAL);
+        finalResultSse = runKMeans(dataPoints, maxIterations, centroids, tracker, KM_STAGE_FINAL, scratch);
         requireFiniteKMeansSse(finalResultSse, splitType);
         trackerRecord(tracker, iterationCount, "final", dataPoints, centroids, SIZE_MAX);
     }

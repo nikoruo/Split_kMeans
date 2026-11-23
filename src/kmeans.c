@@ -17,6 +17,58 @@
 #include <stdlib.h>
 #include <string.h>
 
+KMeansScratch allocateKMeansScratch(size_t capacity, size_t dimensions)
+{
+    KMeansScratch scratch = {0};
+    scratch.sums = allocateCentroids(capacity, dimensions);
+    scratch.counts = malloc(capacity * sizeof(*scratch.counts));
+    if (scratch.counts == NULL)
+    {
+        freeCentroids(&scratch.sums);
+        handleMemoryError(NULL);
+    }
+    return scratch;
+}
+
+void freeKMeansScratch(KMeansScratch* scratch)
+{
+    if (scratch == NULL) return;
+    freeCentroids(&scratch->sums);
+    free(scratch->counts);
+    *scratch = (KMeansScratch){0};
+}
+
+InitScratch allocateInitScratch(size_t pointCount, InitMethod init)
+{
+    InitScratch scratch = {0};
+    size_t elementSize = init == INIT_KMEANSPP ? sizeof(*scratch.distances) : sizeof(*scratch.indices);
+    if (pointCount == 0 || pointCount > SIZE_MAX / elementSize)
+    {
+        fprintf(stderr, "Error: Invalid initialization scratch size\n");
+        exit(EXIT_FAILURE);
+    }
+    if (init == INIT_KMEANSPP)
+    {
+        scratch.distances = malloc(pointCount * elementSize);
+        handleMemoryError(scratch.distances);
+    }
+    else
+    {
+        scratch.indices = malloc(pointCount * elementSize);
+        handleMemoryError(scratch.indices);
+    }
+    scratch.capacity = pointCount;
+    return scratch;
+}
+
+void freeInitScratch(InitScratch* scratch)
+{
+    if (scratch == NULL) return;
+    free(scratch->indices);
+    free(scratch->distances);
+    *scratch = (InitScratch){0};
+}
+
 /**
  * @brief Picks K coordinate-distinct data points by a partial Fisher-Yates shuffle.
  *
@@ -26,26 +78,19 @@
  * @param dataPoints Source dataset; `dataPoints->size` must be > 0.
  * @param centroids Destination centroid container; must have at least K elements.
  * @return void
- * @errors Asserts valid K and destination size; exits on allocation failure or when K exceeds the number of distinct
- *         data points.
+ * @errors Asserts valid K, destination and scratch; exits when K exceeds the number of distinct data points.
  * @note Collision-free draws match the original partial Fisher-Yates shuffle.
  */
-void generateRandomCentroids(size_t numCentroids, const Dataset* dataPoints, Centroids* centroids, Rng* rng)
+void generateRandomCentroids(size_t numCentroids, const Dataset* dataPoints, Centroids* centroids, Rng* rng,
+                             InitScratch* scratch)
 {
     const size_t N = dataPoints->size;
 
     assert(numCentroids > 0 && numCentroids <= N);
     assert(centroids->size >= numCentroids);
     assert(centroids->dimensions == dataPoints->dimensions);
-
-    /* Overflow guard for allocation */
-    if (N > SIZE_MAX / sizeof(size_t))
-    {
-        handleMemoryError(NULL);
-    }
-
-    size_t* indices = (size_t*)malloc(N * sizeof(size_t));
-    handleMemoryError(indices);
+    assert(scratch != NULL && scratch->indices != NULL && scratch->capacity >= N);
+    size_t* indices = scratch->indices;
 
     /* init indices 0..N-1 */
     for (size_t i = 0; i < N; ++i)
@@ -60,7 +105,6 @@ void generateRandomCentroids(size_t numCentroids, const Dataset* dataPoints, Cen
         {
             if (poolEnd == i)
             {
-                free(indices);
                 fprintf(stderr, "Error: K (%zu) exceeds the number of distinct data points\n", numCentroids);
                 exit(EXIT_FAILURE);
             }
@@ -89,8 +133,6 @@ void generateRandomCentroids(size_t numCentroids, const Dataset* dataPoints, Cen
             break;
         }
     }
-
-    free(indices);
 }
 
 /**
@@ -100,19 +142,20 @@ void generateRandomCentroids(size_t numCentroids, const Dataset* dataPoints, Cen
  * A chosen coordinate has zero weight. Reports insufficient distinct points or non-representable distances.
  * Requires 0 < K <= N and room for K centroids. O(K·N·D) with a distance cache.
  */
-void generateKMeansPlusPlusCentroids(size_t numCentroids, const Dataset* dataPoints, Centroids* centroids, Rng* rng)
+void generateKMeansPlusPlusCentroids(size_t numCentroids, const Dataset* dataPoints, Centroids* centroids, Rng* rng,
+                                     InitScratch* scratch)
 {
     assert(numCentroids > 0 && numCentroids <= dataPoints->size);
     assert(centroids->size >= numCentroids);
     assert(centroids->dimensions == dataPoints->dimensions);
+    assert(scratch != NULL && scratch->distances != NULL && scratch->capacity >= dataPoints->size);
 
     /* 1) Choose the first centroid at random */
     size_t firstIndex = rng_below(rng, dataPoints->size);
     copyCoordinates(centroidRow(centroids, 0), datasetRowConst(dataPoints, firstIndex), dataPoints->dimensions);
 
     /* Distance cache: squared distance to the nearest chosen centroid so far */
-    double* dist2 = malloc(sizeof(double) * dataPoints->size);
-    handleMemoryError(dist2);
+    double* dist2 = scratch->distances;
 
     // Initialise the cache with distances to the first centroid
     for (size_t i = 0; i < dataPoints->size; ++i)
@@ -133,14 +176,12 @@ void generateKMeansPlusPlusCentroids(size_t numCentroids, const Dataset* dataPoi
 
         if (!isfinite(distSum))
         {
-            free(dist2);
             fprintf(stderr, "Error: k-means++ squared-distance sum exceeds the numeric range\n");
             exit(EXIT_FAILURE);
         }
         if (distSum == 0.0)
         {
             size_t distinct = countDistinctRowsUpTo(dataPoints, numCentroids);
-            free(dist2);
             if (distinct < numCentroids)
                 fprintf(stderr, "Error: K (%zu) exceeds the number of distinct data points (%zu)\n",
                         numCentroids, distinct);
@@ -181,21 +222,19 @@ void generateKMeansPlusPlusCentroids(size_t numCentroids, const Dataset* dataPoi
             }
         }
     }
-
-    free(dist2);
 }
 
 /** @brief Initial centroids of KM, RKM and RS: K distinct random data points, or k-means++ with --init kmeans++. */
 void initialCentroids(InitMethod init, size_t numCentroids, const Dataset* dataPoints, Centroids* centroids,
-                      Rng* rng)
+                      Rng* rng, InitScratch* scratch)
 {
     if (init == INIT_KMEANSPP)
     {
-        generateKMeansPlusPlusCentroids(numCentroids, dataPoints, centroids, rng);
+        generateKMeansPlusPlusCentroids(numCentroids, dataPoints, centroids, rng, scratch);
     }
     else
     {
-        generateRandomCentroids(numCentroids, dataPoints, centroids, rng);
+        generateRandomCentroids(numCentroids, dataPoints, centroids, rng, scratch);
     }
 }
 
@@ -261,20 +300,20 @@ static void updateCentroids(Centroids* centroids, const double* sums, const size
  * @param centroids Centroids to update in-place; `size` must be > 0.
  * @param dataPoints Dataset with assigned partitions.
  * @return void
- * @errors Asserts valid partitions and matching dimensionality.
+ * @errors Asserts valid partitions and matching dimensionality and scratch capacity.
  * @note O(N·D + K·D) work; uses a single contiguous buffer for sums.
  */
-void centroidStep(Centroids* centroids, const Dataset* dataPoints)
+void centroidStep(Centroids* centroids, const Dataset* dataPoints, KMeansScratch* scratch)
 {
     const size_t numClusters = centroids->size;
     const size_t dimensions = dataPoints->dimensions;
     assert(centroids->dimensions == dimensions);
+    assert(scratch != NULL && scratch->sums.capacity >= numClusters && scratch->sums.dimensions == dimensions);
 
-    // Use a single allocation for the sums
-    double* sums = calloc(numClusters * dimensions, sizeof(double));
-    size_t* counts = calloc(numClusters, sizeof(size_t));
-    handleMemoryError(sums);
-    handleMemoryError(counts);
+    double* sums = scratch->sums.coordinates;
+    size_t* counts = scratch->counts;
+    memset(sums, 0, numClusters * dimensions * sizeof(*sums));
+    memset(counts, 0, numClusters * sizeof(*counts));
 
     // Accumulate sums and counts for each cluster
     for (size_t i = 0; i < dataPoints->size; ++i)
@@ -288,9 +327,6 @@ void centroidStep(Centroids* centroids, const Dataset* dataPoints)
 
     // Update the centroids
     updateCentroids(centroids, sums, counts);
-
-    free(sums);
-    free(counts);
 }
 
 /* Separate indexed kernels keep view checks out of the dense hot loops. */
@@ -302,14 +338,15 @@ static void partitionView(DatasetView* view, const Centroids* centroids)
     }
 }
 
-static void centroidStepView(Centroids* centroids, const DatasetView* view)
+static void centroidStepView(Centroids* centroids, const DatasetView* view, KMeansScratch* scratch)
 {
     const size_t numClusters = centroids->size;
     const size_t dimensions = view->source->dimensions;
-    double* sums = calloc(numClusters * dimensions, sizeof(double));
-    size_t* counts = calloc(numClusters, sizeof(size_t));
-    handleMemoryError(sums);
-    handleMemoryError(counts);
+    assert(scratch != NULL && scratch->sums.capacity >= numClusters && scratch->sums.dimensions == dimensions);
+    double* sums = scratch->sums.coordinates;
+    size_t* counts = scratch->counts;
+    memset(sums, 0, numClusters * dimensions * sizeof(*sums));
+    memset(counts, 0, numClusters * sizeof(*counts));
 
     for (size_t i = 0; i < view->size; ++i)
     {
@@ -318,8 +355,6 @@ static void centroidStepView(Centroids* centroids, const DatasetView* view)
         accumulatePoint(datasetViewRow(view, i), label, dimensions, sums, counts);
     }
     updateCentroids(centroids, sums, counts);
-    free(sums);
-    free(counts);
 }
 
 static double calculateSSEView(const DatasetView* view, const Centroids* centroids)
@@ -370,7 +405,8 @@ static bool updateKMeansBest(double sse, double* bestSse, size_t iteration, cons
  * @param stage Which k-means this is for --track-inner; KM_STAGE_NONE logs no rows.
  * @return SSE of the final iteration's centroids and partition.
  */
-double runKMeans(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage)
+double runKMeans(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage,
+                 KMeansScratch* scratch)
 {
     if (iterations == 0)
     {
@@ -384,7 +420,7 @@ double runKMeans(Dataset* dataPoints, size_t iterations, Centroids* centroids, T
     for (size_t iteration = 0; iteration < iterations; ++iteration)
     {
         partitionStep(dataPoints, centroids);
-        centroidStep(centroids, dataPoints);
+        centroidStep(centroids, dataPoints, scratch);
 
         sse = calculateSSE(dataPoints, centroids);
         trackerInnerRow(tracker, stage, iteration + 1, centroids, sse);
@@ -396,7 +432,7 @@ double runKMeans(Dataset* dataPoints, size_t iterations, Centroids* centroids, T
 }
 
 double runKMeansView(DatasetView* view, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage,
-                     bool prePartition)
+                     bool prePartition, KMeansScratch* scratch)
 {
     if (iterations == 0)
     {
@@ -412,7 +448,7 @@ double runKMeansView(DatasetView* view, size_t iterations, Centroids* centroids,
     for (size_t iteration = 0; iteration < iterations; ++iteration)
     {
         partitionView(view, centroids);
-        centroidStepView(centroids, view);
+        centroidStepView(centroids, view, scratch);
         sse = calculateSSEView(view, centroids);
         trackerInnerRow(tracker, stage, iteration + 1, centroids, sse);
         if (!updateKMeansBest(sse, &bestSse, iteration, centroids, groundTruth)) break;
@@ -432,7 +468,8 @@ double runKMeansView(DatasetView* view, size_t iterations, Centroids* centroids,
  * @return SSE of the final iteration's centroids and partition.
  * @errors Exits on a zero iteration limit or a non-finite SSE.
  */
-double runKMeansWithTracking(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker)
+double runKMeansWithTracking(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker,
+                             KMeansScratch* scratch)
 {
     if (iterations == 0)
     {
@@ -446,7 +483,7 @@ double runKMeansWithTracking(Dataset* dataPoints, size_t iterations, Centroids* 
     for (size_t iteration = 0; iteration < iterations; ++iteration)
     {
         partitionStep(dataPoints, centroids);
-        centroidStep(centroids, dataPoints);
+        centroidStep(centroids, dataPoints, scratch);
 
         trackerRecord(tracker, iteration + 1, "step", dataPoints, centroids, SIZE_MAX);
 

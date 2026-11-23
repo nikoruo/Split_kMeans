@@ -16,6 +16,7 @@ double randomSwap(Dataset* dataPoints, Centroids* centroids, size_t maxSwaps, si
                   Rng* rng);
 /* Bisecting requires centroid capacity of at least maxCentroids. */
 double runBisectingKMeans(Dataset* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
-                          size_t bisectingIterations, BisectSelect selection, Tracker* tracker, Rng* rng);
+                          size_t bisectingIterations, BisectSelect selection, Tracker* tracker, Rng* rng,
+                          struct KMeansScratch* scratch);
 
 #endif /* BASELINES_H */

@@ -1,0 +1,33 @@
+Step 7.1 verification, 2026-11-23
+
+- The complete 7.0 real-data reference set matched: 63 files and 4590
+  run/seed/SSE/CI rows across inward/SSE, both/SSE and inward/size.
+  All 63 progress logs matched excluding time; 148 example centroid and
+  partition files matched byte-for-byte. The full run folders are at ROOT.
+- Before/after k-means++ checks matched 60 runs and 36 example files on
+  capped and unlimited s1, duplicate rows, K=1 and K=N.
+- With tracking, inner rows and selected snapshots enabled, default and
+  alternative modes each matched 24 CSV files and 393 rows excluding
+  time; 138 and 136 snapshot files respectively matched byte-for-byte.
+- An instrumented build counted source-level malloc/calloc/realloc calls
+  with tracking disabled.
+  Random RKM used 10 allocations for one repeat and 58 for eight before,
+  versus 6 and 6 after. K-means++ RKM used 8 and 50 before versus 6 and 6
+  after. Random Swap used 9 and 37 for one and eight swaps before versus
+  7 and 7 after. Dense/indexed k-means, both initializers and repeated
+  local split trials made no source allocations after scratch setup.
+- MinGW gcc 16 release and debug, WERROR=1 check: passed.
+- Visual Studio 2026 Release /W4 and CHECK_BIN: passed. Direct MSVC /W4
+  /WX unit builds and tests passed in both release and debug.
+- Clang MinGW-target warnings-as-errors: all 19 C files passed.
+- Windows clang ASan and UBSan checks passed without sanitizer reports;
+  UBSan emitted 10 existing runtime-library LNK4217 warnings.
+- Each complete suite matched 108 golden run files, 3 x 63 tracking
+  variants, 3 repartition-mode files, 1 bisect-size file and 9 report
+  files, and passed the default invocation smoke tests. Goldens are unchanged.
+- Cppcheck with identical options reported 23 source diagnostics before
+  and 18 after, with no new findings; the unit-test scan reported 6 in
+  both versions, also with no new findings.
+- Linux and LeakSanitizer were not run locally; Windows ASan has no leak
+  checker. Detailed logs, probe sources and full run folders remain at
+  %TEMP%\skm_7_1_7d71c5e_20261123_180254.
