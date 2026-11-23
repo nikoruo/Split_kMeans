@@ -1,0 +1,5 @@
+data: data/a3.txt
+ground-truth: gt/a3-ga-cb.txt
+k: 50
+n: 7500
+d: 2

@@ -1,0 +1,27 @@
+# Split_kMeans run configuration. Every call that writes to this folder must match the lines above "calls:".
+version: 2.0.0-dev
+commit: ffd2c9d-dirty
+compiler: gcc 16.2.0
+flags: gcc -DNDEBUG -std=c11 -Wall -Wextra -Wpedantic -ffp-contract=off -O3 -Werror
+asserts: off (NDEBUG)
+timer: QueryPerformanceCounter (monotonic wall clock)
+machine: Windows, 20 logical processors
+cpu: 12th Gen Intel(R) Core(TM) i7-12800H
+seed: 20261119
+log-level: 1
+max-iterations: until the SSE stops improving
+max-swaps: 5000
+repeats: 1000
+bisect-tries: 5
+init: random
+repartition: inward-nonchild
+decimal-comma: off
+calls:
+2026-11-21 12:53:03 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo skm-local --repartition inward-nonchild --first-run 1 -r 25 --datasets s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M4_6_1b_compare_20261121_124854\inward-nonchild
+  mode: batch; algorithms: skm-local; runs: 1 to 25 (RKM and RS: to 25); datasets: s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d; track-progress: on; snapshots: none; track-inner: off
+2026-11-21 13:05:56 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo skm-local --repartition inward-nonchild --first-run 26 -r 50 --datasets s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M4_6_1b_compare_20261121_124854\inward-nonchild
+  mode: batch; algorithms: skm-local; runs: 26 to 50 (RKM and RS: to 50); datasets: s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d; track-progress: on; snapshots: none; track-inner: off
+2026-11-21 13:14:50 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo skm-local --repartition inward-nonchild --first-run 51 -r 75 --datasets s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M4_6_1b_compare_20261121_124854\inward-nonchild
+  mode: batch; algorithms: skm-local; runs: 51 to 75 (RKM and RS: to 75); datasets: s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d; track-progress: on; snapshots: none; track-inner: off
+2026-11-21 13:35:52 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo skm-local --repartition inward-nonchild --first-run 76 -r 100 --datasets s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M4_6_1b_compare_20261121_124854\inward-nonchild
+  mode: batch; algorithms: skm-local; runs: 76 to 100 (RKM and RS: to 100); datasets: s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d; track-progress: on; snapshots: none; track-inner: off

@@ -24,7 +24,9 @@ typedef struct
     size_t maxSwaps;
     size_t maxRepeats;
     size_t bisectTries;
+    BisectSelect bisectSelect;
     InitMethod init;
+    RepartitionMode repartition;
     size_t firstRun;
     bool algorithms[ALGORITHM_COUNT];
 } Options;
@@ -46,17 +48,19 @@ void runRepeatedKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTrut
                                 const TrackOptions* track, InitMethod init, uint64_t seed);
 void runRandomSwapAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxSwaps,
                             size_t firstRun, size_t loopCount, size_t scaling, const char* fileName,
-                            const char* outputDirectory, const TrackOptions* track, InitMethod init, uint64_t seed);
+                            const char* outputDirectory, const TrackOptions* track, InitMethod init,
+                            size_t distinctRows, uint64_t seed);
 void runRandomSplitAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
                              size_t maxIterations, size_t firstRun, size_t loopCount, size_t scaling,
                              const char* fileName, const char* outputDirectory, const TrackOptions* track,
                              uint64_t seed);
 void runSseSplitAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
                           size_t maxIterations, size_t firstRun, size_t loopCount, size_t scaling, const char* fileName,
-                          const char* outputDirectory, Algorithm splitType, const TrackOptions* track, uint64_t seed);
+                          const char* outputDirectory, Algorithm splitType, RepartitionMode repartition,
+                          const TrackOptions* track, uint64_t seed);
 void runBisectingKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
                                  size_t maxIterations, size_t firstRun, size_t loopCount, size_t scaling,
                                  const char* fileName, const char* outputDirectory, const TrackOptions* track,
-                                 size_t bisectingIterations, uint64_t seed);
+                                 size_t bisectingIterations, BisectSelect selection, uint64_t seed);
 
 #endif /* EXPERIMENT_H */

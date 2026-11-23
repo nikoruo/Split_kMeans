@@ -14,6 +14,7 @@
 
 #include <assert.h>
 #include <float.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,22 +24,23 @@
  * @brief Random Swap local repartition after one centroid moved, in two passes.
  *
  * Pass 1: every point of the swapped cluster (`removed`) moves to its nearest centroid. Pass 2: every other
- * point moves to the swapped centroid when it is closer than its own. Other points keep their labels.
+ * point moves to the swapped centroid when it is closer than its own. The caller updates marked means afterwards.
  *
  * @param dataPoints Dataset with current partitions.
  * @param centroids Centroids after the swap; index `removed` denotes the modified centroid.
  * @param removed Index of the centroid whose coordinates were changed; must be < centroids->size (not checked).
- * @note O(N·D). The centroids are not updated here (the step-4 update is commented out, 6.4); the two k-means
- * iterations follow.
+ * @param affected Initially clear array of at least centroids->size flags; touched clusters are marked.
  */
-void localRepartitionForRS(Dataset* dataPoints, Centroids* centroids, size_t removed)
+void localRepartitionForRS(Dataset* dataPoints, const Centroids* centroids, size_t removed, bool* affected)
 {
+    affected[removed] = true;
     // from removed -> to existing
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
         if (dataPoints->partitions[i] == removed)
         {
             size_t nearestCentroid = findNearestCentroid(datasetRowConst(dataPoints, i), centroids);
+            if (nearestCentroid != removed) affected[nearestCentroid] = true;
             dataPoints->partitions[i] = nearestCentroid;
         }
     }
@@ -63,12 +65,39 @@ void localRepartitionForRS(Dataset* dataPoints, Centroids* centroids, size_t rem
             // Assign to the closer centroid
             if (distanceToRemoved < distanceToCurrent)
             {
+                affected[currentPartition] = true;
                 dataPoints->partitions[i] = removed;
             }
         }
     }
 
     // centroidStep(centroids, dataPoints);
+}
+
+static bool matchesCentroid(const double* point, const Centroids* centroids)
+{
+    for (size_t c = 0; c < centroids->size; ++c)
+        if (coordinatesEqual(point, centroidRowConst(centroids, c), centroids->dimensions)) return true;
+    return false;
+}
+
+static size_t randomDistinctSwapTarget(const Dataset* dataPoints, const Centroids* centroids, size_t* eligible, Rng* rng)
+{
+    for (size_t attempt = 0; attempt < dataPoints->size; ++attempt)
+    {
+        size_t point = rng_below(rng, dataPoints->size);
+        if (!matchesCentroid(datasetRowConst(dataPoints, point), centroids)) return point;
+    }
+
+    size_t count = 0;
+    for (size_t i = 0; i < dataPoints->size; ++i)
+        if (!matchesCentroid(datasetRowConst(dataPoints, i), centroids)) eligible[count++] = i;
+    if (count == 0)
+    {
+        fprintf(stderr, "Error: Random Swap found no distinct target\n");
+        exit(EXIT_FAILURE);
+    }
+    return eligible[rng_below(rng, count)];
 }
 
 /**
@@ -82,25 +111,46 @@ void localRepartitionForRS(Dataset* dataPoints, Centroids* centroids, size_t rem
  * @param dataPoints Dataset; its partitions must belong to `centroids` on entry.
  * @param centroids Initial centroids; updated in place to the best solution.
  * @param maxSwaps Number of trial swaps.
+ * @param distinctRows Number of distinct rows, capped at K+1.
  * @return The best SSE found.
  */
-double randomSwap(Dataset* dataPoints, Centroids* centroids, size_t maxSwaps, Tracker* tracker, Rng* rng)
+double randomSwap(Dataset* dataPoints, Centroids* centroids, size_t maxSwaps, size_t distinctRows, Tracker* tracker,
+                  Rng* rng)
 {
-    double bestSse = DBL_MAX;
+    double bestSse = calculateSSE(dataPoints, centroids);
+    if (!isfinite(bestSse))
+    {
+        fprintf(stderr, "Error: Random Swap initial SSE is not finite\n");
+        exit(EXIT_FAILURE);
+    }
     size_t kMeansIterations = 2;
     size_t numCentroids = centroids->size;
     size_t dimensions = centroids->dimensions;
     assert(dataPoints->dimensions == dimensions);
+    assert(distinctRows >= numCentroids);
 
     size_t totalAttributes = numCentroids * dimensions;
+    size_t bestCI = trackerRecord(tracker, 0, "start", dataPoints, centroids, SIZE_MAX);
+    if (distinctRows == numCentroids)
+    {
+        if (bestSse != 0.0)
+        {
+            fprintf(stderr, "Error: Random Swap initial centroids do not represent all distinct data points\n");
+            exit(EXIT_FAILURE);
+        }
+        return bestSse;
+    }
 
     double* backupAttributes = malloc(totalAttributes * sizeof(double));
     handleMemoryError(backupAttributes);
 
     size_t* backupPartitions = malloc(dataPoints->size * sizeof(size_t));
     handleMemoryError(backupPartitions);
-
-    size_t bestCI = trackerRecord(tracker, 0, "start", dataPoints, centroids, SIZE_MAX);
+    bool* affected = calloc(numCentroids, sizeof(*affected));
+    handleMemoryError(affected);
+    size_t* eligible = malloc(dataPoints->size * sizeof(*eligible));
+    handleMemoryError(eligible);
+    ClusterIndex membership = allocateClusterIndex(dataPoints->size, numCentroids);
 
     for (size_t i = 0; i < maxSwaps; ++i)
     {
@@ -112,19 +162,27 @@ double randomSwap(Dataset* dataPoints, Centroids* centroids, size_t maxSwaps, Tr
 
         // Swap
         size_t randomCentroidId = rng_below(rng, centroids->size);
-        size_t randomDataPointId = rng_below(rng, dataPoints->size);
+        size_t randomDataPointId = randomDistinctSwapTarget(dataPoints, centroids, eligible, rng);
 
         copyCoordinates(centroidRow(centroids, randomCentroidId), datasetRowConst(dataPoints, randomDataPointId),
                         dimensions);
 
-        localRepartitionForRS(dataPoints, centroids, randomCentroidId);
+        memset(affected, 0, numCentroids * sizeof(*affected));
+        localRepartitionForRS(dataPoints, centroids, randomCentroidId, affected);
+        updateAffectedCentroids(dataPoints, &membership, centroids, affected);
 
         // K-means
-        double resultSse = runKMeans(dataPoints, kMeansIterations, centroids, tracker, KM_STAGE_NONE);
+        double resultSse = runKMeansLast(dataPoints, kMeansIterations, centroids, tracker, KM_STAGE_NONE);
+        if (!isfinite(resultSse))
+        {
+            trackerPause(tracker);
+            fprintf(stderr, "Warning: Random Swap rejected swap %zu with non-finite SSE\n", i + 1);
+            trackerResume(tracker);
+        }
 
         // If 1) SSE improves, we keep the change
         // if not, 2) we reverse the swap
-        if (resultSse < bestSse)
+        if (isfinite(resultSse) && resultSse < bestSse)
         {
             bestSse = resultSse;
 
@@ -156,136 +214,124 @@ double randomSwap(Dataset* dataPoints, Centroids* centroids, size_t maxSwaps, Tr
 
     free(backupAttributes);
     free(backupPartitions);
+    free(affected);
+    free(eligible);
+    freeClusterIndex(&membership);
 
     return bestSse;
 }
 
 /**
- * @brief Bisecting k-means: grows K by splitting the cluster with the largest SSE.
+ * @brief Bisecting k-means: grows K by splitting the cluster with the largest SSE or row count.
  *
- * The first split (to K=2) is one local 2-means. Then each split picks, among the clusters with at least 2
- * points, the one with the largest stored SSE, runs `bisectingIterations` local 2-means tries on it, places the
- * two centroids of the try with the lowest SSE, and reassigns every point with a global partition step. Only the
- * stored SSEs of the two new clusters are updated, although the partition step can move points of other clusters
- * too (6.3). A final k-means follows.
+ * Each split picks the largest eligible cluster by the selected rule and applies the best of
+ * `bisectingIterations` local 2-means tries. Only that cluster's labels change. A final global k-means follows.
  *
  * @param dataPoints Dataset; partitions updated in-place across splits.
  * @param centroids Global centroids; grown in-place up to maxCentroids.
  * @param maxCentroids Target number of clusters (K); K=1 skips the split.
  * @param maxIterations Max iterations for the local k-means and final global k-means.
- * @param bisectingIterations Local 2-means tries per split; at least 1 (main checks it).
+ * @param bisectingIterations Local 2-means tries per split; at least 1.
+ * @param selection Select by SSE or assigned row count.
  * @param tracker Records each split (count = split number) and the final k-means; carries the ground truth for CI.
  * @return SSE after the final k-means.
  * @errors Exits on allocation failures via helpers.
  */
 double runBisectingKMeans(Dataset* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
-                          size_t bisectingIterations, Tracker* tracker, Rng* rng)
+                          size_t bisectingIterations, BisectSelect selection, Tracker* tracker, Rng* rng)
 {
     assert(centroids->capacity >= maxCentroids);
-    // The initial split always makes two clusters, so the list holds at least two
+    if (selection != BISECT_SELECT_SSE && selection != BISECT_SELECT_SIZE)
+    {
+        fprintf(stderr, "Error: Invalid bisecting selection mode: %d\n", (int)selection);
+        exit(EXIT_FAILURE);
+    }
+    if (maxIterations == 0 || bisectingIterations == 0)
+    {
+        fprintf(stderr, "Error: Bisecting k-means requires positive iterations and tries\n");
+        exit(EXIT_FAILURE);
+    }
     double* SseList = malloc((maxCentroids < 2 ? 2 : maxCentroids) * sizeof(double));
     handleMemoryError(SseList);
     ClusterIndex membership = {0};
     if (maxCentroids > 1) membership = allocateClusterIndex(dataPoints->size, maxCentroids);
-    double bestSse = DBL_MAX;
 
-    Centroids newCentroids = allocateCentroids(2, dataPoints->dimensions);
-    trackerRecord(tracker, 0, "start", dataPoints, centroids, SIZE_MAX);
-
-    size_t iterationCount = 1; // Helper for tracking progress
-
-    // K=1: no split; the final k-means below refines the single centroid
+    Centroids trialCentroids = {0};
+    Centroids bestSplit = {0};
+    size_t* trialLabels = NULL;
     if (maxCentroids > 1)
     {
-        // Step 0: Only 1 cluster, so no need for decision making
-        size_t initialClusterToSplit = 0;
-        rebuildClusterIndex(&membership, dataPoints, centroids->size);
-        splitClusterIntraCluster(dataPoints, &membership, centroids, initialClusterToSplit, maxIterations, tracker, rng);
-
+        trialCentroids = allocateCentroids(2, dataPoints->dimensions);
+        bestSplit = allocateCentroids(2, dataPoints->dimensions);
+        trialLabels = malloc(dataPoints->size * sizeof(*trialLabels));
+        handleMemoryError(trialLabels);
         SseList[0] = calculateClusterSSE(dataPoints, centroids, 0);
-        SseList[1] = calculateClusterSSE(dataPoints, centroids, 1);
-
-        trackerRecord(tracker, 1, "step", dataPoints, centroids, initialClusterToSplit);
-
-        iterationCount = 2;
     }
+    Centroids finalBest = allocateCentroids(maxCentroids, dataPoints->dimensions);
+    size_t* bestLabels = malloc(dataPoints->size * sizeof(*bestLabels));
+    handleMemoryError(bestLabels);
+    trackerRecord(tracker, 0, "start", dataPoints, centroids, SIZE_MAX);
 
-    // Repeat until we have K clusters
+    size_t iterationCount = 1;
     while (centroids->size < maxCentroids)
     {
-        // Step 1: Choose the cluster to split (the highest SSE among clusters with at least 2 points)
         size_t splittable = rebuildClusterIndex(&membership, dataPoints, centroids->size);
         requireSplittableCluster(splittable, centroids->size, ALGO_BISECTING);
         size_t clusterToSplit = SIZE_MAX;
-        double maxSSE = 0.0;
 
         for (size_t j = 0; j < centroids->size; ++j)
         {
-            if (membership.sizes[j] >= 2 && (clusterToSplit == SIZE_MAX || SseList[j] > maxSSE))
+            if (membership.eligible[j] &&
+                (clusterToSplit == SIZE_MAX ||
+                 (selection == BISECT_SELECT_SIZE ? membership.sizes[j] > membership.sizes[clusterToSplit]
+                                                  : SseList[j] > SseList[clusterToSplit])))
             {
-                maxSSE = SseList[j];
                 clusterToSplit = j;
             }
         }
 
-        // Repeat for a set number of iterations
+        double bestSse = DBL_MAX;
         for (size_t j = 0; j < bisectingIterations; ++j)
         {
-            ClusteringResult curr =
-                tentativeSplitterForBisecting(dataPoints, &membership, clusterToSplit, maxIterations, tracker, rng);
+            double sse = runBisectingTrial(dataPoints, &membership, clusterToSplit, maxIterations, &trialCentroids,
+                                           trialLabels, tracker, rng);
 
-            if (logLevel >= 3) printf("(Bisecting) Cluster %zu, try %zu: SSE %.0f\n", clusterToSplit, j + 1, curr.sse);
+            if (logLevel >= 3) printf("(Bisecting) Cluster %zu, try %zu: SSE %.0f\n", clusterToSplit, j + 1, sse);
 
-            // If the result is better than the best result so far, update the best result
-            if (curr.sse < bestSse)
+            if (sse < bestSse)
             {
-                bestSse = curr.sse;
-
-                // Save the two new centroids
-                copyCoordinates(centroidRow(&newCentroids, 0), centroidRowConst(&curr.centroids, 0),
-                                dataPoints->dimensions);
-                copyCoordinates(centroidRow(&newCentroids, 1), centroidRowConst(&curr.centroids, 1),
-                                dataPoints->dimensions);
+                bestSse = sse;
+                copyCoordinates(bestSplit.coordinates, trialCentroids.coordinates, 2 * dataPoints->dimensions);
+                for (size_t i = membership.offsets[clusterToSplit]; i < membership.offsets[clusterToSplit + 1]; ++i)
+                {
+                    size_t point = membership.indices[i];
+                    bestLabels[point] = trialLabels[point];
+                }
             }
-
-            freeClusteringResult(&curr);
         }
 
-        // Replace the old centroid with the new centroid1
-        copyCoordinates(centroidRow(centroids, clusterToSplit), centroidRowConst(&newCentroids, 0),
-                        dataPoints->dimensions);
-
-        // Increase the size of the centroids array and add the new centroid2
-        assert(centroids->size < centroids->capacity);
-        centroids->size++;
-        copyCoordinates(centroidRow(centroids, centroids->size - 1), centroidRowConst(&newCentroids, 1),
-                        dataPoints->dimensions);
-
+        applyTentativeSplit(dataPoints, &membership, centroids, clusterToSplit, &bestSplit, bestLabels);
         trackerSplitSnapshot(tracker, dataPoints, centroids, clusterToSplit);
 
-        partitionStep(dataPoints, centroids); // partition step, vai pitaisiko tallentaa ne loopissa ja tehda tassa
-                                              // sitten muutokset? (esim kaikki 0->clusterToSplit, 1->centroids->size-1)
-
-        // Step 3: Update the SSE list
         SseList[clusterToSplit] = calculateClusterSSE(dataPoints, centroids, clusterToSplit);
         SseList[centroids->size - 1] = calculateClusterSSE(dataPoints, centroids, centroids->size - 1);
 
-        bestSse = DBL_MAX;
-
         trackerRecord(tracker, iterationCount, "step", dataPoints, centroids, clusterToSplit);
-
-        iterationCount++;
+        ++iterationCount;
     }
 
-    // Step 4: Run the final k-means
-    double finalResultSse = runKMeans(dataPoints, maxIterations, centroids, tracker, KM_STAGE_FINAL);
+    double finalResultSse = runKMeansBest(dataPoints, maxIterations, centroids, tracker, KM_STAGE_FINAL,
+                                          &finalBest, bestLabels);
 
     trackerRecord(tracker, iterationCount, "final", dataPoints, centroids, SIZE_MAX);
 
-    // Cleanup
     free(SseList);
     freeClusterIndex(&membership);
-    freeCentroids(&newCentroids);
+    freeCentroids(&trialCentroids);
+    freeCentroids(&bestSplit);
+    freeCentroids(&finalBest);
+    free(trialLabels);
+    free(bestLabels);
 
     return finalResultSse;
 }

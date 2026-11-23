@@ -1,0 +1,66 @@
+Step 6.6: every changed golden line (seed 20251026)
+Random representatives and split seeds now reject equal coordinates; duplicate-only clusters are ineligible, and Random Swap targets differ from all current centroids. Draws and subsequent clustering can change when a collision is rejected.
+Changed files: 9; changed lines: 15.
+
+edge\e03_duplicates\KM_runs.csv
+  line 4:
+    sse: 20250 -> 0
+    ci: 1 -> 0
+  line 5:
+    sse: 20250 -> 0
+    ci: 1 -> 0
+
+edge\e03_duplicates\SKM_Global_Basic_runs.csv
+  line 3:
+    sse: 20250 -> 0
+    ci: 1 -> 0
+
+edge\e03_duplicates\SKM_Random_runs.csv
+  line 4:
+    sse: 20250 -> 0
+    ci: 1 -> 0
+  line 5:
+    sse: 20250 -> 0
+    ci: 1 -> 0
+
+main\s05_k15\SKM_Global_Basic_runs.csv
+  line 4:
+    sse: 345160.52499999985 -> 5174262.0249999911
+    ci: 0 -> 1
+
+report\curves_s05_k15.csv
+  line 2:
+    SKM - Global basic SSE (10^5): 3.451605 -> 13.109808
+    SKM - Global basic CI: 0.0000 -> 0.2000
+  line 14:
+    SKM - Global basic SSE (10^5): 152.112615 -> 161.770818
+    SKM - Global basic CI: 3.0000 -> 3.2000
+  line 15:
+    SKM - Global basic SSE (10^5): 102.302121 -> 111.960324
+    SKM - Global basic CI: 2.0000 -> 2.2000
+  line 16:
+    SKM - Global basic SSE (10^5): 52.739684 -> 62.397887
+    SKM - Global basic CI: 1.0000 -> 1.2000
+  line 17:
+    SKM - Global basic SSE (10^5): 3.451605 -> 13.109808
+    SKM - Global basic CI: 0.0000 -> 0.2000
+
+report\summary.csv
+  line 44:
+    sse_mean: 345160.525000 -> 1310980.825000
+    sse_sd: 0.000000 -> 2159639.844849
+    ci_mean: 0.0000 -> 0.2000
+    relative_ci: 0.0000 -> 0.0133
+    success_pct: 100.0 -> 80.0
+
+report\table_ci.csv
+  line 8:
+    s05_k15: 0.00 -> 0.20
+
+report\table_sse.csv
+  line 8:
+    s05_k15: 345160.52 -> 1310980.82
+
+report\table_success.csv
+  line 8:
+    s05_k15: 100.0 -> 80.0

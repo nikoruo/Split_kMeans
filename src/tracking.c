@@ -8,6 +8,7 @@
 #include "metrics.h"
 #include "util.h"
 
+#include <assert.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -639,5 +640,66 @@ void trackerInnerRow(Tracker* tracker, KMeansStage stage, size_t iteration, cons
     row->ci = (stage == KM_STAGE_GLOBAL || stage == KM_STAGE_FINAL) ? centroidIndexOrNA(centroids, tracker->groundTruth)
                                                                     : CI_NA;
     row->ms = stopwatchElapsedMs(&tracker->stopwatch);
+    stopwatchResume(&tracker->stopwatch);
+}
+
+InnerTrace trackerCaptureBegin(Tracker* tracker, InnerTrace* trace)
+{
+    assert(tracker != NULL && tracker->inner && trace != NULL);
+    stopwatchPause(&tracker->stopwatch);
+    InnerTrace previous = {tracker->innerRows, tracker->innerCount, tracker->innerCapacity};
+    tracker->innerRows = trace->rows;
+    tracker->innerCount = 0;
+    tracker->innerCapacity = trace->capacity;
+    stopwatchResume(&tracker->stopwatch);
+    return previous;
+}
+
+void trackerCaptureEnd(Tracker* tracker, InnerTrace* trace, InnerTrace previous)
+{
+    assert(tracker != NULL && tracker->inner && trace != NULL);
+    stopwatchPause(&tracker->stopwatch);
+    trace->rows = tracker->innerRows;
+    trace->count = tracker->innerCount;
+    trace->capacity = tracker->innerCapacity;
+    tracker->innerRows = previous.rows;
+    tracker->innerCount = previous.count;
+    tracker->innerCapacity = previous.capacity;
+    stopwatchResume(&tracker->stopwatch);
+}
+
+void trackerAppendTrace(Tracker* tracker, const InnerTrace* trace, size_t count)
+{
+    assert(tracker != NULL && tracker->inner && trace != NULL);
+    stopwatchPause(&tracker->stopwatch);
+    const size_t limit = SIZE_MAX / sizeof(InnerRow);
+    if (tracker->innerCount > limit || trace->count > limit - tracker->innerCount)
+    {
+        fprintf(stderr, "Error: Inner trace is too large\n");
+        exit(EXIT_FAILURE);
+    }
+    const size_t needed = tracker->innerCount + trace->count;
+    if (needed > tracker->innerCapacity)
+    {
+        size_t grown = tracker->innerCapacity ? tracker->innerCapacity : 256;
+        while (grown < needed)
+        {
+            if (grown > limit / 2)
+            {
+                grown = needed;
+                break;
+            }
+            grown *= 2;
+        }
+        InnerRow* rows = realloc(tracker->innerRows, grown * sizeof(*rows));
+        handleMemoryError(rows);
+        tracker->innerRows = rows;
+        tracker->innerCapacity = grown;
+    }
+    for (size_t i = 0; i < trace->count; ++i)
+    {
+        tracker->innerRows[tracker->innerCount] = trace->rows[i];
+        tracker->innerRows[tracker->innerCount++].count = count;
+    }
     stopwatchResume(&tracker->stopwatch);
 }

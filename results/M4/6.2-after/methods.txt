@@ -1,0 +1,21 @@
+Step 6.2 milestone, 2026-11-21
+
+The before and after runs used MinGW release, seed 20261119, log level 1,
+tracking rows, no selected snapshots and the inward repartition default.
+Main datasets have 100 runs; worms_2d has 10 Intra runs and 100 Local runs.
+On the hard group Intra and Local have 100 runs, Global 10. SKM-Global is
+not run on worms_2d, per the milestone plan.
+
+The Local before results reuse the immediately preceding 6.1b inward
+comparison. The before Intra and Global runs match M3a on all 11 main-group
+files and M0 on all eight hard-group files. Before and after were measured
+in separate blocks, not alternating A/B rounds; time differences include noise.
+Changing the number of random draws also means matching run seeds do not
+keep the subsequent random streams identical.
+
+Before summaries are in results/M4/6.2-before; the after report here includes
+mean and sample SD of SSE and time, mean and relative CI and success rate.
+The 45 changed golden lines are listed in golden-changes.txt.
+Full tracking runs remain outside OneDrive:
+%TEMP%\skm_M4_6_2_before_20261121_145005
+%TEMP%\skm_M4_6_2_after_20261121_152646

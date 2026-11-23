@@ -59,10 +59,35 @@ const char* getAlgorithmName(Algorithm algorithm)
     }
 }
 
+const char* repartitionModeName(RepartitionMode mode)
+{
+    switch (mode)
+    {
+        case REPARTITION_INWARD: return "inward";
+        case REPARTITION_INWARD_NONCHILD: return "inward-nonchild";
+        case REPARTITION_BOTH: return "both";
+        default:
+            fprintf(stderr, "Error: Invalid repartition mode: %d\n", (int)mode);
+            exit(EXIT_FAILURE);
+    }
+}
+
+const char* bisectSelectName(BisectSelect mode)
+{
+    switch (mode)
+    {
+        case BISECT_SELECT_SSE: return "sse";
+        case BISECT_SELECT_SIZE: return "size";
+        default:
+            fprintf(stderr, "Error: Invalid bisecting selection mode: %d\n", (int)mode);
+            exit(EXIT_FAILURE);
+    }
+}
+
 /**
  * @brief Random Split: grows K by splitting a random cluster with local k-means.
  *
- * Each split draws a cluster uniformly and draws again while it has fewer than 2 points, splits it
+ * Each split draws uniformly among clusters with at least two distinct points, splits it
  * with splitClusterIntraCluster and records the state. Stops when `centroids->size == maxCentroids`,
  * then runs a final global k-means and returns its SSE.
  *
@@ -88,13 +113,26 @@ double runRandomSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentr
 
     while (centroids->size < maxCentroids)
     {
-        // Uniform over the clusters with at least 2 points: draw again on smaller ones
         size_t splittable = rebuildClusterIndex(&membership, dataPoints, centroids->size);
         requireSplittableCluster(splittable, centroids->size, ALGO_SKM_RANDOM);
         size_t clusterToSplit = rng_below(rng, centroids->size);
-        while (membership.sizes[clusterToSplit] < 2)
+        size_t attempts = 1;
+        while (!membership.eligible[clusterToSplit])
         {
+            if (attempts == centroids->size)
+            {
+                size_t rank = rng_below(rng, splittable);
+                for (clusterToSplit = 0; clusterToSplit < centroids->size; ++clusterToSplit)
+                {
+                    if (!membership.eligible[clusterToSplit]) continue;
+                    if (rank == 0) break;
+                    --rank;
+                }
+                assert(clusterToSplit < centroids->size);
+                break;
+            }
             clusterToSplit = rng_below(rng, centroids->size);
+            ++attempts;
         }
 
         splitClusterIntraCluster(dataPoints, &membership, centroids, clusterToSplit, maxIterations, tracker, rng);
@@ -127,18 +165,35 @@ double runRandomSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentr
     return finalResultSse;
 }
 
+static Centroids tentativePair(Centroids* storage, size_t cluster)
+{
+    assert(storage->coordinates != NULL && cluster < storage->size / 2);
+    Centroids pair = {storage->coordinates + 2 * cluster * storage->dimensions, 2, 2, storage->dimensions};
+    return pair;
+}
+
+static double evaluateSplitDrop(Dataset* dataPoints, const ClusterIndex* membership, size_t cluster,
+                                size_t maxIterations, double clusterSse, Centroids* storage, size_t* labels,
+                                Tracker* tracker, InnerTrace* traces, Rng* rng)
+{
+    if (storage->coordinates == NULL)
+        return tentativeSseDrop(dataPoints, membership, cluster, maxIterations, clusterSse, rng);
+    Centroids pair = tentativePair(storage, cluster);
+    return cacheTentativeSplit(dataPoints, membership, cluster, maxIterations, clusterSse, &pair, labels, tracker,
+                               traces != NULL ? &traces[cluster] : NULL, rng);
+}
+
 /**
  * @brief SSE-based split k-means: grows K by splitting the cluster with the largest tentative SSE drop.
  *
  * The first split of the single starting cluster uses local 2-means for every variant. Then each split picks,
- * among the clusters with at least 2 points, the one whose tentative local 2-means lowers its SSE the most, and
+ * among clusters with at least two distinct points, the one whose tentative local 2-means lowers its SSE most, and
  * splits it by the variant:
- *  - ALGO_SKM_INTRA: local 2-means on the cluster; the drops of the two halves are re-evaluated.
- *  - ALGO_SKM_GLOBAL: local 2-means, then global k-means (splitClusterGlobalV2); all drops re-evaluated.
+ *  - ALGO_SKM_INTRA: apply the evaluated local 2-means; the drops of the two halves are re-evaluated.
+ *  - ALGO_SKM_GLOBAL: apply the evaluated local 2-means, then global k-means; all drops re-evaluated.
  *  - ALGO_SKM_GLOBAL_BASIC: two random points, then global k-means (splitClusterGlobal); all drops re-evaluated.
- *  - ALGO_SKM_LOCAL: local 2-means, then localRepartition; the drops of the touched clusters re-evaluated
- *    (the repartition and the re-evaluation are skipped after the last split, 6.1).
- * The split itself re-runs a local 2-means instead of reusing the evaluated one (6.2).
+ *  - ALGO_SKM_LOCAL: local 2-means, then localRepartition; touched means and, when needed, drops are updated.
+ * SKM-Global-Basic retains its separate raw-seed split instead of applying the evaluated local 2-means.
  *
  * @param dataPoints Dataset; partitions updated in-place.
  * @param centroids Global centroids; grows until `maxCentroids`.
@@ -151,9 +206,14 @@ double runRandomSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentr
  * @errors Exits on allocation failure in underlying helpers.
  */
 double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
-                   Algorithm splitType, Tracker* tracker, Rng* rng)
+                   Algorithm splitType, RepartitionMode repartition, Tracker* tracker, Rng* rng)
 {
     assert(centroids->capacity >= maxCentroids);
+    if (maxIterations == 0)
+    {
+        fprintf(stderr, "Error: SSE split requires at least one k-means iteration\n");
+        exit(EXIT_FAILURE);
+    }
     const Centroids* groundTruth = tracker->groundTruth;
     double finalResultSse = DBL_MAX;
     bool refinedGlobally = false; // set when a global split (SKM-Global, SKM-Global-Basic) ran global k-means
@@ -170,6 +230,28 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
     bool* clustersAffected = calloc(capacity, sizeof(bool));
     handleMemoryError(clustersAffected);
 
+    Centroids trialCentroids = {0};
+    size_t* trialLabels = NULL;
+    InnerTrace* trialTraces = NULL;
+    if (maxCentroids > 1 && splitType != ALGO_SKM_GLOBAL_BASIC)
+    {
+        if (capacity > SIZE_MAX / 2)
+        {
+            fprintf(stderr, "Error: Tentative split capacity exceeds addressable memory\n");
+            exit(EXIT_FAILURE);
+        }
+        trialCentroids = allocateCentroids(2 * capacity, dataPoints->dimensions);
+        trialLabels = malloc(dataPoints->size * sizeof(*trialLabels));
+        handleMemoryError(trialLabels);
+        if (tracker->inner)
+        {
+            trackerPause(tracker);
+            trialTraces = calloc(capacity, sizeof(*trialTraces));
+            handleMemoryError(trialTraces);
+            trackerResume(tracker);
+        }
+    }
+
     ClusterIndex membership = {0};
     if (maxCentroids > 1) membership = allocateClusterIndex(dataPoints->size, capacity);
     size_t splittable = 0;
@@ -182,16 +264,27 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
     {
         // Only 1 cluster, so no need for decision making
         size_t initialClusterToSplit = 0;
-        rebuildClusterIndex(&membership, dataPoints, centroids->size);
+        splittable = rebuildClusterIndex(&membership, dataPoints, centroids->size);
+        requireSplittableCluster(splittable, centroids->size, splitType);
         splitClusterIntraCluster(dataPoints, &membership, centroids, initialClusterToSplit, maxIterations, tracker, rng);
+
+        if (splitType == ALGO_SKM_LOCAL)
+        {
+            trackerSplitSnapshot(tracker, dataPoints, centroids, initialClusterToSplit);
+            splittable = localRepartition(dataPoints, &membership, centroids, initialClusterToSplit, repartition,
+                                         clustersAffected);
+            memset(clustersAffected, 0, capacity * sizeof(bool));
+        }
 
         trackerRecord(tracker, 1, "step", dataPoints, centroids, initialClusterToSplit);
 
-        splittable = rebuildClusterIndex(&membership, dataPoints, centroids->size);
+        if (splitType != ALGO_SKM_LOCAL)
+            splittable = rebuildClusterIndex(&membership, dataPoints, centroids->size);
         for (size_t i = 0; i < centroids->size; ++i)
         {
             clusterSSEs[i] = calculateClusterSSE(dataPoints, centroids, i);
-            SseDrops[i] = tentativeSseDrop(dataPoints, &membership, i, maxIterations, clusterSSEs[i], rng);
+            SseDrops[i] = evaluateSplitDrop(dataPoints, &membership, i, maxIterations, clusterSSEs[i],
+                                            &trialCentroids, trialLabels, tracker, trialTraces, rng);
         }
 
         iterationCount = 2;
@@ -199,14 +292,14 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
 
     while (centroids->size < maxCentroids)
     {
-        // Choose the cluster that reduces the SSE the most; only clusters with at least 2 points can split
+        // Choose the eligible cluster that reduces the SSE the most
         requireSplittableCluster(splittable, centroids->size, splitType);
         size_t clusterToSplit = SIZE_MAX;
         double maxSseDrop = 0.0;
 
         for (size_t i = 0; i < centroids->size; ++i)
         {
-            if (membership.sizes[i] >= 2 && (clusterToSplit == SIZE_MAX || SseDrops[i] > maxSseDrop))
+            if (membership.eligible[i] && (clusterToSplit == SIZE_MAX || SseDrops[i] > maxSseDrop))
             {
                 maxSseDrop = SseDrops[i];
                 clusterToSplit = i;
@@ -214,22 +307,31 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
         }
 
         // Split the chosen cluster by the variant (see the function comment)
-        if (splitType == ALGO_SKM_INTRA)
-            splitClusterIntraCluster(dataPoints, &membership, centroids, clusterToSplit, maxIterations, tracker, rng);
-        else if (splitType == ALGO_SKM_GLOBAL)
-        {
-            finalResultSse =
-                splitClusterGlobalV2(dataPoints, &membership, centroids, clusterToSplit, maxIterations, tracker, rng);
-            refinedGlobally = true;
-        }
-        else if (splitType == ALGO_SKM_GLOBAL_BASIC)
+        if (splitType == ALGO_SKM_GLOBAL_BASIC)
         {
             finalResultSse =
                 splitClusterGlobal(dataPoints, &membership, centroids, clusterToSplit, maxIterations, tracker, rng);
             refinedGlobally = true;
         }
-        else if (splitType == ALGO_SKM_LOCAL)
-            splitClusterIntraCluster(dataPoints, &membership, centroids, clusterToSplit, maxIterations, tracker, rng);
+        else
+        {
+            Centroids pair = tentativePair(&trialCentroids, clusterToSplit);
+            if (trialTraces != NULL) trackerAppendTrace(tracker, &trialTraces[clusterToSplit], iterationCount);
+            applyTentativeSplit(dataPoints, &membership, centroids, clusterToSplit, &pair, trialLabels);
+            if (splitType == ALGO_SKM_GLOBAL)
+            {
+                trackerSplitSnapshot(tracker, dataPoints, centroids, clusterToSplit);
+                finalResultSse = runKMeans(dataPoints, maxIterations, centroids, tracker, KM_STAGE_GLOBAL);
+                refinedGlobally = true;
+            }
+        }
+
+        if (splitType == ALGO_SKM_LOCAL)
+        {
+            trackerSplitSnapshot(tracker, dataPoints, centroids, clusterToSplit);
+            splittable = localRepartition(dataPoints, &membership, centroids, clusterToSplit, repartition,
+                                         clustersAffected);
+        }
 
         if (centroids->size < maxCentroids)
         {
@@ -242,10 +344,12 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
 
                 // Update SseDrops for the affected clusters
                 SseDrops[clusterToSplit] =
-                    tentativeSseDrop(dataPoints, &membership, clusterToSplit, maxIterations, clusterSSEs[clusterToSplit], rng);
+                    evaluateSplitDrop(dataPoints, &membership, clusterToSplit, maxIterations,
+                                      clusterSSEs[clusterToSplit], &trialCentroids, trialLabels, tracker, trialTraces, rng);
                 SseDrops[centroids->size - 1] =
-                    tentativeSseDrop(dataPoints, &membership, centroids->size - 1, maxIterations,
-                                     clusterSSEs[centroids->size - 1], rng);
+                    evaluateSplitDrop(dataPoints, &membership, centroids->size - 1, maxIterations,
+                                      clusterSSEs[centroids->size - 1], &trialCentroids, trialLabels, tracker,
+                                      trialTraces, rng);
             }
             else if (splitType == ALGO_SKM_GLOBAL || splitType == ALGO_SKM_GLOBAL_BASIC)
             {
@@ -253,32 +357,24 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
                 for (size_t i = 0; i < centroids->size; ++i)
                 {
                     clusterSSEs[i] = calculateClusterSSE(dataPoints, centroids, i);
-                    SseDrops[i] = tentativeSseDrop(dataPoints, &membership, i, maxIterations, clusterSSEs[i], rng);
+                    SseDrops[i] = evaluateSplitDrop(dataPoints, &membership, i, maxIterations, clusterSSEs[i],
+                                                    &trialCentroids, trialLabels, tracker, trialTraces, rng);
                 }
             }
             else if (splitType == ALGO_SKM_LOCAL)
             {
-                trackerSplitSnapshot(tracker, dataPoints, centroids, clusterToSplit);
-
-                localRepartition(dataPoints, centroids, clusterToSplit, clustersAffected);
-                splittable = rebuildClusterIndex(&membership, dataPoints, centroids->size);
-
-                clustersAffected[clusterToSplit] = true;
-                clustersAffected[centroids->size - 1] = true;
-
-                // Recalculate SseDrop for affected clusters (old and new)
                 for (size_t i = 0; i < centroids->size; ++i)
                 {
                     if (clustersAffected[i])
                     {
                         clusterSSEs[i] = calculateClusterSSE(dataPoints, centroids, i);
-                        SseDrops[i] = tentativeSseDrop(dataPoints, &membership, i, maxIterations, clusterSSEs[i], rng);
+                        SseDrops[i] = evaluateSplitDrop(dataPoints, &membership, i, maxIterations, clusterSSEs[i],
+                                                        &trialCentroids, trialLabels, tracker, trialTraces, rng);
                     }
                 }
-
-                memset(clustersAffected, 0, capacity * sizeof(bool));
             }
         }
+        if (splitType == ALGO_SKM_LOCAL) memset(clustersAffected, 0, capacity * sizeof(bool));
         trackerRecord(tracker, iterationCount, "step", dataPoints, centroids, clusterToSplit);
 
         iterationCount++;
@@ -303,6 +399,15 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
     free(clusterSSEs);
     free(SseDrops);
     free(clustersAffected);
+    freeCentroids(&trialCentroids);
+    free(trialLabels);
+    if (trialTraces != NULL)
+    {
+        trackerPause(tracker);
+        for (size_t i = 0; i < capacity; ++i) free(trialTraces[i].rows);
+        free(trialTraces);
+        trackerResume(tracker);
+    }
     freeClusterIndex(&membership);
 
     // Global splits end with global k-means; without one (K <= 2) run it here

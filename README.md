@@ -11,7 +11,7 @@ C implementations of k-means and split-based k-means variants for empirical comp
 License: AGPL-3.0-only (see LICENSE)
 
 # TLDR
-- Default run: SSE Split (Local Repartition, splitType=2) with random unique centroid initialization.
+- Default run: SSE Split (Local Repartition, splitType=2), starting from the dataset mean.
 - All other algorithms run only when selected with `--algo` (see below).
 - Two modes: **Directory Batch Mode** (no args) and **CLI Mode** (with args).
 - Supports Linux (gcc or clang) and Windows (MinGW-w64 or Visual Studio 2026).
@@ -32,13 +32,13 @@ See [CHANGELOG.md](CHANGELOG.md).
 - Algorithms
   - K-means: standard assignment + centroid update until no SSE improvement.
   - Repeated K-means (RKM): multiple K-means runs; keep the best.
-  - Random Swap: try centroid–point swaps with local repartition; keep if MSE/SSE improves.
+  - Random Swap: try centroid–point swaps using a target distinct from every current centroid, update affected means after local repartition, then run two k-means iterations; accept only when SSE improves over the initial or current solution. If K equals the number of distinct data points, all swaps are no-ops.
   - Random Split k-means: grow K by repeatedly splitting a random cluster (local k-means) then refining.
   - SSE Split k-means (Split_kMeans): grow K by splitting the cluster that maximizes expected SSE drop.
     - 0 = IntraCluster: split cluster by local k-means on that cluster’s points.
     - 1 = Global: local split, global refinement.
     - 2 = LocalRepartition: local split then targeted reassignments near the split.
-  - Bisecting k-means: repeatedly split the cluster with the largest SSE using multiple local tries; keep best split.
+  - Bisecting k-means: repeatedly split the eligible cluster with the largest SSE (or most rows), using multiple local tries; keep the best split, then run global k-means. This is bisecting plus final refinement, not the unrefined variant.
 
 - Initialization
   - Random unique seeding (default): pick K distinct data points.
@@ -136,7 +136,7 @@ Input discovery
 Syntax:
 split_kmeans [options] -k <K> <data.txt> [gt.txt]
 
-Options: `--algo`, `--seed`, `-r`, `--first-run`, `--max-iterations`, `--max-swaps`, `--repeats`, `--bisect-tries`, `--init`, `-o`, `--track-progress`, `--snapshots`, `--track-inner`, `--no-track`, `--decimal-comma`, `--log-level`, `--version`, `-h` (see below and `-h`).
+Options: `--algo`, `--seed`, `-r`, `--first-run`, `--max-iterations`, `--max-swaps`, `--repeats`, `--bisect-tries`, `--bisect-select`, `--init`, `--repartition`, `-o`, `--track-progress`, `--snapshots`, `--track-inner`, `--no-track`, `--decimal-comma`, `--log-level`, `--version`, `-h` (see below and `-h`).
 
 The options also work in batch mode (no data file), for example `split_kmeans --algo skm-local,rs --seed 42`.
 
@@ -161,7 +161,7 @@ Outputs per dataset (examples)
 - Iteration snapshots (`--snapshots`; batch mode: run 1)
   - <Algorithm>_run<RRR>_iter<IIII>_<phase>_centroids.txt: one space-separated row per centroid
   - <Algorithm>_run<RRR>_iter<IIII>_<phase>_partitions.txt: one 0-based label per line
-  - run is 1-based and iter is the count of `_log.csv`; phase is start, step, final (after the final k-means) or split (after the two-way split, before the follow-up step: the local repartition of SKM-Local, the global k-means of SKM-Global and SKM-Global-Basic, the global partition step of bisecting; SKM-Intra and Random Split have none)
+  - run is 1-based and iter is the count of `_log.csv`; phase is start, step, final (after the final k-means) or split (after the two-way split, before the follow-up step: the local repartition of SKM-Local or the global k-means of SKM-Global and SKM-Global-Basic; bisecting's split and step snapshots both show the applied local split; SKM-Intra and Random Split have none)
 
 Locale and CSV
 - CSV files use semicolons (;).
@@ -183,13 +183,15 @@ Determinism
 - `-r, --runs <N>`: the last run per dataset (default 100). RKM and RS run once unless `--runs` is given.
 - `--first-run <i>` (default 1): start at run i; run i keeps the seed derived from the master seed and i, so a long job can resume or be split, for example `-r 50` and `-r 100 --first-run 51`. With `rkm` or `rs` it needs `-r`.
 - `--max-iterations <N>`: positive per-call k-means iteration cap for diagnostics. It applies to KM, each RKM repeat, and every local, trial, global and final k-means call in the split algorithms and bisecting. The default is `SIZE_MAX`, so k-means stops when SSE no longer strictly decreases; it may stop earlier than the cap. A capped run may not converge, and this option is not a wall-clock timeout. Its last partition need not assign every point to the nearest updated centroid; capped RKM preserves the best repeat's partition for its example snapshot instead of reassigning it. Random Swap is unaffected and still allows at most two k-means iterations per swap.
-- `--max-swaps <N>` (default 5000), `--repeats <N>` (default 1000), `--bisect-tries <N>` (default 5): RS swaps and RKM repeats per run, and bisecting tries per selected cluster after the first split.
-- `--init random|kmeans++` (default `random`): the initial centroids of KM, RKM and RS (the split algorithms and bisecting start from one random point either way).
+- `--max-swaps <N>` (default 5000), `--repeats <N>` (default 1000), `--bisect-tries <N>` (default 5): RS swaps and RKM repeats per run, and bisecting tries at every split, including the first.
+- `--bisect-select sse|size` (default `sse`): choose the eligible cluster with the largest SSE or the most assigned rows, including duplicates. Ties choose the lowest cluster index. The mode is recorded in `run_config.txt`, so different modes cannot be mixed in one output folder or report.
+- `--init random|kmeans++` (default `random`): coordinate-distinct initial centroids of KM, RKM and RS (the split algorithms and bisecting start from the dataset mean either way). K cannot exceed the number of distinct data points. Split seeds also have distinct coordinates, and duplicate-only clusters are not eligible for splitting.
+- `--repartition inward|inward-nonchild|both` selects SKM-Local remapping. The default `inward` compares every point with its current centroid and the two split children, retaining the current cluster on ties. `inward-nonchild` skips points already in either child. `both` first sends child points to their nearest centroid among all clusters, then checks the other points against the children. All modes use fixed centroids for the moves and recompute touched means afterwards; other algorithms are unaffected. The mode is recorded in `run_config.txt`, so different modes cannot be mixed in one output folder.
 - `--batch` selects batch mode explicitly; `--datasets <list>` runs only the listed batch datasets (data file names without `.txt`, for example `--datasets s1,birch1`; an empty list is an error); pairing stays by sorted position.
 - `-o <dir>` creates the folder and its missing parents. Every option may be given once; invalid arguments stop the program before any output folder is created. `--version` prints the version, commit and compiler.
 - `--track-progress` writes the `_log.csv` rows of every run (default in batch mode). The stopwatch pauses while tracking, so it does not count in the run times (an A/B test on dim064 and unbalance measured no difference). `report` needs these rows for RS, so timed runs use `--track-progress --snapshots none`.
 - `--snapshots <spec>`: `none`, or `RUNS[:ITERATIONS][:split]`, where RUNS (1-based) and ITERATIONS (the `_log.csv` counts) are `all` or lists such as `1,3-5`; `split` adds the state after each two-way split. Default: `1` in batch mode (every state of run 1), `none` in CLI mode. Examples: `--snapshots all`, `--snapshots 1:all:split`, `--snapshots 2-3:5-10`.
-- `--track-inner` writes `<Algorithm>_inner.csv` (off by default).
+- `--track-inner` writes `<Algorithm>_inner.csv` (off by default). For SSE-selected splits, a selected trial's rows retain their actual evaluation times and are labeled with the split where it was applied; these times can precede rows for earlier splits. The trial trace includes its final non-improving iteration, while the applied state is its best iteration. Bisecting records every local try as `try`, including the first split; iteration numbering restarts for each try.
 - `--no-track` turns off the rows and snapshots, also in batch mode (the first perfect and failed example snapshots stay; they are written after the timed run). It cannot be combined with the three options above.
 - `--log-level <1-3>`: 1 prints the setup and final statistics (default), 2 adds per-run progress, 3 adds per-swap, per-split and per-iteration debug output. Use level 1 for timing experiments.
 
@@ -211,7 +213,7 @@ The C helpers `generateGroundTruthCentroids`, `debugCalculateCI`, `debugCalculat
 - `_log.csv` rows must exist for every run of an algorithm or for none (calls with and without tracking are not mixed), and RS needs them (see below); a row of a run that is not in `_runs.csv` is an error.
 - `-o` (default `<first dir>/report`) receives:
   - `summary.csv`: dataset;algorithm;runs;sse_mean;sse_sd;ci_mean;relative_ci;success_pct;time_ms_mean;time_ms_sd;full_time_ms_mean. Standard deviations are sample deviations (n − 1), NA with one run; relative CI is CI / K (K from `dataset.txt`, NA when missing); success is the percentage of runs with CI = 0.
-  - RS results end at the last SSE improvement of each run: the time of its last `_log.csv` row, with the final SSE and CI (Random Swap keeps its best solution, the one found at that swap). `full_time_ms_mean` gives the RS time of all swaps.
+  - RS results end at the last SSE improvement of each run: the time of its last `_log.csv` row, with the final SSE and CI (Random Swap keeps its best solution, the one found at that swap). If no swap improves, this is the initial count-0 row. `full_time_ms_mean` gives the RS time of all swaps.
   - `table_ci.csv` (2 decimals), `table_success.csv` (1), `table_time.csv` (ms, 2) and `table_sse.csv` (2): algorithms × datasets, as in the seminar slides.
   - `curves_<dataset>.csv`: per algorithm the columns count, ms, SSE and CI; the first row (`end`) holds the summary values, the next rows the curve. RS and RKM show run `--curve-run` (default 1; an error when that run is missing; RS up to its last improvement, RKM every repeat); the other algorithms the mean over all runs per count, where a run that has ended keeps its last state (KM runs stop at different iterations). SSE is in units of 10^e (shown in the header), e chosen from the smallest SSE of the dataset.
 - `--names <file>`: one line per dataset, `<folder name> [display name]`; the listed datasets come first in that order and use the display name, the others follow sorted by name.

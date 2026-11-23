@@ -23,6 +23,68 @@ static void checkShape(size_t size, size_t dimensions)
     }
 }
 
+static uint64_t hashCoordinates(const double* point, size_t dimensions)
+{
+    uint64_t hash = UINT64_C(14695981039346656037);
+    for (size_t d = 0; d < dimensions; ++d)
+    {
+        double value = point[d] == 0.0 ? 0.0 : point[d];
+        const unsigned char* bytes = (const unsigned char*)&value;
+        for (size_t b = 0; b < sizeof(value); ++b)
+        {
+            hash ^= bytes[b];
+            hash *= UINT64_C(1099511628211);
+        }
+    }
+    return hash;
+}
+
+size_t countDistinctRowsUpTo(const Dataset* dataset, size_t limit)
+{
+    assert(dataset->size > 0 && dataset->dimensions > 0 && limit > 0);
+    if (limit > dataset->size) limit = dataset->size;
+    if (limit > SIZE_MAX / 2)
+    {
+        fprintf(stderr, "Error: Distinct-coordinate index exceeds addressable memory\n");
+        exit(EXIT_FAILURE);
+    }
+    size_t capacity = 1;
+    while (capacity < 2 * limit)
+    {
+        if (capacity > SIZE_MAX / 2)
+        {
+            fprintf(stderr, "Error: Distinct-coordinate index exceeds addressable memory\n");
+            exit(EXIT_FAILURE);
+        }
+        capacity *= 2;
+    }
+    if (capacity > SIZE_MAX / sizeof(size_t))
+    {
+        fprintf(stderr, "Error: Distinct-coordinate index exceeds addressable memory\n");
+        exit(EXIT_FAILURE);
+    }
+    size_t* table = malloc(capacity * sizeof(*table));
+    handleMemoryError(table);
+    for (size_t i = 0; i < capacity; ++i) table[i] = SIZE_MAX;
+
+    size_t distinct = 0;
+    for (size_t i = 0; i < dataset->size; ++i)
+    {
+        const double* point = datasetRowConst(dataset, i);
+        size_t slot = (size_t)hashCoordinates(point, dataset->dimensions) & (capacity - 1);
+        while (table[slot] != SIZE_MAX &&
+               !coordinatesEqual(point, datasetRowConst(dataset, table[slot]), dataset->dimensions))
+            slot = (slot + 1) & (capacity - 1);
+        if (table[slot] == SIZE_MAX)
+        {
+            table[slot] = i;
+            if (++distinct == limit) break;
+        }
+    }
+    free(table);
+    return distinct;
+}
+
 void freeDataset(Dataset* dataset)
 {
     if (dataset == NULL) return;

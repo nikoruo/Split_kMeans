@@ -29,15 +29,30 @@ typedef struct
     Algorithm id;
 } AlgorithmOption;
 
+typedef enum
+{
+    REPARTITION_INWARD,
+    REPARTITION_INWARD_NONCHILD,
+    REPARTITION_BOTH
+} RepartitionMode;
+
+typedef enum
+{
+    BISECT_SELECT_SSE,
+    BISECT_SELECT_SIZE
+} BisectSelect;
+
 extern const AlgorithmOption algorithmOptions[]; /* ALGORITHM_COUNT entries, checked in algorithms.c */
 
 struct Tracker;
 
 const char* getAlgorithmName(Algorithm algorithm);
+const char* repartitionModeName(RepartitionMode mode);
+const char* bisectSelectName(BisectSelect mode);
 /* Split runners require centroid capacity of at least maxCentroids. */
 double runRandomSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
                       struct Tracker* tracker, Rng* rng);
 double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
-                   Algorithm splitType, struct Tracker* tracker, Rng* rng);
+                   Algorithm splitType, RepartitionMode repartition, struct Tracker* tracker, Rng* rng);
 
 #endif /* ALGORITHMS_H */

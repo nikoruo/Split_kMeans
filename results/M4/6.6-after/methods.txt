@@ -1,0 +1,26 @@
+Step 6.6 distinct-coordinate milestone, 2026-11-22
+
+The runs used MinGW release, seed 20261119, log level 1, tracking rows,
+no selected snapshots and convergence defaults. The five small main
+datasets have 100 KM and split runs, plus one RKM and one RS run each.
+worms_2d has 10 KM and split runs, except Local has 100; Global, RKM and
+RS are omitted. The hard datasets have 100 KM, Random, Intra, Local and
+bisecting runs, 10 Global and Global-Basic runs, and one RS run each.
+Hard-set RKM was omitted as requested after a 10-repeat pilot estimated
+about 2.5 hours per side at its default 1000 repeats.
+
+The before split results reuse 6.5-after and hard-set RS reuses 6.4-after.
+Main KM/RKM/RS and hard-set KM were measured immediately before this step.
+All 83 before/after run files match exactly on run, seed, SSE and CI,
+including all 400 hard-set KM runs. This does not imply the algorithms are
+identical on data or seeds that trigger coordinate collisions.
+
+Distinct-coordinate validation runs once per dataset outside the run
+stopwatch; candidate comparisons and any fallback searches are timed.
+RS full-run mean-time ratios ranged from 0.97 to 1.01, including timing
+noise; the reported last-improvement time is retrospective.
+The 15 changed golden lines are listed in golden-changes.txt.
+Full tracking runs remain outside OneDrive:
+%TEMP%\skm_M4_6_6_before_main_20261122_155518
+%TEMP%\skm_M4_6_6_before_km_20261122_153756
+%TEMP%\skm_M4_6_6_after_20261122_160702

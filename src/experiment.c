@@ -13,6 +13,7 @@
 #include <assert.h>
 #include <float.h>
 #include <inttypes.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -403,7 +404,8 @@ void runRepeatedKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTrut
  */
 void runRandomSwapAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxSwaps,
                             size_t firstRun, size_t loopCount, size_t scaling, const char* fileName,
-                            const char* outputDirectory, const TrackOptions* track, InitMethod init, uint64_t seed)
+                            const char* outputDirectory, const TrackOptions* track, InitMethod init,
+                            size_t distinctRows, uint64_t seed)
 {
     Statistics stats;
     initializeStatistics(&stats);
@@ -432,7 +434,7 @@ void runRandomSwapAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, s
         initialCentroids(init, numCentroids, dataPoints, &centroids, rng);
         partitionStep(dataPoints, &centroids); // Local repartition requires this
 
-        double resultSse = randomSwap(dataPoints, &centroids, maxSwaps, &tracker, rng);
+        double resultSse = randomSwap(dataPoints, &centroids, maxSwaps, distinctRows, &tracker, rng);
 
         duration = trackerEndRun(&tracker);
 
@@ -454,11 +456,24 @@ void runRandomSwapAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, s
     writeResultsToFile(fileName, stats, numCentroids, "RS", loopCount - firstRun, scaling, outputDirectory);
 }
 
+static void initializeSplitCentroid(const Dataset* dataPoints, Centroids* centroids)
+{
+    assert(centroids->size == 1);
+    centroidStep(centroids, dataPoints);
+    for (size_t d = 0; d < centroids->dimensions; ++d)
+    {
+        if (!isfinite(centroidRow(centroids, 0)[d]))
+        {
+            fprintf(stderr, "Error: Initial split centroid is not finite\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
 /**
  * @brief Random Split runs firstRun..loopCount-1 (see runKMeansAlgorithm for the shared run loop and outputs).
  *
- * Each run starts from one random data point and calls runRandomSplit (a random cluster with at least 2 points
- * is split by local 2-means until K, then a final k-means).
+ * Each run starts from the dataset mean and splits random eligible clusters before final k-means.
  */
 void runRandomSplitAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
                              size_t maxIterations, size_t firstRun, size_t loopCount, size_t scaling,
@@ -492,7 +507,7 @@ void runRandomSplitAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, 
 
         trackerBeginRun(&tracker, i);
 
-        generateRandomCentroids(centroids.size, dataPoints, &centroids, rng);
+        initializeSplitCentroid(dataPoints, &centroids);
 
         double resultSse = runRandomSplit(dataPoints, &centroids, numCentroids, maxIterations, &tracker, rng);
 
@@ -520,12 +535,13 @@ void runRandomSplitAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, 
  * @brief SSE-based split k-means runs firstRun..loopCount-1 (see runKMeansAlgorithm for the shared run loop and
  * outputs).
  *
- * Each run starts from one random data point and calls runSseSplit with `splitType` (SKM-Intra, SKM-Global,
+ * Each run starts from the dataset mean and calls runSseSplit with `splitType` (SKM-Intra, SKM-Global,
  * SKM-Global-Basic or SKM-Local).
  */
 void runSseSplitAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
                           size_t maxIterations, size_t firstRun, size_t loopCount, size_t scaling, const char* fileName,
-                          const char* outputDirectory, Algorithm splitType, const TrackOptions* track, uint64_t seed)
+                          const char* outputDirectory, Algorithm splitType, RepartitionMode repartition,
+                          const TrackOptions* track, uint64_t seed)
 {
     Statistics stats;
     initializeStatistics(&stats);
@@ -556,9 +572,10 @@ void runSseSplitAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, siz
 
         trackerBeginRun(&tracker, i);
 
-        generateRandomCentroids(centroids.size, dataPoints, &centroids, rng);
+        initializeSplitCentroid(dataPoints, &centroids);
 
-        double resultSse = runSseSplit(dataPoints, &centroids, numCentroids, maxIterations, splitType, &tracker, rng);
+        double resultSse =
+            runSseSplit(dataPoints, &centroids, numCentroids, maxIterations, splitType, repartition, &tracker, rng);
 
         duration = trackerEndRun(&tracker);
 
@@ -583,12 +600,12 @@ void runSseSplitAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, siz
 /**
  * @brief Bisecting k-means runs firstRun..loopCount-1 (see runKMeansAlgorithm for the shared run loop and outputs).
  *
- * Each run starts from one random data point and calls runBisectingKMeans with `bisectingIterations` tries per split.
+ * Each run starts from the dataset mean and uses `bisectingIterations` tries per split.
  */
 void runBisectingKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
                                  size_t maxIterations, size_t firstRun, size_t loopCount, size_t scaling,
                                  const char* fileName, const char* outputDirectory, const TrackOptions* track,
-                                 size_t bisectingIterations, uint64_t seed)
+                                 size_t bisectingIterations, BisectSelect selection, uint64_t seed)
 {
     Statistics stats;
     initializeStatistics(&stats);
@@ -617,10 +634,10 @@ void runBisectingKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTru
 
         trackerBeginRun(&tracker, i);
 
-        generateRandomCentroids(centroids.size, dataPoints, &centroids, rng);
+        initializeSplitCentroid(dataPoints, &centroids);
 
-        double resultSse =
-            runBisectingKMeans(dataPoints, &centroids, numCentroids, maxIterations, bisectingIterations, &tracker, rng);
+        double resultSse = runBisectingKMeans(dataPoints, &centroids, numCentroids, maxIterations, bisectingIterations,
+                                               selection, &tracker, rng);
 
         duration = trackerEndRun(&tracker);
 
@@ -688,12 +705,16 @@ static void runConfigHeader(char* text, size_t size, const Options* opt)
                  "max-swaps: %zu\n"
                  "repeats: %zu\n"
                  "bisect-tries: %zu\n"
+                 "bisect-select: %s\n"
                  "init: %s\n"
+                 "repartition: %s\n"
                  "decimal-comma: %s\n"
                  "calls:\n",
                  SKM_VERSION, SKM_GIT_COMMIT, platform_compiler(), SKM_BUILD_FLAGS, asserts, platform_clock_name(),
                  machine, cpu, opt->seed, logLevel, iterations, opt->maxSwaps, opt->maxRepeats, opt->bisectTries,
-                 opt->init == INIT_KMEANSPP ? "kmeans++" : "random", decimalComma ? "on" : "off");
+                 bisectSelectName(opt->bisectSelect),
+                 opt->init == INIT_KMEANSPP ? "kmeans++" : "random", repartitionModeName(opt->repartition),
+                 decimalComma ? "on" : "off");
     if (length < 0 || (size_t)length >= size)
     {
         fprintf(stderr, "Error: run_config.txt header too long\n");
