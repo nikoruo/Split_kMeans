@@ -122,6 +122,8 @@ size_t trackerRecord(Tracker* tracker, size_t count, const char* phase, const Da
 void trackerSnapshot(Tracker* tracker, size_t count, const char* phase, const Dataset* dataPoints,
                      const Centroids* centroids, size_t splitCluster);
 void trackerInnerRow(Tracker* tracker, KMeansStage stage, size_t iteration, const Centroids* centroids, double sse);
+/* Begin redirects inner rows into `trace` until the matching End; the caller owns and frees trace->rows. The rows
+ * keep their evaluation time; trackerAppendTrace copies them into the run's rows when the trial is applied. */
 InnerTrace trackerCaptureBegin(Tracker* tracker, InnerTrace* trace);
 void trackerCaptureEnd(Tracker* tracker, InnerTrace* trace, InnerTrace previous);
 void trackerAppendTrace(Tracker* tracker, const InnerTrace* trace, size_t count);

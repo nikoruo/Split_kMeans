@@ -1,0 +1,32 @@
+# Split_kMeans run configuration. Every call that writes to this folder must match the lines above "calls:".
+version: 2.0.0-dev
+commit: 5594dba-dirty
+compiler: gcc 16.2.0
+flags: gcc -DNDEBUG -std=c11 -Wall -Wextra -Wpedantic -ffp-contract=off -O3 -Werror
+asserts: off (NDEBUG)
+timer: QueryPerformanceCounter (monotonic wall clock)
+machine: Windows, 20 logical processors
+cpu: 12th Gen Intel(R) Core(TM) i7-12800H
+seed: 20261119
+log-level: 1
+max-iterations: until the SSE stops improving
+max-swaps: 5000
+repeats: 1000
+bisect-tries: 5
+bisect-select: sse
+init: random
+repartition: inward
+decimal-comma: off
+calls:
+2026-11-23 14:59:07 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --bisect-select sse --repartition inward -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M4_6b3_after_20261123_145906 --algo km,skm-random,skm-intra,skm-global,skm-global-basic,skm-local,bisecting --datasets s1,s4,a3,unbalance,dim064 -r 100
+  mode: batch; algorithms: km skm-random skm-intra skm-global skm-global-basic skm-local bisecting; runs: 1 to 100 (RKM and RS: to 100); datasets: s1,s4,a3,unbalance,dim064; track-progress: on; snapshots: none; track-inner: off
+2026-11-23 15:00:07 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --bisect-select sse --repartition inward -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M4_6b3_after_20261123_145906 --algo rkm --datasets s1,s4,a3,unbalance,dim064
+  mode: batch; algorithms: rkm; runs: 1 to 100 (RKM and RS: to 1); datasets: s1,s4,a3,unbalance,dim064; track-progress: on; snapshots: none; track-inner: off
+2026-11-23 15:00:34 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --bisect-select sse --repartition inward -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M4_6b3_after_20261123_145906 --algo km,skm-random,skm-intra,skm-global-basic --datasets worms_2d -r 10
+  mode: batch; algorithms: km skm-random skm-intra skm-global-basic; runs: 1 to 10 (RKM and RS: to 10); datasets: worms_2d; track-progress: on; snapshots: none; track-inner: off
+2026-11-23 15:02:00 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --bisect-select sse --repartition inward -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M4_6b3_after_20261123_145906 --algo skm-local,bisecting --datasets worms_2d -r 100
+  mode: batch; algorithms: skm-local bisecting; runs: 1 to 100 (RKM and RS: to 100); datasets: worms_2d; track-progress: on; snapshots: none; track-inner: off
+2026-11-23 15:04:07 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --bisect-select sse --repartition inward -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M4_6b3_after_20261123_145906 --algo km,skm-random,skm-intra,skm-local,bisecting --datasets birch1,birch2,birch3,worms_64d -r 100
+  mode: batch; algorithms: km skm-random skm-intra skm-local bisecting; runs: 1 to 100 (RKM and RS: to 100); datasets: birch1,birch2,birch3,worms_64d; track-progress: on; snapshots: none; track-inner: off
+2026-11-23 16:34:39 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --bisect-select sse --repartition inward -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M4_6b3_after_20261123_145906 --algo skm-global,skm-global-basic --datasets birch1,birch2,birch3,worms_64d -r 10
+  mode: batch; algorithms: skm-global skm-global-basic; runs: 1 to 10 (RKM and RS: to 10); datasets: birch1,birch2,birch3,worms_64d; track-progress: on; snapshots: none; track-inner: off

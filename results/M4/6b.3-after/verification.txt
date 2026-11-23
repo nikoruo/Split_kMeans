@@ -1,0 +1,41 @@
+Phase 6b verification, 2026-11-23
+
+- MinGW gcc 16 release and debug, WERROR=1 check: passed.
+- Visual Studio 2026 Release rebuild, /W4: passed with no compiler warnings.
+- Visual Studio Release CHECK_BIN check: passed.
+- Direct MSVC /W4 /WX unit tests: passed in optimized and debug builds.
+- Visual Studio clang 22 ASan and UBSan checks: passed with no sanitizer
+  reports. UBSan emitted 10 existing runtime-library LNK4217 warnings.
+- Clang MinGW-target -Wall -Wextra -Wpedantic -Werror syntax checks:
+  all 19 C files passed.
+- Each complete check matched 108 run files, 3 x 63 tracking variants,
+  3 repartition-mode files, 1 bisect-size file and 9 report files, and
+  passed the default invocation smoke tests. Golden files are unchanged.
+- Cppcheck reported 36 diagnostics (also 36 in 6.7): 31 allocation-path
+  reports, 3 FOPEN-path resource reports and 2 previously unchecked
+  LOCALTIME outputs in src/experiment.c. They were not changed in this step.
+- Linux and LeakSanitizer were not run locally: the only WSL distribution
+  was Docker Desktop's stopped internal distribution and its engine was
+  unavailable. Windows ASan has no leak checker.
+
+The Phase 6b C review identified non-finite Global-Basic trial scores and
+non-finite final KM/SKM scores as error paths. Both now fail explicitly,
+with focused tests. Random Swap retains its non-finite candidate warning
+and rejection; the user-requested RKM no-finite-SSE fallback is retained.
+The reviewer also noted that the CI MSVC job uses MinGW-built unit tests;
+the direct MSVC unit builds above were run locally, and CI coverage remains
+for plan step 8.2. The standalone unit tests now use a unique output folder,
+and passed twice in the same fixture directory.
+
+Against the pre-change release binary, Random Swap matched run/seed/SSE/CI
+on s1 and g2-1-10, four runs each with 300 swaps. All 51 s1 and 8 g2
+progress rows also matched on run/count/SSE/CI; timings were excluded.
+Existing non-finite Random Swap rejection tests passed.
+The comparison folders, sanitizer/cppcheck logs and pre-change binary
+(SHA-256 735BBC5DF830A3BC522BE934DB874E54C2DF32B3EDA56A03159A4F5D48FFA8C9)
+remain in %TEMP%\skm_6b3_cae33aaf.
+
+The last-state tests cover dense, indexed and tracked k-means, every split
+runner, cached trials, best-of-tries bisecting, and capped/unlimited RKM
+partitions. Isolated mutations returning an earlier dense, indexed or
+tracked SSE, and reassigning the unlimited RKM winner, were all detected.

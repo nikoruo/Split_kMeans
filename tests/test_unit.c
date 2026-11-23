@@ -6,12 +6,14 @@
 #include "platform.h"
 #include "baselines.h"
 #include "dataset.h"
+#include "experiment.h"
 #include "kmeans.h"
 #include "metrics.h"
 #include "rng.h"
 #include "split.h"
 #include "util.h"
 
+#include <inttypes.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -302,55 +304,333 @@ static void testKMeansView(void)
     freeDataset(&source);
 }
 
-static void testBestKMeansState(void)
+static const double roundingValues[] = {
+    9.999999999999998e19, 9.999999999999995e19, 1e20, 1.0000000000000005e20,
+    1.0000000000000002e20, 1e20, 1e20, 9.999999999999995e19, 1.0000000000000003e20,
+    1.0000000000000003e20, 1e20, 9.999999999999995e19, 9.999999999999997e19};
+static const double roundingInitial[] = {1.0000000000000005e20, 9.999999999999995e19, 1e20};
+enum { ROUNDING_COUNT = sizeof(roundingValues) / sizeof(roundingValues[0]) };
+
+static Dataset roundingDataset(void)
 {
-    const double values[] = {9.999999999999998e19, 9.999999999999995e19, 1e20, 1.0000000000000005e20,
-                             1.0000000000000002e20, 1e20, 1e20, 9.999999999999995e19,
-                             1.0000000000000003e20, 1.0000000000000003e20, 1e20,
-                             9.999999999999995e19, 9.999999999999997e19};
-    const double initial[] = {1.0000000000000005e20, 9.999999999999995e19, 1e20};
-    Dataset points = allocateDataset(13, 1);
-    Dataset dense = allocateDataset(13, 1);
-    size_t indices[13], scratch[13], viewLabels[13], denseLabels[13];
+    Dataset points = allocateDataset(ROUNDING_COUNT, 1);
     for (size_t i = 0; i < points.size; ++i)
     {
-        datasetRow(&points, i)[0] = values[i];
-        datasetRow(&dense, i)[0] = values[i];
-        indices[i] = i;
-        scratch[i] = SIZE_MAX;
+        datasetRow(&points, i)[0] = roundingValues[i];
+        points.partitions[i] = 0;
     }
-    DatasetView view = {&points, indices, scratch, 13};
-    Centroids viewCentroids = allocateCentroids(3, 1);
-    Centroids viewBest = allocateCentroids(3, 1);
+    return points;
+}
+
+static void testLastKMeansState(void)
+{
+    Dataset first = roundingDataset();
+    Dataset dense = roundingDataset();
+    Dataset indexed = roundingDataset();
+    Dataset tracked = roundingDataset();
+    Centroids firstCentroids = allocateCentroids(3, 1);
     Centroids denseCentroids = allocateCentroids(3, 1);
-    Centroids denseBest = allocateCentroids(3, 1);
-    copyCoordinates(viewCentroids.coordinates, initial, 3);
-    copyCoordinates(denseCentroids.coordinates, initial, 3);
-    double viewSse = runKMeansViewBest(&view, 10, &viewCentroids, NULL, KM_STAGE_NONE, false, &viewBest, viewLabels);
-    for (size_t i = 0; i < points.size; ++i) points.partitions[i] = viewLabels[i];
-    require(viewSse == 1879048192.0 && calculateSSE(&points, &viewBest) == viewSse,
-            "indexed k-means did not retain the best state after SSE increased");
-    double denseSse = runKMeansBest(&dense, 10, &denseCentroids, NULL, KM_STAGE_NONE, &denseBest, denseLabels);
-    require(denseSse == viewSse && calculateSSE(&dense, &denseCentroids) == denseSse &&
-                memcmp(denseCentroids.coordinates, viewBest.coordinates, 3 * sizeof(double)) == 0,
-            "dense k-means did not restore the scored best state");
+    Centroids viewCentroids = allocateCentroids(3, 1);
+    Centroids trackedCentroids = allocateCentroids(3, 1);
+    copyCoordinates(firstCentroids.coordinates, roundingInitial, 3);
+    copyCoordinates(denseCentroids.coordinates, roundingInitial, 3);
+    copyCoordinates(viewCentroids.coordinates, roundingInitial, 3);
+    copyCoordinates(trackedCentroids.coordinates, roundingInitial, 3);
+    double firstSse = runKMeans(&first, 1, &firstCentroids, NULL, KM_STAGE_NONE);
+    double denseSse = runKMeans(&dense, 10, &denseCentroids, NULL, KM_STAGE_NONE);
+    require(firstSse == 1879048192.0 && denseSse == 2147483648.0 &&
+                denseSse > firstSse && calculateSSE(&dense, &denseCentroids) == denseSse,
+            "dense k-means did not return its last non-improving state");
+
+    size_t indices[ROUNDING_COUNT], scratch[ROUNDING_COUNT];
+    for (size_t i = 0; i < ROUNDING_COUNT; ++i) indices[i] = i;
+    DatasetView view = {&indexed, indices, scratch, ROUNDING_COUNT};
+    double viewSse = runKMeansView(&view, 10, &viewCentroids, NULL, KM_STAGE_NONE, false);
+    for (size_t i = 0; i < indexed.size; ++i) indexed.partitions[i] = scratch[i];
+    require(viewSse == denseSse && calculateSSE(&indexed, &viewCentroids) == viewSse &&
+                memcmp(viewCentroids.coordinates, denseCentroids.coordinates, 3 * sizeof(double)) == 0,
+            "indexed k-means did not return the same last state as dense k-means");
+
+    TrackOptions options = {0};
+    options.rows = true;
+    Tracker tracker = trackerCreate(ALGO_KM, ".", &denseCentroids, &options);
+    trackerBeginRun(&tracker, 0);
+    double trackedSse = runKMeansWithTracking(&tracked, 10, &trackedCentroids, &tracker);
+    require(trackedSse == denseSse && calculateSSE(&tracked, &trackedCentroids) == trackedSse &&
+                tracker.rowCount == 2 && tracker.rows[1].sse == trackedSse && tracker.rows[1].ci == 0 &&
+                memcmp(trackedCentroids.coordinates, denseCentroids.coordinates, 3 * sizeof(double)) == 0,
+            "tracked k-means did not report its last state");
     for (size_t i = 0; i < dense.size; ++i)
-        require(dense.partitions[i] == viewLabels[i], "dense best-state labels differ from the indexed result");
-    Dataset last = allocateDataset(13, 1);
-    Centroids lastCentroids = allocateCentroids(3, 1);
-    copyCoordinates(last.coordinates, values, last.size);
-    copyCoordinates(lastCentroids.coordinates, initial, 3);
-    double lastSse = runKMeansLast(&last, 2, &lastCentroids, NULL, KM_STAGE_NONE);
-    require(lastSse == 2147483648.0 && calculateSSE(&last, &lastCentroids) == lastSse && lastSse > denseSse,
-            "last-state k-means returned an earlier iteration's SSE");
-    freeCentroids(&lastCentroids);
-    freeDataset(&last);
-    freeCentroids(&denseBest);
-    freeCentroids(&denseCentroids);
-    freeCentroids(&viewBest);
+        require(dense.partitions[i] == indexed.partitions[i] && dense.partitions[i] == tracked.partitions[i],
+                "dense, indexed and tracked k-means left different labels");
+    trackerPause(&tracker);
+    trackerFree(&tracker);
+    freeCentroids(&trackedCentroids);
     freeCentroids(&viewCentroids);
+    freeCentroids(&denseCentroids);
+    freeCentroids(&firstCentroids);
+    freeDataset(&tracked);
+    freeDataset(&indexed);
     freeDataset(&dense);
+    freeDataset(&first);
+}
+
+static void testLastTrialState(void)
+{
+    Dataset points = roundingDataset();
+    Centroids centroids = allocateCentroids(2, 1);
+    centroids.size = 1;
+    centroidStep(&centroids, &points);
+    ClusterIndex index = allocateClusterIndex(points.size, centroids.capacity);
+    rebuildClusterIndex(&index, &points, centroids.size);
+    double originalSse = calculateClusterSSE(&points, &centroids, 0);
+    Centroids cached = allocateCentroids(2, 1);
+    Centroids bisect = allocateCentroids(2, 1);
+    size_t cachedLabels[ROUNDING_COUNT], bisectLabels[ROUNDING_COUNT];
+    Rng first, second;
+    rng_seed(&first, 182);
+    rng_seed(&second, 182);
+    double drop = cacheTentativeSplit(&points, &index, 0, 10, originalSse, &cached, cachedLabels,
+                                      NULL, NULL, &first);
+    double bisectSse = runBisectingTrial(&points, &index, 0, 10, &bisect, bisectLabels, NULL, &second);
+    require(bisectSse == 5905580032.0 && drop == originalSse - bisectSse &&
+                memcmp(cached.coordinates, bisect.coordinates, 2 * sizeof(double)) == 0 &&
+                rng_u32(&first) == rng_u32(&second),
+            "tentative and bisecting trials did not score their last state");
+    for (size_t i = 0; i < points.size; ++i)
+        require(cachedLabels[i] < 2 && cachedLabels[i] == bisectLabels[i],
+                "the next trial overwrote saved last-state labels");
+    applyTentativeSplit(&points, &index, &centroids, 0, &cached, cachedLabels);
+    require(calculateSSE(&points, &centroids) == bisectSse,
+            "the applied tentative split does not match its last-state SSE");
+    freeCentroids(&bisect);
+    freeCentroids(&cached);
+    freeClusterIndex(&index);
+    freeCentroids(&centroids);
     freeDataset(&points);
+}
+
+static void testLastStateSplitRunners(void)
+{
+    const struct { Algorithm algorithm; uint64_t seed; } cases[] = {
+        {ALGO_SKM_RANDOM, 4}, {ALGO_SKM_INTRA, 0}, {ALGO_SKM_GLOBAL, 0},
+        {ALGO_SKM_GLOBAL_BASIC, 1}, {ALGO_SKM_LOCAL, 0}, {ALGO_BISECTING, 0},
+    };
+    Centroids truth = allocateCentroids(3, 1);
+    copyCoordinates(truth.coordinates, roundingInitial, 3);
+    for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); ++c)
+    {
+        Dataset points = roundingDataset();
+        Centroids centroids = allocateCentroids(3, 1);
+        centroids.size = 1;
+        centroidStep(&centroids, &points);
+        TrackOptions options = {0};
+        options.rows = true;
+        options.inner = true;
+        Tracker tracker = trackerCreate(cases[c].algorithm, ".", &truth, &options);
+        trackerBeginRun(&tracker, 0);
+        Rng rng;
+        rng_seed(&rng, cases[c].seed);
+        double sse;
+        if (cases[c].algorithm == ALGO_SKM_RANDOM)
+            sse = runRandomSplit(&points, &centroids, 3, 10, &tracker, &rng);
+        else if (cases[c].algorithm == ALGO_BISECTING)
+            sse = runBisectingKMeans(&points, &centroids, 3, 10, 5, BISECT_SELECT_SSE, &tracker, &rng);
+        else
+            sse = runSseSplit(&points, &centroids, 3, 10, cases[c].algorithm, REPARTITION_INWARD, &tracker, &rng);
+        KMeansStage stage = cases[c].algorithm == ALGO_SKM_GLOBAL || cases[c].algorithm == ALGO_SKM_GLOBAL_BASIC
+                                ? KM_STAGE_GLOBAL : KM_STAGE_FINAL;
+        require(tracker.rowCount > 0 && tracker.innerCount > 0 && sse == calculateSSE(&points, &centroids) &&
+                    tracker.rows[tracker.rowCount - 1].sse == sse &&
+                    tracker.rows[tracker.rowCount - 1].ci == calculateCentroidIndex(&centroids, &truth) &&
+                    tracker.innerRows[tracker.innerCount - 1].stage == stage &&
+                    tracker.innerRows[tracker.innerCount - 1].sse == sse &&
+                    tracker.innerRows[tracker.innerCount - 1].ci == tracker.rows[tracker.rowCount - 1].ci,
+                "split runner did not report the final SSE, CI and labels from the same state");
+        trackerPause(&tracker);
+        trackerFree(&tracker);
+        freeCentroids(&centroids);
+        freeDataset(&points);
+    }
+    freeCentroids(&truth);
+}
+
+static void testBisectingLastTrialWins(void)
+{
+    Dataset expected = roundingDataset();
+    Dataset actual = roundingDataset();
+    Centroids expectedCentroids = allocateCentroids(2, 1);
+    Centroids actualCentroids = allocateCentroids(2, 1);
+    expectedCentroids.size = 1;
+    actualCentroids.size = 1;
+    centroidStep(&expectedCentroids, &expected);
+    centroidRow(&actualCentroids, 0)[0] = centroidRowConst(&expectedCentroids, 0)[0];
+    ClusterIndex index = allocateClusterIndex(expected.size, expectedCentroids.capacity);
+    rebuildClusterIndex(&index, &expected, expectedCentroids.size);
+    Centroids first = allocateCentroids(2, 1);
+    Centroids second = allocateCentroids(2, 1);
+    size_t firstLabels[ROUNDING_COUNT], secondLabels[ROUNDING_COUNT];
+    Rng expectedRng, actualRng;
+    rng_seed(&expectedRng, 1);
+    rng_seed(&actualRng, 1);
+    double firstSse = runBisectingTrial(&expected, &index, 0, 10, &first, firstLabels, NULL, &expectedRng);
+    double secondSse = runBisectingTrial(&expected, &index, 0, 10, &second, secondLabels, NULL, &expectedRng);
+    require(firstSse == 5905580032.0 && secondSse == 4026531840.0 && firstSse > secondSse,
+            "bisecting fixture did not distinguish the last scores of its tries");
+    applyTentativeSplit(&expected, &index, &expectedCentroids, 0, &second, secondLabels);
+    double expectedSse = runKMeans(&expected, 10, &expectedCentroids, NULL, KM_STAGE_FINAL);
+
+    TrackOptions options = {0};
+    options.rows = true;
+    options.inner = true;
+    Tracker tracker = trackerCreate(ALGO_BISECTING, ".", &expectedCentroids, &options);
+    trackerBeginRun(&tracker, 0);
+    double actualSse = runBisectingKMeans(&actual, &actualCentroids, 2, 10, 2, BISECT_SELECT_SSE,
+                                          &tracker, &actualRng);
+    require(actualSse == expectedSse && calculateSSE(&actual, &actualCentroids) == actualSse &&
+                tracker.rowCount == 3 && tracker.rows[1].sse == secondSse &&
+                tracker.rows[2].sse == actualSse && tracker.rows[2].ci == 0 &&
+                memcmp(actualCentroids.coordinates, expectedCentroids.coordinates, 2 * sizeof(double)) == 0 &&
+                rng_u32(&actualRng) == rng_u32(&expectedRng),
+            "bisecting did not apply the try with the best last-state SSE");
+    for (size_t i = 0; i < actual.size; ++i)
+        require(actual.partitions[i] == expected.partitions[i], "bisecting applied the wrong trial labels");
+    trackerPause(&tracker);
+    trackerFree(&tracker);
+    freeCentroids(&second);
+    freeCentroids(&first);
+    freeClusterIndex(&index);
+    freeCentroids(&actualCentroids);
+    freeCentroids(&expectedCentroids);
+    freeDataset(&actual);
+    freeDataset(&expected);
+}
+
+static void checkDirectSnapshot(const char* directory, const char* algorithm, const Dataset* points,
+                                const Centroids* truth, const size_t* labels, double expectedSse)
+{
+    char name[96], path[PATH_MAX], line[512];
+    int length = snprintf(name, sizeof(name), "%s_runs.csv", algorithm);
+    require(length >= 0 && (size_t)length < sizeof(name), "direct run file name too long");
+    joinPath(path, sizeof(path), directory, name);
+    FILE* file = fopen(path, "r");
+    require(file != NULL && fgets(line, sizeof(line), file) != NULL && fgets(line, sizeof(line), file) != NULL,
+            "missing direct run result");
+    size_t run = 0, ci = CI_NA;
+    double sse = 0.0;
+    require(sscanf(line, "%zu;%*[^;];%lf;%zu;", &run, &sse, &ci) == 3 && run == 1 && ci == 0 &&
+                sse == expectedSse && fgets(line, sizeof(line), file) == NULL && !ferror(file),
+            "direct run reported the wrong SSE or CI");
+    closeFixture(file);
+
+    length = snprintf(name, sizeof(name), "%s_centroids_perfect.txt", algorithm);
+    require(length >= 0 && (size_t)length < sizeof(name), "direct centroid snapshot name too long");
+    joinPath(path, sizeof(path), directory, name);
+    Centroids centroids = readCentroids(path);
+    require(calculateSSE(points, &centroids) == sse && calculateCentroidIndex(&centroids, truth) == ci,
+            "direct run SSE and CI do not match its saved centroids and labels");
+    length = snprintf(name, sizeof(name), "%s_partitions_perfect.txt", algorithm);
+    require(length >= 0 && (size_t)length < sizeof(name), "direct partition snapshot name too long");
+    joinPath(path, sizeof(path), directory, name);
+    file = fopen(path, "r");
+    require(file != NULL, "missing direct partition snapshot");
+    for (size_t i = 0; i < points->size; ++i)
+    {
+        size_t label = SIZE_MAX;
+        require(fscanf(file, "%zu", &label) == 1 && label == labels[i] && points->partitions[i] == labels[i],
+                "direct run did not retain the winning last-state labels");
+    }
+    size_t extra = 0;
+    require(fscanf(file, "%zu", &extra) == EOF && !ferror(file), "unexpected direct snapshot labels");
+    closeFixture(file);
+    freeCentroids(&centroids);
+}
+
+static void testKmAndRkmLastState(const char* directory)
+{
+    Dataset reference = roundingDataset();
+    Dataset nearest = roundingDataset();
+    Centroids first = allocateCentroids(3, 1);
+    Centroids second = allocateCentroids(3, 1);
+    Rng rng;
+    rng_seed(&rng, rng_derive_seed(4, 0));
+    initialCentroids(INIT_RANDOM, 3, &reference, &first, &rng);
+    double firstSse = runKMeans(&reference, SIZE_MAX, &first, NULL, KM_STAGE_NONE);
+    size_t winningLabels[ROUNDING_COUNT];
+    memcpy(winningLabels, reference.partitions, sizeof(winningLabels));
+    partitionStep(&nearest, &first);
+    bool differsFromReassignment = false;
+    for (size_t i = 0; i < reference.size; ++i)
+        differsFromReassignment |= nearest.partitions[i] != winningLabels[i];
+    initialCentroids(INIT_RANDOM, 3, &reference, &second, &rng);
+    double secondSse = runKMeans(&reference, SIZE_MAX, &second, NULL, KM_STAGE_NONE);
+    bool differsFromLastRepeat = false;
+    for (size_t i = 0; i < reference.size; ++i)
+        differsFromLastRepeat |= reference.partitions[i] != winningLabels[i];
+    require(firstSse == 1879048192.0 && secondSse == 2147483648.0 && firstSse < secondSse &&
+                differsFromReassignment && differsFromLastRepeat,
+            "RKM fixture did not distinguish the winning labels from reassignment and the last repeat");
+
+    TrackOptions options = {0};
+    options.rows = true;
+    char name[64], testDirectory[PATH_MAX], output[PATH_MAX];
+    int length = snprintf(name, sizeof(name), "last-state-%" PRIu64, platform_ticks());
+    require(length >= 0 && (size_t)length < sizeof(name), "last-state test directory name too long");
+    joinPath(testDirectory, sizeof(testDirectory), directory, name);
+    require(MAKE_DIR(testDirectory) == 0, "could not create unique last-state test directory");
+    joinPath(output, sizeof(output), testDirectory, "km");
+    require(platform_make_directories(output), "could not create last-state KM directory");
+    Dataset km = roundingDataset();
+    runKMeansAlgorithm(&km, &first, 3, SIZE_MAX, 0, 1, 1, "last-state", output, &options, INIT_RANDOM, 4);
+    checkDirectSnapshot(output, "KM", &km, &first, winningLabels, firstSse);
+
+    joinPath(output, sizeof(output), testDirectory, "rkm");
+    require(platform_make_directories(output), "could not create last-state RKM directory");
+    Dataset rkm = roundingDataset();
+    runRepeatedKMeansAlgorithm(&rkm, &first, 3, SIZE_MAX, 2, 0, 1, 1, "last-state", output,
+                               &options, INIT_RANDOM, 4);
+    checkDirectSnapshot(output, "RKM", &rkm, &first, winningLabels, firstSse);
+
+    freeDataset(&rkm);
+    freeDataset(&km);
+    freeCentroids(&second);
+    freeCentroids(&first);
+    freeDataset(&nearest);
+    freeDataset(&reference);
+}
+
+static void testRkmNoFiniteFallback(const char* directory)
+{
+    const double values[] = {1e308, -1e308, 0};
+    Dataset reference = allocateDataset(3, 1);
+    Dataset actual = allocateDataset(3, 1);
+    for (size_t i = 0; i < reference.size; ++i)
+    {
+        datasetRow(&reference, i)[0] = values[i];
+        datasetRow(&actual, i)[0] = values[i];
+    }
+    Centroids centroids = allocateCentroids(2, 1);
+    Rng rng;
+    rng_seed(&rng, rng_derive_seed(0, 0));
+    initialCentroids(INIT_RANDOM, 2, &reference, &centroids, &rng);
+    double trialSse = runKMeans(&reference, 1, &centroids, NULL, KM_STAGE_NONE);
+    require(!isfinite(trialSse) &&
+                (reference.partitions[0] != 0 || reference.partitions[1] != 0 || reference.partitions[2] != 0),
+            "RKM fallback fixture did not produce a non-finite trial with distinct labels");
+
+    char name[64], output[PATH_MAX];
+    int length = snprintf(name, sizeof(name), "rkm-fallback-%" PRIu64, platform_ticks());
+    require(length >= 0 && (size_t)length < sizeof(name), "RKM fallback directory name too long");
+    joinPath(output, sizeof(output), directory, name);
+    require(MAKE_DIR(output) == 0, "could not create unique RKM fallback directory");
+    TrackOptions options = {0};
+    runRepeatedKMeansAlgorithm(&actual, NULL, 2, 1, 1, 0, 1, 1, "fallback", output, &options, INIT_RANDOM, 0);
+    for (size_t i = 0; i < actual.size; ++i)
+        require(actual.partitions[i] == 0, "RKM did not use its no-finite-SSE partition fallback");
+
+    freeCentroids(&centroids);
+    freeDataset(&actual);
+    freeDataset(&reference);
 }
 
 static void testRepartition(void)
@@ -859,7 +1139,41 @@ static void testCachedTrialMembership(void)
     freeDataset(&points);
 }
 
-static void testSelectedTrialIsApplied(void)
+static TrackOptions splitSnapshots(size_t first, size_t last)
+{
+    TrackOptions options = {0};
+    options.snapshots.enabled = true;
+    options.snapshots.split = true;
+    options.snapshots.runs.all = true;
+    options.snapshots.counts.rangeCount = 1;
+    options.snapshots.counts.low[0] = first;
+    options.snapshots.counts.high[0] = last;
+    return options;
+}
+
+static Centroids readSnapshotState(const char* directory, const char* algorithm, size_t count, const char* phase,
+                                   Dataset* points)
+{
+    char name[128], path[PATH_MAX];
+    int length = snprintf(name, sizeof(name), "%s_run001_iter%04zu_%s_centroids.txt", algorithm, count, phase);
+    require(length >= 0 && (size_t)length < sizeof(name), "snapshot centroid name too long");
+    joinPath(path, sizeof(path), directory, name);
+    Centroids centroids = readCentroids(path);
+
+    length = snprintf(name, sizeof(name), "%s_run001_iter%04zu_%s_partitions.txt", algorithm, count, phase);
+    require(length >= 0 && (size_t)length < sizeof(name), "snapshot partition name too long");
+    joinPath(path, sizeof(path), directory, name);
+    FILE* file = fopen(path, "r");
+    require(file != NULL, "could not read snapshot partitions");
+    for (size_t i = 0; i < points->size; ++i)
+        require(fscanf(file, "%zu", &points->partitions[i]) == 1, "invalid snapshot partition");
+    size_t extra = 0;
+    require(fscanf(file, "%zu", &extra) == EOF && !ferror(file), "unexpected extra snapshot partitions");
+    closeFixture(file);
+    return centroids;
+}
+
+static void testSelectedTrialIsApplied(const char* directory)
 {
     const double values[] = {0, 2, 3, 10, 20, 22, 23, 30};
     const uint64_t seed = 1;
@@ -917,11 +1231,249 @@ static void testSelectedTrialIsApplied(void)
             "SSE-split did not apply the evaluated trial");
     trackerPause(&tracker);
     trackerFree(&tracker);
+
+    char output[PATH_MAX];
+    joinPath(output, sizeof(output), directory, "selected-global");
+    require(platform_make_directories(output), "could not create global snapshot directory");
+    TrackOptions globalOptions = splitSnapshots(2, 2);
+    Tracker globalTracker = trackerCreate(ALGO_SKM_GLOBAL, output, NULL, &globalOptions);
+    trackerBeginRun(&globalTracker, 0);
+    for (size_t i = 0; i < actual.size; ++i) actual.partitions[i] = 0;
+    actualCentroids.size = 1;
+    centroidRow(&actualCentroids, 0)[0] = 0;
+    rng_seed(&rng, seed);
+    (void)runSseSplit(&actual, &actualCentroids, 3, 1, ALGO_SKM_GLOBAL, REPARTITION_INWARD, &globalTracker, &rng);
+    trackerPause(&globalTracker);
+    trackerFree(&globalTracker);
+
+    Dataset snapshot = allocateDataset(expected.size, expected.dimensions);
+    Centroids snapshotCentroids = readSnapshotState(output, "SKM_Global", 2, "split", &snapshot);
+    require(snapshotCentroids.size == expectedCentroids.size &&
+                snapshotCentroids.dimensions == expectedCentroids.dimensions,
+            "global split snapshot has the wrong centroid shape");
+    for (size_t c = 0; c < snapshotCentroids.size; ++c)
+        require(centroidRowConst(&snapshotCentroids, c)[0] == centroidRowConst(&expectedCentroids, c)[0],
+                "global split did not apply the evaluated centroids");
+    for (size_t i = 0; i < snapshot.size; ++i)
+        require(snapshot.partitions[i] == expected.partitions[i],
+                "global split did not apply the evaluated labels");
+    freeCentroids(&snapshotCentroids);
+    freeDataset(&snapshot);
+
     freeClusterIndex(&legacyIndex);
     freeCentroids(&legacyCentroids);
     freeDataset(&legacy);
     freeCentroids(&trials[1]);
     freeCentroids(&trials[0]);
+    freeClusterIndex(&index);
+    freeCentroids(&actualCentroids);
+    freeCentroids(&expectedCentroids);
+    freeDataset(&actual);
+    freeDataset(&expected);
+}
+
+static void testLocalCachedTrialAcrossSplits(const char* directory)
+{
+    const double values[] = {0, 2, 3, 10, 20, 22, 23, 30, 100, 102, 103, 110};
+    Dataset initial = allocateDataset(12, 1);
+    Dataset actual = allocateDataset(12, 1);
+    Centroids initialCentroids = allocateCentroids(5, 1);
+    Centroids actualCentroids = allocateCentroids(5, 1);
+    initialCentroids.size = 1;
+    actualCentroids.size = 1;
+    for (size_t i = 0; i < initial.size; ++i)
+    {
+        datasetRow(&initial, i)[0] = values[i];
+        datasetRow(&actual, i)[0] = values[i];
+        initial.partitions[i] = 0;
+        actual.partitions[i] = 0;
+    }
+    centroidStep(&initialCentroids, &initial);
+    centroidRow(&actualCentroids, 0)[0] = centroidRowConst(&initialCentroids, 0)[0];
+
+    ClusterIndex index = allocateClusterIndex(initial.size, initialCentroids.capacity);
+    rebuildClusterIndex(&index, &initial, initialCentroids.size);
+    Rng rng;
+    rng_seed(&rng, 3);
+    splitClusterIntraCluster(&initial, &index, &initialCentroids, 0, 1, NULL, &rng);
+    bool affected[5] = {false};
+    localRepartition(&initial, &index, &initialCentroids, 0, REPARTITION_INWARD, affected);
+    size_t retained = initial.partitions[8];
+    size_t other = initial.partitions[0];
+    require(retained != other && index.eligible[retained], "local cache fixture did not separate its clusters");
+    for (size_t i = 0; i < initial.size; ++i)
+        require(initial.partitions[i] == (i < 8 ? other : retained), "local cache fixture has unexpected members");
+
+    Centroids trials[2] = {allocateCentroids(2, 1), allocateCentroids(2, 1)};
+    size_t labels[12] = {0};
+    for (size_t c = 0; c < 2; ++c)
+        (void)cacheTentativeSplit(&initial, &index, c, 1,
+                                  calculateClusterSSE(&initial, &initialCentroids, c),
+                                  &trials[c], labels, NULL, NULL, &rng);
+
+    char output[PATH_MAX];
+    joinPath(output, sizeof(output), directory, "cached-local");
+    require(platform_make_directories(output), "could not create local snapshot directory");
+    TrackOptions options = splitSnapshots(3, 4);
+    Tracker tracker = trackerCreate(ALGO_SKM_LOCAL, output, NULL, &options);
+    trackerBeginRun(&tracker, 0);
+    rng_seed(&rng, 3);
+    (void)runSseSplit(&actual, &actualCentroids, 5, 1, ALGO_SKM_LOCAL, REPARTITION_INWARD, &tracker, &rng);
+    trackerPause(&tracker);
+    trackerFree(&tracker);
+
+    Dataset previous = allocateDataset(12, 1);
+    Dataset split = allocateDataset(12, 1);
+    Centroids previousCentroids = readSnapshotState(output, "SKM_Local", 3, "step", &previous);
+    Centroids splitCentroids = readSnapshotState(output, "SKM_Local", 4, "split", &split);
+    require(previousCentroids.size == 4 && splitCentroids.size == 5 &&
+                previousCentroids.dimensions == 1 && splitCentroids.dimensions == 1,
+            "local cache snapshots have the wrong centroid shape");
+    require(centroidRowConst(&previousCentroids, retained)[0] ==
+                centroidRowConst(&initialCentroids, retained)[0],
+            "untouched local cluster's centroid changed before selection");
+
+    bool seen[5] = {false};
+    for (size_t i = 0; i < 8; ++i)
+    {
+        require(previous.partitions[i] < 4 && previous.partitions[i] != retained &&
+                    split.partitions[i] == previous.partitions[i],
+                "local cached split changed an unrelated point");
+        seen[previous.partitions[i]] = true;
+    }
+    size_t otherClusters = 0;
+    for (size_t c = 0; c < 4; ++c)
+    {
+        if (seen[c]) ++otherClusters;
+        if (c != retained)
+            require(centroidRowConst(&splitCentroids, c)[0] == centroidRowConst(&previousCentroids, c)[0],
+                    "local cached split changed an unrelated centroid");
+    }
+    require(otherClusters == 3, "local fixture did not split the other cluster twice");
+
+    bool oldChild = false, newChild = false;
+    for (size_t i = 8; i < 12; ++i)
+    {
+        require(previous.partitions[i] == retained && labels[i] < 2 &&
+                    split.partitions[i] == (labels[i] == 0 ? retained : 4),
+                "local split did not retain the untouched trial labels");
+        oldChild |= labels[i] == 0;
+        newChild |= labels[i] == 1;
+    }
+    require(oldChild && newChild &&
+                centroidRowConst(&splitCentroids, retained)[0] == centroidRowConst(&trials[retained], 0)[0] &&
+                centroidRowConst(&splitCentroids, 4)[0] == centroidRowConst(&trials[retained], 1)[0],
+            "local split did not retain the untouched trial centroids");
+
+    freeCentroids(&splitCentroids);
+    freeCentroids(&previousCentroids);
+    freeDataset(&split);
+    freeDataset(&previous);
+    freeCentroids(&trials[1]);
+    freeCentroids(&trials[0]);
+    freeClusterIndex(&index);
+    freeCentroids(&actualCentroids);
+    freeCentroids(&initialCentroids);
+    freeDataset(&actual);
+    freeDataset(&initial);
+}
+
+static void testSplitSeedFallback(void)
+{
+    const double values[] = {0, 0, 0, 10, 20};
+    const uint64_t seeds[] = {34, 37};
+    const double firstMeans[] = {0, 2.5};
+    const double secondMeans[] = {15, 20};
+    Dataset points = allocateDataset(5, 1);
+    Centroids centroids = allocateCentroids(2, 1);
+    for (size_t i = 0; i < points.size; ++i)
+        datasetRow(&points, i)[0] = values[i];
+    ClusterIndex index = allocateClusterIndex(points.size, centroids.capacity);
+    for (size_t rank = 0; rank < 2; ++rank)
+    {
+        centroids.size = 1;
+        centroidRow(&centroids, 0)[0] = 0;
+        for (size_t i = 0; i < points.size; ++i) points.partitions[i] = 0;
+        rebuildClusterIndex(&index, &points, centroids.size);
+        Rng actual, expected;
+        rng_seed(&actual, seeds[rank]);
+        rng_seed(&expected, seeds[rank]);
+        for (size_t i = 0; i <= points.size; ++i)
+            require(rng_below(&expected, points.size) < 3, "split fallback fixture did not exhaust its redraws");
+        Rng withoutFallback = expected;
+        require(rng_below(&withoutFallback, points.size) < 3 && rng_below(&expected, 2) == rank,
+                "split fallback fixture did not exercise the eligible-row selection");
+
+        splitClusterIntraCluster(&points, &index, &centroids, 0, 1, NULL, &actual);
+        require(centroids.size == 2 && centroidRowConst(&centroids, 0)[0] == firstMeans[rank] &&
+                    centroidRowConst(&centroids, 1)[0] == secondMeans[rank],
+                "split seed fallback did not select the expected distinct row");
+        for (size_t i = 0; i < 3; ++i)
+            require(points.partitions[i] == 0, "split seed fallback produced incorrect labels");
+        require(points.partitions[3] == (rank == 0 ? 1u : 0u) && points.partitions[4] == 1,
+                "split seed fallback produced incorrect labels");
+        require(rng_u32(&actual) == rng_u32(&expected), "split seed fallback consumed the wrong random draws");
+    }
+
+    freeClusterIndex(&index);
+    freeCentroids(&centroids);
+    freeDataset(&points);
+}
+
+static void testRandomSplitRankFallback(void)
+{
+    const double values[] = {0, 200, 10, 100, 220, 12, 100, 250, 30, 31};
+    const size_t labels[] = {0, 3, 1, 2, 3, 1, 2, 3, 1, 1};
+    const size_t rejected[] = {2, 0, 0, 0};
+    Dataset expected = allocateDataset(10, 1);
+    Dataset actual = allocateDataset(10, 1);
+    Centroids expectedCentroids = allocateCentroids(5, 1);
+    Centroids actualCentroids = allocateCentroids(5, 1);
+    expectedCentroids.size = 4;
+    actualCentroids.size = 4;
+    for (size_t i = 0; i < expected.size; ++i)
+    {
+        datasetRow(&expected, i)[0] = values[i];
+        datasetRow(&actual, i)[0] = values[i];
+        expected.partitions[i] = labels[i];
+        actual.partitions[i] = labels[i];
+    }
+    centroidStep(&expectedCentroids, &expected);
+    copyCoordinates(actualCentroids.coordinates, expectedCentroids.coordinates, 4);
+    ClusterIndex index = allocateClusterIndex(expected.size, expectedCentroids.capacity);
+    require(rebuildClusterIndex(&index, &expected, expectedCentroids.size) == 2 &&
+                !index.eligible[0] && index.eligible[1] && !index.eligible[2] && index.eligible[3],
+            "random split fallback fixture has unexpected eligibility");
+
+    Rng actualRng, expectedRng;
+    rng_seed(&actualRng, 106);
+    rng_seed(&expectedRng, 106);
+    for (size_t i = 0; i < 4; ++i)
+        require(rng_below(&expectedRng, 4) == rejected[i], "random split fallback fixture did not exhaust its draws");
+    Rng withoutFallback = expectedRng;
+    require(rng_below(&withoutFallback, 4) == 2 && rng_below(&expectedRng, 2) == 1,
+            "random split fallback fixture did not select the second eligible cluster");
+
+    splitClusterIntraCluster(&expected, &index, &expectedCentroids, 3, 1, NULL, &expectedRng);
+    double expectedStepSse = calculateSSE(&expected, &expectedCentroids);
+    double expectedFinalSse = runKMeans(&expected, 1, &expectedCentroids, NULL, KM_STAGE_FINAL);
+    TrackOptions options = {0};
+    options.rows = true;
+    Tracker tracker = trackerCreate(ALGO_SKM_RANDOM, ".", NULL, &options);
+    trackerBeginRun(&tracker, 0);
+    double actualSse = runRandomSplit(&actual, &actualCentroids, 5, 1, &tracker, &actualRng);
+    require(tracker.rowCount == 3 && tracker.rows[1].sse == expectedStepSse && actualSse == expectedFinalSse,
+            "random split fallback did not split the selected eligible cluster");
+    for (size_t c = 0; c < actualCentroids.size; ++c)
+        require(centroidRowConst(&actualCentroids, c)[0] == centroidRowConst(&expectedCentroids, c)[0],
+                "random split fallback produced incorrect centroids");
+    for (size_t i = 0; i < actual.size; ++i)
+        require(actual.partitions[i] == expected.partitions[i], "random split fallback produced incorrect labels");
+    require(rng_u32(&actualRng) == rng_u32(&expectedRng),
+            "random split fallback consumed the wrong random draws");
+
+    trackerPause(&tracker);
+    trackerFree(&tracker);
     freeClusterIndex(&index);
     freeCentroids(&actualCentroids);
     freeCentroids(&expectedCentroids);
@@ -1174,9 +1726,9 @@ static void testDistinctSplitEligibility(void)
         rebuildClusterIndex(&index, &points, 1);
         rng_seed(&actual, seedForPair(4, 0, 1));
         if (basic)
-            (void)splitClusterGlobal(&points, &index, &centroids, 0, 0, NULL, &actual);
+            (void)splitClusterGlobal(&points, &index, &centroids, 0, 1, NULL, &actual);
         else
-            splitClusterIntraCluster(&points, &index, &centroids, 0, 0, NULL, &actual);
+            splitClusterIntraCluster(&points, &index, &centroids, 0, 1, NULL, &actual);
         require(centroids.size == 2 && centroidRow(&centroids, 0)[0] == 0 &&
                     centroidRow(&centroids, 1)[0] == 10,
                 "split selected equal-coordinate seeds");
@@ -1218,14 +1770,27 @@ static void testInvalidInternalInputs(const char* executable, const char* direct
     int length = snprintf(errorPath, sizeof(errorPath), "%s%cinvalid-allocation.txt", directory, PATHSEP);
     require(length >= 0 && (size_t)length < sizeof(errorPath), "invalid allocation fixture path too long");
     const char* modes[] = {"--overflow", "--index-overflow", "--zero-dataset", "--zero-centroid-dimensions",
+                           "--zero-kmeans-core", "--zero-kmeans-view", "--zero-kmeans-tracked",
                            "--zero-sse-split", "--zero-bisect-iterations", "--zero-bisect-tries",
-                           "--nonfinite-rs-initial", "--unsplittable-split", "--too-few-distinct-init"};
+                           "--nonfinite-rs-initial", "--nonfinite-bisect-final", "--nonfinite-kmeans-tracked",
+                           "--nonfinite-random-final", "--nonfinite-sse-final", "--nonfinite-basic-original",
+                           "--nonfinite-basic-trial", "--unsplittable-split",
+                           "--too-few-distinct-init"};
     const char* messages[] = {"exceeds addressable memory", "Invalid cluster index size",
                               "Invalid dataset dimensions", "Invalid dataset dimensions",
+                              "K-means requires at least one iteration",
+                              "K-means requires at least one iteration",
+                              "K-means requires at least one iteration",
                               "SSE split requires at least one k-means iteration",
                               "Bisecting k-means requires positive iterations and tries",
                               "Bisecting k-means requires positive iterations and tries",
                               "Random Swap initial SSE is not finite",
+                              "Bisecting k-means produced no finite final SSE",
+                              "K-means produced a non-finite SSE",
+                              "SKM_Random produced a non-finite k-means SSE",
+                              "SKM_Intra produced a non-finite k-means SSE",
+                              "Cannot evaluate split of cluster 0: non-finite SSE",
+                              "Cannot evaluate split of cluster 0: no finite trial SSE",
                               "found no cluster with two distinct data points",
                               "exceeds the number of distinct data points"};
     for (size_t i = 0; i < sizeof(modes) / sizeof(modes[0]); ++i)
@@ -1242,6 +1807,39 @@ static void testInvalidInternalInputs(const char* executable, const char* direct
         closeFixture(errors);
     }
     require(remove(errorPath) == 0, "could not remove allocation fixture");
+}
+
+static void testZeroIterationRunners(const char* executable, const char* directory)
+{
+    const struct
+    {
+        const char* mode;
+        const char* message;
+    } cases[] = {
+        {"--zero-kmeans", "Error: K-means requires at least one iteration"},
+        {"--zero-rkm", "Error: Repeated k-means requires at least one iteration"},
+        {"--zero-random-k1", "Error: Random Split requires at least one k-means iteration"},
+        {"--zero-random-k2", "Error: Random Split requires at least one k-means iteration"},
+    };
+    char errorPath[PATH_MAX];
+    char command[3 * PATH_MAX + 96];
+    int length = snprintf(errorPath, sizeof(errorPath), "%s%czero-iterations.txt", directory, PATHSEP);
+    require(length >= 0 && (size_t)length < sizeof(errorPath), "zero-iteration error path too long");
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i)
+    {
+        length = snprintf(command, sizeof(command), "cd . && \"%s\" %s \"%s\" 2> \"%s\"",
+                          executable, cases[i].mode, directory, errorPath);
+        require(length >= 0 && (size_t)length < sizeof(command), "zero-iteration command too long");
+        int status = system(command);
+        require(status != -1 && status != 0, "zero iteration limit did not fail");
+        FILE* errors = fopen(errorPath, "r");
+        require(errors != NULL, "could not read zero-iteration error");
+        char line[256];
+        require(fgets(line, sizeof(line), errors) != NULL && strstr(line, cases[i].message) != NULL,
+                "zero iteration limit did not report its error");
+        closeFixture(errors);
+    }
+    require(remove(errorPath) == 0, "could not remove zero-iteration fixture");
 }
 
 static void testDatasetParser(const char* executable, const char* directory)
@@ -2403,6 +3001,30 @@ int main(int argc, char* argv[])
         freeCentroids(&centroids);
         return EXIT_SUCCESS;
     }
+    if (argc == 2 && (strcmp(argv[1], "--zero-kmeans-core") == 0 ||
+                      strcmp(argv[1], "--zero-kmeans-view") == 0 ||
+                      strcmp(argv[1], "--zero-kmeans-tracked") == 0))
+    {
+        double coordinate = 0;
+        size_t partition = 0;
+        Dataset points = {&coordinate, &partition, 1, 1};
+        Centroids centroids = {&coordinate, 1, 1, 1};
+        if (strcmp(argv[1], "--zero-kmeans-core") == 0)
+            (void)runKMeans(&points, 0, &centroids, NULL, KM_STAGE_NONE);
+        else if (strcmp(argv[1], "--zero-kmeans-view") == 0)
+        {
+            size_t index = 0;
+            DatasetView view = {&points, &index, &partition, 1};
+            (void)runKMeansView(&view, 0, &centroids, NULL, KM_STAGE_NONE, false);
+        }
+        else
+        {
+            TrackOptions options = {0};
+            Tracker tracker = trackerCreate(ALGO_KM, ".", NULL, &options);
+            (void)runKMeansWithTracking(&points, 0, &centroids, &tracker);
+        }
+        return EXIT_SUCCESS;
+    }
     if (argc == 2 && strcmp(argv[1], "--zero-sse-split") == 0)
     {
         double coordinate = 0;
@@ -2444,6 +3066,56 @@ int main(int argc, char* argv[])
         Rng rng;
         rng_seed(&rng, 1);
         (void)randomSwap(&points, &centroids, 1, 2, &tracker, &rng);
+        return EXIT_SUCCESS;
+    }
+    if (argc == 2 && strcmp(argv[1], "--nonfinite-bisect-final") == 0)
+    {
+        double coordinates[] = {1e308, -1e308};
+        size_t labels[] = {0, 0};
+        double initial = 0;
+        Dataset points = {coordinates, labels, 2, 1};
+        Centroids centroids = {&initial, 1, 1, 1};
+        TrackOptions options = {0};
+        Tracker tracker = trackerCreate(ALGO_BISECTING, ".", NULL, &options);
+        Rng rng;
+        rng_seed(&rng, 1);
+        (void)runBisectingKMeans(&points, &centroids, 1, 1, 1, BISECT_SELECT_SSE, &tracker, &rng);
+        return EXIT_SUCCESS;
+    }
+    if (argc == 2 && (strcmp(argv[1], "--nonfinite-kmeans-tracked") == 0 ||
+                      strcmp(argv[1], "--nonfinite-random-final") == 0 ||
+                      strcmp(argv[1], "--nonfinite-sse-final") == 0))
+    {
+        double coordinates[] = {1e308, -1e308};
+        size_t labels[] = {0, 0};
+        double initial = 0;
+        Dataset points = {coordinates, labels, 2, 1};
+        Centroids centroids = {&initial, 1, 1, 1};
+        TrackOptions options = {0};
+        Tracker tracker = trackerCreate(ALGO_SKM_INTRA, ".", NULL, &options);
+        Rng rng;
+        rng_seed(&rng, 1);
+        if (strcmp(argv[1], "--nonfinite-kmeans-tracked") == 0)
+            (void)runKMeansWithTracking(&points, 1, &centroids, &tracker);
+        else if (strcmp(argv[1], "--nonfinite-random-final") == 0)
+            (void)runRandomSplit(&points, &centroids, 1, 1, &tracker, &rng);
+        else
+            (void)runSseSplit(&points, &centroids, 1, 1, ALGO_SKM_INTRA, REPARTITION_INWARD, &tracker, &rng);
+        return EXIT_SUCCESS;
+    }
+    if (argc == 2 && (strcmp(argv[1], "--nonfinite-basic-original") == 0 ||
+                      strcmp(argv[1], "--nonfinite-basic-trial") == 0))
+    {
+        double coordinates[] = {0, 1e308, -1e308};
+        size_t labels[] = {0, 0, 0};
+        Dataset points = {coordinates, labels, 3, 1};
+        ClusterIndex index = allocateClusterIndex(points.size, 1);
+        rebuildClusterIndex(&index, &points, 1);
+        Rng rng;
+        rng_seed(&rng, 1);
+        double originalSse = strcmp(argv[1], "--nonfinite-basic-original") == 0 ? INFINITY : 0.0;
+        (void)tentativeSseDrop(&points, &index, 0, 1, originalSse, &rng);
+        freeClusterIndex(&index);
         return EXIT_SUCCESS;
     }
     if (argc == 2 && strcmp(argv[1], "--nonfinite-rs-trial") == 0)
@@ -2494,6 +3166,30 @@ int main(int argc, char* argv[])
         generateRandomCentroids(3, &points, &centroids, &rng);
         return EXIT_SUCCESS;
     }
+    if (argc == 3 && (strcmp(argv[1], "--zero-kmeans") == 0 || strcmp(argv[1], "--zero-rkm") == 0 ||
+                      strcmp(argv[1], "--zero-random-k1") == 0 || strcmp(argv[1], "--zero-random-k2") == 0))
+    {
+        double coordinates[] = {0, 10};
+        size_t labels[] = {0, 0};
+        Dataset points = {coordinates, labels, 2, 1};
+        TrackOptions options = {0};
+        if (strcmp(argv[1], "--zero-kmeans") == 0)
+            runKMeansAlgorithm(&points, NULL, 1, 0, 0, 1, 1, "zero-limit", argv[2], &options, INIT_RANDOM, 1);
+        else if (strcmp(argv[1], "--zero-rkm") == 0)
+            runRepeatedKMeansAlgorithm(&points, NULL, 1, 0, 1, 0, 1, 1, "zero-limit", argv[2], &options,
+                                       INIT_RANDOM, 1);
+        else
+        {
+            double initial[] = {5, 0};
+            Centroids centroids = {initial, 1, 2, 1};
+            Tracker tracker = trackerCreate(ALGO_SKM_RANDOM, argv[2], NULL, &options);
+            Rng rng;
+            rng_seed(&rng, 1);
+            size_t k = strcmp(argv[1], "--zero-random-k1") == 0 ? 1 : 2;
+            (void)runRandomSplit(&points, &centroids, k, 0, &tracker, &rng);
+        }
+        return EXIT_SUCCESS;
+    }
     if (argc == 3 && strcmp(argv[1], "--data") == 0)
     {
         Dataset points = readDataset(argv[2]);
@@ -2511,6 +3207,7 @@ int main(int argc, char* argv[])
     testNumbers();
     testDatasetParser(argv[0], argv[1]);
     testInvalidInternalInputs(argv[0], argv[1]);
+    testZeroIterationRunners(argv[0], argv[1]);
     testNonfiniteRandomSwap(argv[0], argv[1]);
     testFlatStorage();
     testMetrics();
@@ -2518,7 +3215,12 @@ int main(int argc, char* argv[])
     testDistinctInitialization();
     testKMeans();
     testKMeansView();
-    testBestKMeansState();
+    testLastKMeansState();
+    testLastTrialState();
+    testLastStateSplitRunners();
+    testBisectingLastTrialWins();
+    testKmAndRkmLastState(argv[1]);
+    testRkmNoFiniteFallback(argv[1]);
     testRepartition();
     testRandomSwapRepartition();
     testRandomSwapAcceptance();
@@ -2528,7 +3230,10 @@ int main(int argc, char* argv[])
     testLocalRepartitionModes();
     testCachedTentativeSplit();
     testCachedTrialMembership();
-    testSelectedTrialIsApplied();
+    testSelectedTrialIsApplied(argv[1]);
+    testLocalCachedTrialAcrossSplits(argv[1]);
+    testSplitSeedFallback();
+    testRandomSplitRankFallback();
     testBisectingFirstTries();
     testBisectSelection();
     testLocalFirstAndFinalSplit();

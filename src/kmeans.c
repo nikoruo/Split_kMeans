@@ -26,7 +26,8 @@
  * @param dataPoints Source dataset; `dataPoints->size` must be > 0.
  * @param centroids Destination centroid container; must have at least K elements.
  * @return void
- * @errors Asserts valid K and destination size; exits on allocation failure.
+ * @errors Asserts valid K and destination size; exits on allocation failure or when K exceeds the number of distinct
+ *         data points.
  * @note Collision-free draws match the original partial Fisher-Yates shuffle.
  */
 void generateRandomCentroids(size_t numCentroids, const Dataset* dataPoints, Centroids* centroids, Rng* rng)
@@ -364,17 +365,18 @@ static bool updateKMeansBest(double sse, double* bestSse, size_t iteration, cons
  *
  * @param dataPoints Points to cluster; partitions updated in place.
  * @param centroids Initial centroids; updated in place.
- * @param tracker Optional (NULL for trial splits): ground truth for the level-3 CI, and the `_inner.csv` rows of
- * `stage`.
+ * @param tracker Optional (NULL when nothing is recorded): ground truth for the level-3 CI, and the `_inner.csv` rows
+ * of `stage`.
  * @param stage Which k-means this is for --track-inner; KM_STAGE_NONE logs no rows.
- * @return Best SSE observed during the run.
+ * @return SSE of the final iteration's centroids and partition.
  */
-static double runKMeansImpl(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker,
-                            KMeansStage stage, Centroids* bestCentroids, size_t* bestLabels, double* lastSse)
+double runKMeans(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage)
 {
-    assert((bestCentroids == NULL) == (bestLabels == NULL));
-    assert(bestCentroids == NULL || (bestCentroids->size == centroids->size &&
-                                     bestCentroids->dimensions == centroids->dimensions));
+    if (iterations == 0)
+    {
+        fprintf(stderr, "Error: K-means requires at least one iteration\n");
+        exit(EXIT_FAILURE);
+    }
     double bestSse = DBL_MAX;
     double sse = DBL_MAX;
     const Centroids* groundTruth = tracker != NULL ? tracker->groundTruth : NULL;
@@ -385,62 +387,25 @@ static double runKMeansImpl(Dataset* dataPoints, size_t iterations, Centroids* c
         centroidStep(centroids, dataPoints);
 
         sse = calculateSSE(dataPoints, centroids);
-        if (lastSse != NULL) *lastSse = sse;
-
         trackerInnerRow(tracker, stage, iteration + 1, centroids, sse);
 
         if (!updateKMeansBest(sse, &bestSse, iteration, centroids, groundTruth)) break;
-        if (bestCentroids != NULL)
-        {
-            copyCoordinates(bestCentroids->coordinates, centroids->coordinates,
-                            centroids->size * centroids->dimensions);
-            memcpy(bestLabels, dataPoints->partitions, dataPoints->size * sizeof(*bestLabels));
-        }
     }
 
-    return bestSse;
-}
-
-double runKMeans(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage)
-{
-    return runKMeansImpl(dataPoints, iterations, centroids, tracker, stage, NULL, NULL, NULL);
-}
-
-double runKMeansBest(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage,
-                     Centroids* bestCentroids, size_t* bestLabels)
-{
-    assert(bestCentroids != NULL && bestLabels != NULL);
-    double sse = runKMeansImpl(dataPoints, iterations, centroids, tracker, stage, bestCentroids, bestLabels, NULL);
-    if (sse == DBL_MAX)
-    {
-        fprintf(stderr, "Error: K-means produced no finite best SSE\n");
-        exit(EXIT_FAILURE);
-    }
-    copyCoordinates(centroids->coordinates, bestCentroids->coordinates, centroids->size * centroids->dimensions);
-    memcpy(dataPoints->partitions, bestLabels, dataPoints->size * sizeof(*bestLabels));
     return sse;
 }
 
-double runKMeansLast(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage)
+double runKMeansView(DatasetView* view, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage,
+                     bool prePartition)
 {
     if (iterations == 0)
     {
         fprintf(stderr, "Error: K-means requires at least one iteration\n");
         exit(EXIT_FAILURE);
     }
-    double sse = DBL_MAX;
-    (void)runKMeansImpl(dataPoints, iterations, centroids, tracker, stage, NULL, NULL, &sse);
-    return sse;
-}
-
-static double runKMeansViewImpl(DatasetView* view, size_t iterations, Centroids* centroids, Tracker* tracker,
-                                KMeansStage stage, bool prePartition, Centroids* bestCentroids, size_t* bestLabels)
-{
     assert(view->size > 0 && centroids->size > 0 && view->source->dimensions == centroids->dimensions);
-    assert((bestCentroids == NULL) == (bestLabels == NULL));
-    assert(bestCentroids == NULL || (bestCentroids->size == centroids->size &&
-                                     bestCentroids->dimensions == centroids->dimensions));
     double bestSse = DBL_MAX;
+    double sse = DBL_MAX;
     const Centroids* groundTruth = tracker != NULL ? tracker->groundTruth : NULL;
     if (prePartition) partitionView(view, centroids);
 
@@ -448,30 +413,11 @@ static double runKMeansViewImpl(DatasetView* view, size_t iterations, Centroids*
     {
         partitionView(view, centroids);
         centroidStepView(centroids, view);
-        double sse = calculateSSEView(view, centroids);
+        sse = calculateSSEView(view, centroids);
         trackerInnerRow(tracker, stage, iteration + 1, centroids, sse);
         if (!updateKMeansBest(sse, &bestSse, iteration, centroids, groundTruth)) break;
-        if (bestCentroids != NULL)
-        {
-            copyCoordinates(bestCentroids->coordinates, centroids->coordinates,
-                            centroids->size * centroids->dimensions);
-            for (size_t i = 0; i < view->size; ++i) bestLabels[view->indices[i]] = view->partitions[i];
-        }
     }
-    return bestSse;
-}
-
-double runKMeansView(DatasetView* view, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage,
-                     bool prePartition)
-{
-    return runKMeansViewImpl(view, iterations, centroids, tracker, stage, prePartition, NULL, NULL);
-}
-
-double runKMeansViewBest(DatasetView* view, size_t iterations, Centroids* centroids, Tracker* tracker,
-                         KMeansStage stage, bool prePartition, Centroids* bestCentroids, size_t* bestLabels)
-{
-    assert(bestCentroids != NULL && bestLabels != NULL);
-    return runKMeansViewImpl(view, iterations, centroids, tracker, stage, prePartition, bestCentroids, bestLabels);
+    return sse;
 }
 
 /**
@@ -483,10 +429,16 @@ double runKMeansViewBest(DatasetView* view, size_t iterations, Centroids* centro
  * @param dataPoints Dataset to cluster; partitions updated in place.
  * @param centroids Centroid set updated in place.
  * @param tracker Rows, snapshots and the ground truth for the level-3 CI.
- * @return Best SSE observed during the run.
+ * @return SSE of the final iteration's centroids and partition.
+ * @errors Exits on a zero iteration limit or a non-finite SSE.
  */
 double runKMeansWithTracking(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker)
 {
+    if (iterations == 0)
+    {
+        fprintf(stderr, "Error: K-means requires at least one iteration\n");
+        exit(EXIT_FAILURE);
+    }
     double bestSse = DBL_MAX;
     double sse = DBL_MAX;
     const Centroids* groundTruth = tracker->groundTruth;
@@ -499,6 +451,11 @@ double runKMeansWithTracking(Dataset* dataPoints, size_t iterations, Centroids* 
         trackerRecord(tracker, iteration + 1, "step", dataPoints, centroids, SIZE_MAX);
 
         sse = calculateSSE(dataPoints, centroids);
+        if (!isfinite(sse))
+        {
+            fprintf(stderr, "Error: K-means produced a non-finite SSE\n");
+            exit(EXIT_FAILURE);
+        }
 
         if (logLevel >= 3)
         {
@@ -524,5 +481,5 @@ double runKMeansWithTracking(Dataset* dataPoints, size_t iterations, Centroids* 
         }
     }
 
-    return bestSse;
+    return sse;
 }

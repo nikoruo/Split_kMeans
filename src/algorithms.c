@@ -14,6 +14,7 @@
 
 #include <assert.h>
 #include <float.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -84,25 +85,40 @@ const char* bisectSelectName(BisectSelect mode)
     }
 }
 
+static void requireFiniteKMeansSse(double sse, Algorithm algorithm)
+{
+    if (!isfinite(sse))
+    {
+        fprintf(stderr, "Error: %s produced a non-finite k-means SSE\n", getAlgorithmName(algorithm));
+        exit(EXIT_FAILURE);
+    }
+}
+
 /**
  * @brief Random Split: grows K by splitting a random cluster with local k-means.
  *
- * Each split draws uniformly among clusters with at least two distinct points, splits it
+ * Each split draws uniformly among clusters with at least two distinct points (after as many ineligible draws as
+ * there are clusters, it picks an eligible one by rank), splits it
  * with splitClusterIntraCluster and records the state. Stops when `centroids->size == maxCentroids`,
  * then runs a final global k-means and returns its SSE.
  *
  * @param dataPoints Dataset; partitions updated in-place across splits.
  * @param centroids Global centroids; grows until `maxCentroids`.
  * @param maxCentroids Target number of centroids (K).
- * @param maxIterations Max iterations for local/final k-means refinements.
+ * @param maxIterations Max iterations for local/final k-means refinements; at least 1.
  * @param tracker Records each split (count = split number) and the final k-means; carries the ground truth for CI.
  * @return Final SSE after the concluding global k-means.
- * @errors Exits on allocation failure in underlying functions.
+ * @errors Exits on a zero iteration limit, non-finite final SSE, allocation failure, or no splittable cluster.
  */
 double runRandomSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
                       Tracker* tracker, Rng* rng)
 {
     assert(centroids->capacity >= maxCentroids);
+    if (maxIterations == 0)
+    {
+        fprintf(stderr, "Error: Random Split requires at least one k-means iteration\n");
+        exit(EXIT_FAILURE);
+    }
     const Centroids* groundTruth = tracker->groundTruth;
     trackerRecord(tracker, 0, "start", dataPoints, centroids, SIZE_MAX);
 
@@ -159,6 +175,7 @@ double runRandomSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentr
     freeClusterIndex(&membership);
 
     double finalResultSse = runKMeans(dataPoints, maxIterations, centroids, tracker, KM_STAGE_FINAL);
+    requireFiniteKMeansSse(finalResultSse, ALGO_SKM_RANDOM);
 
     trackerRecord(tracker, iterationCount, "final", dataPoints, centroids, SIZE_MAX);
 
@@ -168,7 +185,12 @@ double runRandomSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentr
 static Centroids tentativePair(Centroids* storage, size_t cluster)
 {
     assert(storage->coordinates != NULL && cluster < storage->size / 2);
-    Centroids pair = {storage->coordinates + 2 * cluster * storage->dimensions, 2, 2, storage->dimensions};
+    Centroids pair = {
+        .coordinates = storage->coordinates + 2 * cluster * storage->dimensions,
+        .size = 2,
+        .capacity = 2,
+        .dimensions = storage->dimensions,
+    };
     return pair;
 }
 
@@ -192,18 +214,20 @@ static double evaluateSplitDrop(Dataset* dataPoints, const ClusterIndex* members
  *  - ALGO_SKM_INTRA: apply the evaluated local 2-means; the drops of the two halves are re-evaluated.
  *  - ALGO_SKM_GLOBAL: apply the evaluated local 2-means, then global k-means; all drops re-evaluated.
  *  - ALGO_SKM_GLOBAL_BASIC: two random points, then global k-means (splitClusterGlobal); all drops re-evaluated.
- *  - ALGO_SKM_LOCAL: local 2-means, then localRepartition; touched means and, when needed, drops are updated.
+ *  - ALGO_SKM_LOCAL: apply the evaluated local 2-means (the first split runs a fresh one), then localRepartition;
+ *    touched means and their drops are updated.
  * SKM-Global-Basic retains its separate raw-seed split instead of applying the evaluated local 2-means.
  *
  * @param dataPoints Dataset; partitions updated in-place.
  * @param centroids Global centroids; grows until `maxCentroids`.
  * @param maxCentroids Target number of centroids (K); K=1 skips the split.
- * @param maxIterations Max iterations for local/global k-means refinements.
+ * @param maxIterations Max iterations for local/global k-means refinements; at least 1.
  * @param splitType One of the four SKM variants above.
+ * @param repartition SKM-Local repartition mode (--repartition); ignored by the other variants.
  * @param tracker Records each split (count = split number) and the final k-means; carries the ground truth for CI.
  * @return Final SSE: of the final k-means, or for the global variants of the last global k-means (the final
  *         k-means runs there only when no global split ran, K <= 2).
- * @errors Exits on allocation failure in underlying helpers.
+ * @errors Exits on allocation failure, a zero iteration limit, non-finite SSE, or no splittable cluster.
  */
 double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
                    Algorithm splitType, RepartitionMode repartition, Tracker* tracker, Rng* rng)
@@ -280,6 +304,7 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
 
         if (splitType != ALGO_SKM_LOCAL)
             splittable = rebuildClusterIndex(&membership, dataPoints, centroids->size);
+        // Runs for every K >= 2: at K = 2 no later split uses these trials (kept on purpose, plan D12)
         for (size_t i = 0; i < centroids->size; ++i)
         {
             clusterSSEs[i] = calculateClusterSSE(dataPoints, centroids, i);
@@ -311,6 +336,7 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
         {
             finalResultSse =
                 splitClusterGlobal(dataPoints, &membership, centroids, clusterToSplit, maxIterations, tracker, rng);
+            requireFiniteKMeansSse(finalResultSse, splitType);
             refinedGlobally = true;
         }
         else
@@ -322,6 +348,7 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
             {
                 trackerSplitSnapshot(tracker, dataPoints, centroids, clusterToSplit);
                 finalResultSse = runKMeans(dataPoints, maxIterations, centroids, tracker, KM_STAGE_GLOBAL);
+                requireFiniteKMeansSse(finalResultSse, splitType);
                 refinedGlobally = true;
             }
         }
@@ -414,6 +441,7 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
     if (!refinedGlobally)
     {
         finalResultSse = runKMeans(dataPoints, maxIterations, centroids, tracker, KM_STAGE_FINAL);
+        requireFiniteKMeansSse(finalResultSse, splitType);
         trackerRecord(tracker, iterationCount, "final", dataPoints, centroids, SIZE_MAX);
     }
 
