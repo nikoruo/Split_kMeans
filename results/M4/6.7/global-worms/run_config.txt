@@ -1,0 +1,24 @@
+# Split_kMeans run configuration. Every call that writes to this folder must match the lines above "calls:".
+version: 2.0.0-dev
+commit: b26c7f8
+compiler: gcc 16.2.0
+flags: gcc -DNDEBUG -std=c11 -Wall -Wextra -Wpedantic -ffp-contract=off -O3 -Werror
+asserts: off (NDEBUG)
+timer: QueryPerformanceCounter (monotonic wall clock)
+machine: Windows, 20 logical processors
+cpu: 12th Gen Intel(R) Core(TM) i7-12800H
+seed: 20261119
+log-level: 1
+max-iterations: until the SSE stops improving
+max-swaps: 5000
+repeats: 1000
+bisect-tries: 5
+bisect-select: sse
+init: random
+repartition: inward
+decimal-comma: off
+calls:
+2026-11-23 10:36:09 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo skm-global --first-run 1 -r 5 --datasets worms_2d -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M4_6_7_experiment_20261123_095928\global-worms
+  mode: batch; algorithms: skm-global; runs: 1 to 5 (RKM and RS: to 5); datasets: worms_2d; track-progress: on; snapshots: none; track-inner: off
+2026-11-23 10:36:37 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo skm-global --first-run 6 -r 10 --datasets worms_2d -o C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_M4_6_7_experiment_20261123_095928\global-worms
+  mode: batch; algorithms: skm-global; runs: 6 to 10 (RKM and RS: to 10); datasets: worms_2d; track-progress: on; snapshots: none; track-inner: off

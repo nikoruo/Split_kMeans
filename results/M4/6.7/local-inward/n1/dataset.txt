@@ -1,0 +1,5 @@
+data: data/n1.txt
+ground-truth: gt/n1-gt.txt
+k: 3
+n: 2250
+d: 2

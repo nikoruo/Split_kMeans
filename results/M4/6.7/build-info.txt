@@ -1,0 +1,3 @@
+commit: b26c7f8fbf938e30b9838b483b90f57ca204eda8
+binary-sha256: 26D6C7D5363C901DA588F5EBD3FB5D1D9D81490616B53408EB321F9C72DF7044
+binary: C:\Users\NIKO~1.RUO\AppData\Local\Temp\skm_6_7_clean_release_20261123_095215\release\split_kmeans.exe

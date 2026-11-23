@@ -1,0 +1,5 @@
+data: data/s2.txt
+ground-truth: gt/s2-cb.txt
+k: 15
+n: 5000
+d: 2

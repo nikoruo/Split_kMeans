@@ -1,0 +1,5 @@
+data: data/dim128.txt
+ground-truth: gt/dim128.txt
+k: 16
+n: 1024
+d: 128

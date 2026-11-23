@@ -1,0 +1,5 @@
+data: data/a2.txt
+ground-truth: gt/a2-ga-cb.txt
+k: 35
+n: 5250
+d: 2
