@@ -469,6 +469,75 @@ static void expectText(const char* path, const char* expected)
     }
 }
 
+static void testReportSummary(const char* directory, const char* executable, const char* capture)
+{
+    char input[PATH_MAX], output[PATH_MAX], folder[PATH_MAX], path[PATH_MAX], arguments[3 * PATH_MAX + 64];
+    joinPath(input, sizeof(input), directory, "report-stat-input");
+    joinPath(output, sizeof(output), directory, "report-stat-output");
+    require(platform_make_directories(input), "could not create report-stat fixture");
+    joinPath(path, sizeof(path), input, "run_config.txt");
+    FILE* file = writeFixture(path);
+    require(fputs("fixture: report statistics\ncalls:\n", file) >= 0, "could not write report-stat configuration");
+    closeFixture(file);
+
+    const char* names[] = {"identical", "nearby", "varying", "single"};
+    for (size_t d = 0; d < sizeof(names) / sizeof(names[0]); ++d)
+    {
+        joinPath(folder, sizeof(folder), input, names[d]);
+        require(platform_make_directories(folder), "could not create report-stat dataset");
+        joinPath(path, sizeof(path), folder, "dataset.txt");
+        file = writeFixture(path);
+        require(fputs("k: 3\n", file) >= 0, "could not write report-stat dataset metadata");
+        closeFixture(file);
+        joinPath(path, sizeof(path), folder, "KM_runs.csv");
+        file = writeFixture(path);
+        require(fputs("run;seed;sse;ci;ms\n", file) >= 0, "could not write report-stat header");
+        if (d == 0)
+        {
+            for (size_t i = 1; i <= 100; ++i)
+                require(fprintf(file, "%zu;0;456724496349.7511;0;12345678901234.123\n", i) > 0,
+                        "could not write identical report values");
+        }
+        else if (d == 1)
+            require(fputs("1;0;456724496349.7511;0;3\n2;0;456724496349.75116;1;5\n", file) >= 0,
+                    "could not write nearby report values");
+        else if (d == 2)
+            require(fputs("1;0;100;0;200\n2;0;101;1;202\n3;0;102;1;204\n", file) >= 0,
+                    "could not write varying report values");
+        else
+            require(fputs("1;0;100;0;200\n", file) >= 0, "could not write single report value");
+        closeFixture(file);
+    }
+
+    joinPath(folder, sizeof(folder), input, "identical");
+    joinPath(path, sizeof(path), folder, "RS_runs.csv");
+    file = writeFixture(path);
+    require(fputs("run;seed;sse;ci;ms\n", file) >= 0, "could not write RS report header");
+    for (size_t i = 1; i <= 100; ++i)
+        require(fprintf(file, "%zu;0;456724496349.7511;0;12345678901234.123\n", i) > 0,
+                "could not write identical RS values");
+    closeFixture(file);
+    joinPath(path, sizeof(path), folder, "RS_log.csv");
+    file = writeFixture(path);
+    require(fputs("run;count;sse;ci;ms\n", file) >= 0, "could not write RS log header");
+    for (size_t i = 1; i <= 100; ++i)
+        require(fprintf(file, "%zu;0;456724496349.7511;0;12345678901234.123\n", i) > 0,
+                "could not write identical RS log values");
+    closeFixture(file);
+
+    int length = snprintf(arguments, sizeof(arguments), "report -o \"%s\" \"%s\"", output, input);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "report-stat command too long");
+    expectCli(executable, arguments, capture, true);
+    joinPath(path, sizeof(path), output, "summary.csv");
+    expectText(path, "identical;KM;100;456724496349.751099;0.000000;0.0000;0.0000;100.0;"
+                     "12345678901234.123;0.000;");
+    expectText(path, "identical;RS;100;456724496349.751099;0.000000;0.0000;0.0000;100.0;"
+                     "12345678901234.123;0.000;12345678901234.123");
+    expectText(path, "nearby;KM;2;456724496349.751099;0.000043;0.5000;0.1667;50.0;4.000;1.414;");
+    expectText(path, "varying;KM;3;101.000000;1.000000;0.6667;0.2222;33.3;202.000;2.000;");
+    expectText(path, "single;KM;1;100.000000;NA;0.0000;0.0000;100.0;200.000;NA;");
+}
+
 static void runCapCase(const char* executable, const char* data, const char* output, const char* capture,
                        const char* algorithms, const char* cap, size_t k)
 {
@@ -755,6 +824,8 @@ static void testCliIterationLimit(const char* directory, const char* executable,
     joinPath(invalid, sizeof(invalid), root, "invalid");
     joinPath(report, sizeof(report), root, "report");
     joinPath(capture, sizeof(capture), root, "command.txt");
+
+    testReportSummary(root, executable, capture);
 
     require(kmIterations(batch) == 1, "batch-mode KM did not respect its iteration limit");
     joinPath(path, sizeof(path), batch, "run_config.txt");

@@ -306,11 +306,16 @@ static ReportSummary reportSummarize(const ReportRow* rows, size_t count)
         return summary;
     }
 
+    const double sseOrigin = rows[0].sse;
+    const double msOrigin = rows[0].ms;
+    double sseOffset = 0.0;
+    double msOffset = 0.0;
     size_t successes = 0;
     for (size_t i = 0; i < count; ++i)
     {
-        summary.sseMean += rows[i].sse;
-        summary.msMean += rows[i].ms;
+        const double n = (double)(i + 1);
+        sseOffset += ((rows[i].sse - sseOrigin) - sseOffset) / n;
+        msOffset += ((rows[i].ms - msOrigin) - msOffset) / n;
         if (rows[i].ci == CI_NA)
         {
             summary.ciAvailable = false;
@@ -321,20 +326,25 @@ static ReportSummary reportSummarize(const ReportRow* rows, size_t count)
             successes += rows[i].ci == 0;
         }
     }
-    summary.sseMean /= (double)count;
-    summary.msMean /= (double)count;
+    summary.sseMean = sseOrigin + sseOffset;
+    summary.msMean = msOrigin + msOffset;
     summary.ciMean /= (double)count;
     summary.successPct = 100.0 * (double)successes / (double)count;
 
     if (count > 1)
     {
+        const double divisor = sqrt((double)(count - 1));
         for (size_t i = 0; i < count; ++i)
         {
-            summary.sseSd += (rows[i].sse - summary.sseMean) * (rows[i].sse - summary.sseMean);
-            summary.msSd += (rows[i].ms - summary.msMean) * (rows[i].ms - summary.msMean);
+            summary.sseSd = hypot(summary.sseSd, ((rows[i].sse - sseOrigin) - sseOffset) / divisor);
+            summary.msSd = hypot(summary.msSd, ((rows[i].ms - msOrigin) - msOffset) / divisor);
         }
-        summary.sseSd = sqrt(summary.sseSd / (double)(count - 1));
-        summary.msSd = sqrt(summary.msSd / (double)(count - 1));
+    }
+    if (!isfinite(summary.sseMean) || !isfinite(summary.msMean) || !isfinite(summary.sseSd) ||
+        !isfinite(summary.msSd))
+    {
+        fprintf(stderr, "Error: report statistics exceed the numeric range\n");
+        exit(EXIT_FAILURE);
     }
     return summary;
 }
