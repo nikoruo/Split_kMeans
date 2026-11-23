@@ -1,0 +1,40 @@
+Phase 6.7 verification, 2026-11-23
+
+The timed runs used clean commit b26c7f8. A fresh MinGW release build and
+check passed before the experiments; run_config.txt recorded b26c7f8 with
+no -dirty suffix. The committed-build main-group comparison matched 44
+complete non-bisecting files plus the first 10 worms_2d Local runs against
+6.6-after. All ten fresh inward Local files matched 6.6-after exactly.
+
+Final Windows checks:
+- Fresh MinGW gcc release and debug, WERROR=1 check: passed.
+- Visual Studio 2026 Release rebuild, /W4: passed, no compiler warnings.
+- Visual Studio Release CHECK_BIN check: passed.
+- Direct MSVC /W4 /WX unit build and tests: passed.
+- Visual Studio clang 22 AddressSanitizer and UBSan checks: passed, with
+  no sanitizer reports. Each sanitizer build emitted four pre-existing
+  deprecated-CRT warnings in test helpers; UBSan also emitted 20 LNK4217
+  runtime-library linker warnings.
+- Clang MinGW-target -Wall -Wextra -Wpedantic -Werror syntax checks:
+  passed for all 19 C files.
+- Each complete check matched 108 run files, 3 x 63 tracking variants,
+  3 repartition-mode files, 1 bisect-size file and 9 report files.
+- cppcheck exited 0 and reported 36 diagnostics: 31 allocation-path
+  warnings around checked allocations, three FOPEN-path resource-leak
+  diagnostics, and two pre-existing unchecked LOCALTIME outputs in
+  src/experiment.c (createUniqueDirectory and writeRunConfig).
+- Linux and LeakSanitizer were not run locally: no Linux distribution or
+  running Docker engine was available. Windows ASan has no leak checker.
+
+The comparison assembler reproduced all four derived CSVs byte-for-byte
+and left all 116 source report files unchanged. An independent Python
+check read all 162 source run files: 46 multi-run rows with identical SSE
+have sample SD 0.000000; all reported SSE means and sample deviations
+agreed with stable calculations within six-decimal rounding plus 16 ULP.
+All 23 datasets have 100 runs per Local mode; all nine algorithms are
+present for each new DIM set at the requested run counts; worms_2d Global
+has 10 runs. The other nine datasets do not have fabricated all-algorithm
+results.
+Input and binary SHA-256 fingerprints remained unchanged during the runs.
+Detailed local verification logs remain in:
+%TEMP%\skm_6_7_full_verify_20261123_104534

@@ -1,0 +1,5 @@
+data: data/worms_64d.txt
+ground-truth: gt/worms_64d-gt.txt
+k: 25
+n: 105000
+d: 64

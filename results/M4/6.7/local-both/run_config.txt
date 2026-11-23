@@ -1,0 +1,28 @@
+# Split_kMeans run configuration. Every call that writes to this folder must match the lines above "calls:".
+version: 2.0.0-dev
+commit: b26c7f8
+compiler: gcc 16.2.0
+flags: gcc -DNDEBUG -std=c11 -Wall -Wextra -Wpedantic -ffp-contract=off -O3 -Werror
+asserts: off (NDEBUG)
+timer: QueryPerformanceCounter (monotonic wall clock)
+machine: Windows, 20 logical processors
+cpu: 12th Gen Intel(R) Core(TM) i7-12800H
+seed: 20261119
+log-level: 1
+max-iterations: until the SSE stops improving
+max-swaps: 5000
+repeats: 1000
+bisect-tries: 5
+bisect-select: sse
+init: random
+repartition: both
+decimal-comma: off
+calls:
+2026-11-23 10:10:38 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo skm-local --repartition both --first-run 1 -r 25 --datasets a1,a2,a3,birch1,birch2,birch3,dim032,dim064,dim1024,dim128,dim256,dim512,g2-1-10,g2-1-20,n1,n2,s1,s2,s3,s4,unbalance,worms_2d,worms_64d -o %TEMP%\skm_M4_6_7_experiment_20261123_095928\local-both
+  mode: batch; algorithms: skm-local; runs: 1 to 25 (RKM and RS: to 25); datasets: a1,a2,a3,birch1,birch2,birch3,dim032,dim064,dim1024,dim128,dim256,dim512,g2-1-10,g2-1-20,n1,n2,s1,s2,s3,s4,unbalance,worms_2d,worms_64d; track-progress: on; snapshots: none; track-inner: off
+2026-11-23 10:14:12 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo skm-local --repartition both --first-run 26 -r 50 --datasets a1,a2,a3,birch1,birch2,birch3,dim032,dim064,dim1024,dim128,dim256,dim512,g2-1-10,g2-1-20,n1,n2,s1,s2,s3,s4,unbalance,worms_2d,worms_64d -o %TEMP%\skm_M4_6_7_experiment_20261123_095928\local-both
+  mode: batch; algorithms: skm-local; runs: 26 to 50 (RKM and RS: to 50); datasets: a1,a2,a3,birch1,birch2,birch3,dim032,dim064,dim1024,dim128,dim256,dim512,g2-1-10,g2-1-20,n1,n2,s1,s2,s3,s4,unbalance,worms_2d,worms_64d; track-progress: on; snapshots: none; track-inner: off
+2026-11-23 10:25:05 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo skm-local --repartition both --first-run 51 -r 75 --datasets a1,a2,a3,birch1,birch2,birch3,dim032,dim064,dim1024,dim128,dim256,dim512,g2-1-10,g2-1-20,n1,n2,s1,s2,s3,s4,unbalance,worms_2d,worms_64d -o %TEMP%\skm_M4_6_7_experiment_20261123_095928\local-both
+  mode: batch; algorithms: skm-local; runs: 51 to 75 (RKM and RS: to 75); datasets: a1,a2,a3,birch1,birch2,birch3,dim032,dim064,dim1024,dim128,dim256,dim512,g2-1-10,g2-1-20,n1,n2,s1,s2,s3,s4,unbalance,worms_2d,worms_64d; track-progress: on; snapshots: none; track-inner: off
+2026-11-23 10:28:47 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo skm-local --repartition both --first-run 76 -r 100 --datasets a1,a2,a3,birch1,birch2,birch3,dim032,dim064,dim1024,dim128,dim256,dim512,g2-1-10,g2-1-20,n1,n2,s1,s2,s3,s4,unbalance,worms_2d,worms_64d -o %TEMP%\skm_M4_6_7_experiment_20261123_095928\local-both
+  mode: batch; algorithms: skm-local; runs: 76 to 100 (RKM and RS: to 100); datasets: a1,a2,a3,birch1,birch2,birch3,dim032,dim064,dim1024,dim128,dim256,dim512,g2-1-10,g2-1-20,n1,n2,s1,s2,s3,s4,unbalance,worms_2d,worms_64d; track-progress: on; snapshots: none; track-inner: off

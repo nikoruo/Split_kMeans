@@ -1,0 +1,5 @@
+data: data/dim512.txt
+ground-truth: gt/dim512.txt
+k: 16
+n: 1024
+d: 512

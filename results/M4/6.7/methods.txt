@@ -1,0 +1,88 @@
+Phase 6.7 comparison, 2026-11-23
+
+The new runs use commit b26c7f8fbf938e30b9838b483b90f57ca204eda8, built
+from a clean tracked worktree with MinGW gcc 16.2.0, -O3, -ffp-contract=off,
+and -Werror. The binary SHA-256 and path are in build-info.txt. A fresh
+release check passed and run_config.txt recorded b26c7f8 without -dirty.
+All runs use master seed 20261119, log level 1, --track-progress, no
+selected snapshots, random initialization and convergence defaults.
+input-hashes.csv records all 23 dataset, ground-truth and K files; their
+SHA-256 hashes were checked again after the runs. All sorted pairings,
+dimensions, K values and ground-truth row counts were validated.
+
+Datasets: a1, a2, a3, birch1, birch2, birch3, dim032, dim064, dim1024,
+dim128, dim256, dim512, g2-1-10, g2-1-20, n1, n2, s1, s2, s3, s4,
+unbalance, worms_2d and worms_64d.
+
+Main-group reproducibility: the new committed binary reran 100 KM,
+SKM-Random, Intra, Global, Global-Basic and Local runs on s1, s4, a3,
+unbalance and dim064, plus one RKM and one RS run each. On worms_2d it
+reran 10 KM, Random, Intra, Global-Basic and Local runs. compare_runs
+matched 44 complete files and the first 10 Local worms_2d runs against
+6.6-after, on run, seed, SSE and CI. The verification folder is:
+%TEMP%\skm_M4_6_7_verify_committed_20261123_095544
+
+New run folder:
+%TEMP%\skm_M4_6_7_experiment_20261123_095928
+
+Commands below use the split_kmeans.exe recorded in build-info.txt and
+the new run folder as ROOT. Each call additionally has --seed 20261119
+--log-level 1 --track-progress --snapshots none.
+
+DIM baseline:
+  --algo km,rkm,rs,skm-random,skm-intra,skm-global,skm-global-basic,bisecting
+  -r 1 --datasets dim128,dim256,dim512,dim1024 -o ROOT\dim-default
+  Then run km,skm-random,skm-intra,skm-global,skm-global-basic,bisecting
+  with --first-run/-r 2/25, 26/50, 51/75 and 76/100 in that folder.
+  RKM has one run of 1000 repeats; RS has one run of 5000 swaps. Local
+  inward and both on these sets come from the separate D9 runs below.
+
+D9 Local comparison:
+  --algo skm-local --repartition MODE --first-run FIRST -r LAST
+  --datasets <the 23 names above, comma-separated> -o ROOT\local-MODE
+  Blocks and order: 1-25 inward/both, 26-50 both/inward, 51-75
+  inward/both, 76-100 both/inward. Both mode folders have 100 runs per
+  dataset. Their configuration headers agree except for repartition mode.
+  compare_runs matched all 10 inward files against 6.6-after exactly.
+
+Additional Global run:
+  --algo skm-global --datasets worms_2d -o ROOT\global-worms
+  with --first-run/-r 1/5 and 6/10.
+
+No hard-set RKM or 100-run hard-set Global/Global-Basic jobs were added.
+Bisecting SSE and size reuse 6.6b; they were not rerun. The full
+all-algorithm table on the nine other existing datasets is left to Phase 9.
+
+Reports were generated separately with:
+  split_kmeans.exe report -o <new empty report folder> <one source folder>
+The regenerated prior reports use the original full tracking folders:
+  %TEMP%\skm_M4_6_6_after_20261122_160702
+  %TEMP%\skm_M4_6_6b_compare_20261122_184540\sse
+  %TEMP%\skm_M4_6_6b_compare_20261122_184540\size
+All 103 prior run files match their tracked copies. The 6.6b source
+fingerprints match current sources except for the intentional report fix;
+its recorded input fingerprints also match. Birch2's corrected bisecting
+mean is 456724496349.751099 and sample SD is 0.000000.
+
+Each source report is copied byte-for-byte into its own folder here, with
+its original run_config.txt. New run CSVs and dataset metadata are kept
+beside their reports; tracking logs and snapshots remain in the full run
+folders outside OneDrive. Existing report outputs are not overwritten.
+Prior runs retain their recorded ffd2c9d-dirty provenance; they are not
+relabelled as the new build.
+
+Rebuild the derived tables from the repository root with:
+  python results\M4\6.7\assemble-comparisons.py
+This reads the individual summary.csv and run CSV files, verifies matching
+configuration fields and run seeds where pairing, and writes:
+  derived-comparison.csv    Labeled report rows with source/build provenance.
+  paired-local.csv          Inward versus both on all 23 datasets.
+  paired-global-basic.csv   Global versus Basic on 13 comparable datasets.
+  bisect-paired-6.6b.csv    Verified, provenance-labeled reuse of 6.6b.
+The Global worms_2d and prior Basic worms_2d runs have different recorded
+builds, so they are not paired. The tables do not combine or average runs
+across configurations or builds. Timings remain individual report values;
+no cross-configuration timing ratios are computed. Paired seeds can lead
+to different subsequent random draws after algorithm states diverge.
+
+Verification details and known toolchain warnings are in verification.txt.

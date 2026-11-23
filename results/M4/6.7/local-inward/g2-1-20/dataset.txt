@@ -1,0 +1,5 @@
+data: data/g2-1-20.txt
+ground-truth: gt/g2-1-20-gt.txt
+k: 2
+n: 2048
+d: 1
