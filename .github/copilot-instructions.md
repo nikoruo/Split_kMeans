@@ -53,7 +53,7 @@
 
 ## Working agreement
 - Make one plan step at a time, verify it, then stop.
-- Never commit or push without being asked.
+- From plan step 6.7 onward, commit each completed and verified plan step with a descriptive message; for other work, commit only when asked. Never push unless explicitly asked.
 - Never delete unused functions, macros, files or commented-out code without the user's confirmation. List them instead (see the Unused code review section in docs/refactor-plan.md).
 - Functions marked keep in that table are ported, not dropped, when their surroundings are refactored.
 - Do not create markdown documentation unless requested.
