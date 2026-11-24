@@ -35,6 +35,7 @@
 - 8.2d: input-file reads and result-file writes, flushes and closes, including the line-length look-ahead, now report failures; directory enumeration and entry-inspection failures no longer silently return partial lists. Regression and benchmark tools also check file I/O. Failed calls can leave incomplete files; normal outputs and goldens are unchanged.
 - 8.2e: `sse` exits with an error for a non-finite score. Per-call SSE means retain the ordinary sum-and-divide calculation, using a 2^-64 scaled accumulator only when the sum overflows; an unrepresentable fallback is an error. Goldens are unchanged.
 - 8.2f: directory creation accepts existing paths only when they are directories; timestamp collisions with directories still use numeric suffixes. Clock, local-time conversion and timestamp-formatting failures now terminate explicitly.
+- 8.2g: `gt-from-partition` sends empty-data errors and missing-label warnings to stderr. Informational stdout and generated centroids are unchanged; goldens are unchanged.
 
 ## v1.0.0 - 26-10-2025
 

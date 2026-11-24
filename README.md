@@ -194,7 +194,7 @@ split_kmeans gt-from-partition <data.txt> <partition.txt> <out.txt>
 
 `ci` prints the Centroid Index. `sse` assigns each point to its nearest supplied centroid and prints SSE with `%.17g`; this can differ from a run's assigned-partition SSE, especially when using rounded snapshots. A non-finite SSE is an error. Both commands require nonempty, dimension-compatible files.
 
-`gt-from-partition` accepts exactly one integer label per data point, separated by spaces, tabs or line breaks, in the range 1 through N. It writes one centroid per label through the largest label, with six decimal places; a missing label produces a zero centroid and a warning. Snapshot partitions are 0-based and must be converted to 1-based labels before using this command.
+`gt-from-partition` accepts exactly one integer label per data point, separated by spaces, tabs or line breaks, in the range 1 through N. It writes one centroid per label through the largest label, with six decimal places; a missing label produces a zero centroid and a warning on stderr using a 0-based cluster index. Errors also go to stderr; informational messages remain on stdout. Snapshot partitions are 0-based and must be converted to 1-based labels before using this command.
 
 ## Reports
 

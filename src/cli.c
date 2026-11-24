@@ -69,7 +69,7 @@
  *
  * Reads points (uniform dimensionality), then one 1-based cluster label per point (separated by spaces,
  * tabs or line breaks), and writes the cluster means (`%f` with a trailing space). K is the
- * largest label; an empty cluster keeps a zero centroid with a warning.
+ * largest label; an empty cluster keeps a zero centroid with its 0-based index in the stderr warning.
  *
  * @param dataFileName Path to data points (space/tab-separated doubles, one point per line).
  * @param partitionFileName Path to labels (one integer 1..N per data point, separated by spaces, tabs or line breaks).
@@ -84,7 +84,7 @@ int generateGroundTruthCentroids(const char* dataFileName, const char* partition
 
     if (dataPoints.size == 0)
     {
-        printf("Error: No data points read from file %s\n", dataFileName);
+        fprintf(stderr, "Error: No data points read from file %s\n", dataFileName);
         return 1;
     }
 
@@ -190,7 +190,7 @@ int generateGroundTruthCentroids(const char* dataFileName, const char* partition
         }
         else
         {
-            printf("Warning: Cluster %zu has no points assigned to it\n", i);
+            fprintf(stderr, "Warning: Cluster %zu has no points assigned to it\n", i);
         }
     }
 
