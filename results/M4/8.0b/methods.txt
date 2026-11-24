@@ -1,0 +1,80 @@
+Step 8.0b: skip unused K=2 trial evaluations, 2026-11-24
+
+The clean before build is commit 1430a493bdfe4d8c661784606f677abb8a8c3f0a.
+The after build records 1430a49-dirty and contains the K=2 optimization.
+Both MinGW binaries use gcc 16.2.0, -O3, -ffp-contract=off and -Werror.
+
+SHA-256:
+  before MinGW binary  029E6BBC8AA879FC2C1276DAF311C4BF8CE8C5601E193E11171DE2E6963B56F5
+  after MinGW binary   C69A0A079DF98E5FE6F6C8337B78D584DBDA62A5711F780455C8522257B35E4C
+  after src/algorithms.c 43B77E87F351041994EAA464DE7BD844ED79814DADC83F2C01A458F15C71E821
+  verified tests/test_unit.c 7A5014C41A077D105DFC6B9D77DBA7CF1266F3E23D2B15C0D8B24CFD379B685B
+  after MSVC binary    EE58C4C210696D7D31B1C85F31DDEAE8E7279BC8478439ACE24F7FEDFD6CEE5F
+
+Paired K=2 timings
+-----------------
+The two g2 sets each ran SKM-Intra, SKM-Global, SKM-Global-Basic and
+SKM-Local 1000 times per binary, in separate batch folders. Each call used:
+
+  --seed 20261119 --algo skm-intra,skm-global,skm-global-basic,skm-local
+  --datasets g2-1-10,g2-1-20 --first-run FIRST --runs LAST
+  --track-progress --snapshots none --log-level 1 -o <folder>
+
+Runs 1-250, 251-500, 501-750 and 751-1000 used before/after, after/before,
+before/after and after/before order. The launcher was pinned to logical CPU 2
+(affinity mask 4); a child-process check confirmed inherited affinity.
+Windows reported battery status 2 (AC power). The output folders were reported
+separately. Their run CSVs, reports and run configurations are retained under
+before/ and after/; local output paths in the configurations are replaced by
+<ROOT>. Full tracking logs and snapshots remain outside OneDrive:
+  %USERPROFILE%\.copilot\session-state\e80ac79c-88b1-4bd0-a9d8-226cf9450850\files\d12-k2
+
+compare_runs matched all 8000 paired run/seed/SSE/CI rows. All eight report
+rows match on SSE, CI and success rate. timing-comparison.csv derives mean
+times and after/before ratios from the run CSVs, with a ratio for each block.
+The overall ratios range from 0.384 to 0.469 on these two datasets. Individual
+runs take less than a millisecond and timings contain noise; these measurements
+do not establish a speed change for K>2 or for other machines and datasets.
+
+State and RNG verification
+--------------------------
+For each of unlimited iterations and caps 1 and 2, the old and new MinGW
+binaries ran all four SSE-split variants five times on g2-1-10 and g2-1-20
+(K=2), s1 and s4 (K=15), and generated e04_tiny and e07_k2 (K=2). Tracking,
+inner traces and snapshots at counts 1-2 and 14-15 were enabled. All 72 run
+files and 360 run/seed/SSE/CI rows match; 13924 tracking and iteration-stat
+rows match excluding time, and 2500 centroid/partition snapshots match
+byte-for-byte. The e04 case includes a singleton child.
+
+With the same three iteration settings, the MSVC binary matches the old
+MinGW binary on all 120 g2 runs, 1098 tracking rows excluding time and 588
+snapshots. On decimal-coordinate worms_2d (K=35), one uncapped run of each
+variant matches the old MinGW binary on run/seed/SSE/CI, 5561 tracking rows
+excluding time and 26 snapshots, for both new MinGW and MSVC binaries.
+
+input-hashes.csv lists the five real input triples and the two generated
+fixtures. The 15 real files match the 6.7 hashes before and after the
+comparisons. Generated-fixture hashes were recorded after the comparisons;
+their deterministic generator is tests/gen_data.c.
+
+The focused unit test constructs the first split and final k-means without
+trials, checking SSE, CI, labels, centroids and the exact PCG state for all
+four variants, all three Local repartition modes, and capped and uncapped
+iterations. It fails on the old implementation because the old K=2 trials
+advance the RNG. A K=3 trial-selection test also verifies the unchanged RNG
+state after its necessary evaluations. Each run in experiment.c seeds its own
+RNG, and the K=2 path runs only deterministic refinement and tracking after
+the first split. Debug level 3 therefore no longer prints the unused trial
+iterations at K=2; recorded inner traces and snapshots still match.
+
+Verification:
+  MinGW gcc release and debug, WERROR=1 check: passed.
+  Visual Studio 2026 Release x64 /W4 rebuild and CHECK_BIN check: passed.
+  MSVC /W4 /WX compiled unit tests against the MSVC CLI: passed.
+  Clang MinGW-target -Werror syntax check on changed C files: passed.
+  Visual Studio clang 22 ASan and UBSan checks: passed, no sanitizer reports.
+  Each full check covers 108 run files, 3 x 63 tracking variants, three
+  repartition modes, bisect-size, nine reports and default invocation smoke
+  tests. ASan and UBSan each emitted four existing deprecated-CRT warnings in
+  test helpers; UBSan also emitted 20 existing runtime LNK4217 warnings.
+  Windows ASan has no leak checker. Linux real-data parity remains step 8.3b.

@@ -1,0 +1,5 @@
+SKM - Intra count;SKM - Intra time (ms);SKM - Intra SSE (10^5);SKM - Intra CI;SKM - Global count;SKM - Global time (ms);SKM - Global SSE (10^5);SKM - Global CI;SKM - Global basic count;SKM - Global basic time (ms);SKM - Global basic SSE (10^5);SKM - Global basic CI;SKM - Local count;SKM - Local time (ms);SKM - Local SSE (10^5);SKM - Local CI
+end;0.173;2.003498;0.0000;end;0.162;2.003498;0.0000;end;0.155;2.003498;0.0000;end;0.170;2.003498;0.0000
+0;0.009;53.437765;1.0000;0;0.007;53.437765;1.0000;0;0.005;53.437765;1.0000;0;0.005;53.437765;1.0000
+1;0.052;2.003498;0.0000;1;0.045;2.003498;0.0000;1;0.042;2.003498;0.0000;1;0.060;2.003498;0.0000
+2;0.173;2.003498;0.0000;2;0.162;2.003498;0.0000;2;0.155;2.003498;0.0000;2;0.170;2.003498;0.0000

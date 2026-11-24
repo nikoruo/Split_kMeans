@@ -1406,6 +1406,7 @@ static void testSelectedTrialIsApplied(const char* directory)
         drops[c] = cacheTentativeSplit(&expected, &index, c, 1,
                                        calculateClusterSSE(&expected, &expectedCentroids, c),
                                        &trials[c], labels, NULL, NULL, &rng, unitSplitScratch(&expected, &index));
+    const Rng afterTrials = rng;
     size_t selected = index.sizes[0] < 2 ? 1 : (index.sizes[1] >= 2 && drops[1] > drops[0] ? 1 : 0);
 
     Dataset legacy = allocateDataset(8, 1);
@@ -1433,6 +1434,8 @@ static void testSelectedTrialIsApplied(const char* directory)
                       unitKMeansScratch(&actualCentroids));
     require(tracker.rowCount == 4 && tracker.rows[2].sse == evaluatedSse,
             "SSE-split did not apply the evaluated trial");
+    require(rng.state == afterTrials.state && rng.inc == afterTrials.inc,
+            "K=3 did not preserve the trial evaluation random stream");
     trackerPause(&tracker);
     trackerFree(&tracker);
 
@@ -1813,6 +1816,84 @@ static void testLocalFirstAndFinalSplit(void)
     trackerFree(&tracker);
     freeCentroids(&centroids);
     freeDataset(&points);
+}
+
+static void testTwoClusterSplitSkipsTrials(void)
+{
+    const double values[] = {0, 2, 3, 10, 20, 22, 23, 30};
+    const struct { Algorithm algorithm; RepartitionMode mode; } cases[] = {
+        {ALGO_SKM_INTRA, REPARTITION_BOTH},
+        {ALGO_SKM_GLOBAL, REPARTITION_BOTH},
+        {ALGO_SKM_GLOBAL_BASIC, REPARTITION_BOTH},
+        {ALGO_SKM_LOCAL, REPARTITION_BOTH},
+        {ALGO_SKM_LOCAL, REPARTITION_INWARD},
+        {ALGO_SKM_LOCAL, REPARTITION_INWARD_NONCHILD},
+    };
+    const size_t limits[] = {1, SIZE_MAX};
+    Centroids truth = allocateCentroids(2, 1);
+    centroidRow(&truth, 0)[0] = 0;
+    centroidRow(&truth, 1)[0] = 30;
+
+    for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); ++c)
+    {
+        for (size_t l = 0; l < sizeof(limits) / sizeof(limits[0]); ++l)
+        {
+            Dataset expected = allocateDataset(8, 1);
+            Dataset actual = allocateDataset(8, 1);
+            Centroids expectedCentroids = allocateCentroids(2, 1);
+            Centroids actualCentroids = allocateCentroids(2, 1);
+            expectedCentroids.size = 1;
+            actualCentroids.size = 1;
+            for (size_t i = 0; i < expected.size; ++i)
+            {
+                datasetRow(&expected, i)[0] = values[i];
+                datasetRow(&actual, i)[0] = values[i];
+                expected.partitions[i] = 0;
+                actual.partitions[i] = 0;
+            }
+            centroidStep(&expectedCentroids, &expected, unitKMeansScratch(&expectedCentroids));
+            centroidStep(&actualCentroids, &actual, unitKMeansScratch(&actualCentroids));
+            ClusterIndex index = allocateClusterIndex(expected.size, expectedCentroids.capacity);
+            rebuildClusterIndex(&index, &expected, expectedCentroids.size);
+            Rng expectedRng, actualRng;
+            rng_seed(&expectedRng, 1);
+            rng_seed(&actualRng, 1);
+            splitClusterIntraCluster(&expected, &index, &expectedCentroids, 0, limits[l], NULL, &expectedRng,
+                                     unitSplitScratch(&expected, &index));
+            if (cases[c].algorithm == ALGO_SKM_LOCAL)
+            {
+                bool affected[2] = {false, false};
+                localRepartition(&expected, &index, &expectedCentroids, 0, cases[c].mode, affected);
+            }
+            double expectedSse = runKMeans(&expected, limits[l], &expectedCentroids, NULL, KM_STAGE_NONE,
+                                           unitKMeansScratch(&expectedCentroids));
+            size_t expectedCi = calculateCentroidIndex(&expectedCentroids, &truth);
+
+            TrackOptions options = {0};
+            options.rows = true;
+            options.inner = true;
+            Tracker tracker = trackerCreate(cases[c].algorithm, ".", &truth, &options);
+            trackerBeginRun(&tracker, 0);
+            double actualSse = runSseSplit(&actual, &actualCentroids, 2, limits[l], cases[c].algorithm,
+                                           cases[c].mode, &tracker, &actualRng, unitKMeansScratch(&actualCentroids));
+            require(actualSse == expectedSse &&
+                        memcmp(actualCentroids.coordinates, expectedCentroids.coordinates, 2 * sizeof(double)) == 0 &&
+                        memcmp(actual.partitions, expected.partitions, expected.size * sizeof(*expected.partitions)) == 0 &&
+                        tracker.rowCount == 3 && tracker.rows[2].sse == expectedSse && tracker.rows[2].ci == expectedCi,
+                    "K=2 did not preserve the split and final state");
+            require(actualRng.state == expectedRng.state && actualRng.inc == expectedRng.inc,
+                    "K=2 evaluated unused trials after the first split");
+
+            trackerPause(&tracker);
+            trackerFree(&tracker);
+            freeClusterIndex(&index);
+            freeCentroids(&actualCentroids);
+            freeCentroids(&expectedCentroids);
+            freeDataset(&actual);
+            freeDataset(&expected);
+        }
+    }
+    freeCentroids(&truth);
 }
 
 static void testSplitCapacity(void)
@@ -3049,30 +3130,34 @@ static void testCappedTrials(const char* directory, const char* executable, cons
 {
     char output[PATH_MAX];
     char arguments[3 * PATH_MAX + 256];
-    joinPath(output, sizeof(output), directory, "trials");
-    int length = snprintf(arguments, sizeof(arguments),
-                          "--algo skm-intra --seed 42 -r 1 --max-iterations 1 --log-level 3 --no-track "
-                          "-o \"%s\" -k 2 \"%s\"",
-                          output, data);
-    require(length >= 0 && (size_t)length < sizeof(arguments), "trial cap case too long");
-    expectCli(executable, arguments, capture, true);
-    FILE* file = fopen(capture, "r");
-    require(file != NULL, "could not open trial cap trace");
-    char line[1024];
-    size_t calls = 0;
-    while (fgets(line, sizeof(line), file) != NULL)
+    for (size_t k = 2; k <= 3; ++k)
     {
-        const char* iterationText = strstr(line, "(runKMeans)After iteration ");
-        if (iterationText != NULL)
+        joinPath(output, sizeof(output), directory, k == 2 ? "trials-k2" : "trials-k3");
+        int length = snprintf(arguments, sizeof(arguments),
+                              "--algo skm-intra --seed 42 -r 1 --max-iterations 1 --log-level 3 --no-track "
+                              "-o \"%s\" -k %zu \"%s\"",
+                              output, k, data);
+        require(length >= 0 && (size_t)length < sizeof(arguments), "trial cap case too long");
+        expectCli(executable, arguments, capture, true);
+        FILE* file = fopen(capture, "r");
+        require(file != NULL, "could not open trial cap trace");
+        char line[1024];
+        size_t calls = 0;
+        while (fgets(line, sizeof(line), file) != NULL)
         {
-            size_t iteration = 0;
-            require(sscanf(iterationText, "(runKMeans)After iteration %zu:", &iteration) == 1 && iteration == 1,
-                    "a tentative or split k-means exceeded the cap");
-            ++calls;
+            const char* iterationText = strstr(line, "(runKMeans)After iteration ");
+            if (iterationText != NULL)
+            {
+                size_t iteration = 0;
+                require(sscanf(iterationText, "(runKMeans)After iteration %zu:", &iteration) == 1 && iteration == 1,
+                        "a tentative or split k-means exceeded the cap");
+                ++calls;
+            }
         }
+        require(!ferror(file) && calls == (k == 2 ? 2u : 4u),
+                "unexpected number of capped split and trial k-means calls");
+        closeFixture(file);
     }
-    require(!ferror(file) && calls >= 4, "trial cap trace did not include both tentative splits");
-    closeFixture(file);
 }
 
 static void testCappedSwapTrace(const char* directory, const char* executable, const char* data, const char* capture)
@@ -3524,6 +3609,7 @@ int main(int argc, char* argv[])
     testBisectingFirstTries();
     testBisectSelection();
     testLocalFirstAndFinalSplit();
+    testTwoClusterSplitSkipsTrials();
     testSplitCapacity();
     testClusterIndex();
     testIndexedClusterSSE();
