@@ -28,6 +28,8 @@
 - 6b.2: added runner-level tests for cached Global and Local splits, the split-seed fallback and Random Split's rank fallback; the tentative centroid pair uses designated initializers. Golden files unchanged.
 - 6b.3: k-means reports the final iteration's SSE and state, including a non-improving final iteration; split trials save that state once, and bisecting still keeps the best try. RKM keeps the winning repeat's actual partition, copying it with the stopwatch paused. Non-finite KM/SKM final scores and Global-Basic trial scores now fail explicitly; Random Swap retains its last-state scoring and non-finite-candidate rejection, and the RKM no-finite-score fallback remains. This is the provisional D11 choice; Fränti & Sieranoja 2019 p. 95 describes convergence, while CBModules `KMeansIterate` keeps its final state. Golden files unchanged; all 5,825 paired M4 runs match their before SSE and CI.
 
+- Phase 7 (performance tuning; golden files unchanged): reuse per-run k-means, initialization and local two-means scratch and RKM candidates; compute per-cluster SSE from stable dataset-order membership; remove the redundant Random Swap membership rebuild, split pre-partition and label copies, non-debug touched counting, and unused bisecting size-mode cluster SSEs. M3b matches `results/M3b-ref/` in all 63 run files and 4590 run/seed/SSE/CI rows; the benchmark and methods are in `results/M3b/`. No algorithm changes.
+
 ## v1.0.0 - 26-10-2025
 
 - Initial release by Niko Ruohonen.
