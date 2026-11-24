@@ -58,6 +58,7 @@
 
 #include <assert.h>
 #include <inttypes.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -330,8 +331,7 @@ static int commandCi(int argc, char* argv[])
     return EXIT_SUCCESS;
 }
 
-/** @brief `sse <data.txt> <centroids.txt>`: prints the SSE (%.17g) of the data with every point at its nearest
- * centroid. */
+/** @brief Prints nearest-centroid SSE (%.17g), or fails if the score is non-finite. */
 static int commandSse(int argc, char* argv[])
 {
     if (argc != 2)
@@ -344,11 +344,21 @@ static int commandSse(int argc, char* argv[])
     requireCompatible(dataPoints.size, dataPoints.dimensions, argv[0], centroids.size, centroids.dimensions, argv[1]);
 
     partitionStep(&dataPoints, &centroids);
-    printf("%.17g\n", calculateSSE(&dataPoints, &centroids));
+    const double sse = calculateSSE(&dataPoints, &centroids);
+    int status = EXIT_SUCCESS;
+    if (!isfinite(sse))
+    {
+        fprintf(stderr, "Error: sse produced a non-finite SSE\n");
+        status = EXIT_FAILURE;
+    }
+    else
+    {
+        printf("%.17g\n", sse);
+    }
 
     freeDataset(&dataPoints);
     freeCentroids(&centroids);
-    return EXIT_SUCCESS;
+    return status;
 }
 
 /** @brief `gt-from-partition <data.txt> <partition.txt> <out.txt>`: writes means from labels 1..N separated by

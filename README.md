@@ -176,13 +176,13 @@ The output root contains `run_config.txt` and one subfolder per dataset. Algorit
 | `<Algo>_iteration_stats.txt` | `Run;Iteration;Phase;NumCentroids;SSE;CI;SplitCluster;MS`, one row per selected snapshot. |
 | `<Algo>_run<RRR>_iter<IIII>_<phase>_centroids.txt` | Snapshot centroids, one whitespace-separated row per centroid. |
 | `<Algo>_run<RRR>_iter<IIII>_<phase>_partitions.txt` | Snapshot labels, one **0-based** label per input point. |
-| `<dataset>.csv` | Per-call algorithm summary; `Success Rate` is a fraction from 0 to 1. |
+| `<dataset>.csv` | Per-call algorithm summary; `Success Rate` is a fraction from 0 to 1. Mean SSE uses an overflow-safe calculation when its sum is non-finite. |
 
 Snapshot phases include `start`, `split`, `step` and `final` where applicable. Run and count padding are minimum widths; names with more than three run digits or four count digits do not necessarily sort numerically. In an SKM-Global-Basic `split` snapshot, new centroids are placed before global reassignment, so labels still describe the previous partition; bisecting snapshots already contain the selected trial labels. When ground truth is present, the first perfect and first failed example solutions can also be saved as `<Algo>_centroids_perfect.txt`, `<Algo>_partitions_perfect.txt` and corresponding `failed` files. These example files are independent of `--no-track`; without ground truth they are not saved.
 
 For SSE-selected splits, a selected trial's inner rows retain their evaluation timestamps and are appended when that trial is applied. Their timestamps can therefore precede rows for earlier applied splits. Bisecting records each try.
 
-CSV files use semicolons. `_runs.csv` writes SSE and milliseconds with `%.17g` and a decimal point. Excel-facing progress, inner, summary and iteration-stat files use fixed decimals and follow `--decimal-comma`. Snapshot centroids are written with **six decimal places**, so they are intended for figures, not exact floating-point comparisons. Snapshot labels stay 0-based. Some output writers check opening but not later write or close failures; validate important output files.
+CSV files use semicolons. `_runs.csv` writes SSE and milliseconds with `%.17g` and a decimal point. Excel-facing progress, inner, summary and iteration-stat files use fixed decimals and follow `--decimal-comma`. Snapshot centroids are written with **six decimal places**, so they are intended for figures, not exact floating-point comparisons. Snapshot labels stay 0-based.
 
 ## Scoring existing results
 
@@ -192,7 +192,7 @@ split_kmeans sse <data.txt> <centroids.txt>
 split_kmeans gt-from-partition <data.txt> <partition.txt> <out.txt>
 ```
 
-`ci` prints the Centroid Index. `sse` assigns each point to its nearest supplied centroid and prints SSE with `%.17g`; this can differ from a run's assigned-partition SSE, especially when using rounded snapshots. If arithmetic overflows, `sse` can print `inf` and still exit successfully; reject non-finite results before using them. Both commands require nonempty, dimension-compatible files.
+`ci` prints the Centroid Index. `sse` assigns each point to its nearest supplied centroid and prints SSE with `%.17g`; this can differ from a run's assigned-partition SSE, especially when using rounded snapshots. A non-finite SSE is an error. Both commands require nonempty, dimension-compatible files.
 
 `gt-from-partition` accepts exactly one integer label per data point, separated by spaces, tabs or line breaks, in the range 1 through N. It writes one centroid per label through the largest label, with six decimal places; a missing label produces a zero centroid and a warning. Snapshot partitions are 0-based and must be converted to 1-based labels before using this command.
 
