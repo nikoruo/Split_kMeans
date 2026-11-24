@@ -150,30 +150,39 @@ static void writeResultsToFile(const char* filename, Statistics stats, size_t nu
     closeOutputFile(file, outputFilePath);
 }
 
-/**
- * @brief Creates a new folder `outputs/<YYYY-MM-DD_HH-MM-SS>` (local time; `_2`, `_3`, ... when it exists) and writes
- * its path into `outputDirectory`.
- *
- * Creates `outputs` when missing, accepting EEXIST without checking its type. Tries the timestamp and suffixes
- * 2..99; exits on exhaustion, a path longer than `size`, or another mkdir error. The LOCALTIME result is unchecked.
- */
+static bool readLocalTime(struct tm* result)
+{
+    const time_t now = time(NULL);
+    if (now == (time_t)-1)
+    {
+        fprintf(stderr, "Error: Unable to obtain current time\n");
+        return false;
+    }
+    if (!platform_localtime(result, &now))
+    {
+        fprintf(stderr, "Error: Unable to convert local time\n");
+        return false;
+    }
+    return true;
+}
+
+/** @brief Creates `outputs/<timestamp>` with numeric suffixes for existing directories. */
 void createUniqueDirectory(char* outputDirectory, size_t size)
 {
-    time_t now = time(NULL);
-    struct tm t;
-    LOCALTIME(&t, &now);
+    struct tm t = {0};
+    if (!readLocalTime(&t)) exit(EXIT_FAILURE);
 
     char datebuf[32];
 
     if (strftime(datebuf, sizeof datebuf, "%Y-%m-%d_%H-%M-%S", &t) == 0)
     {
-        fprintf(stderr, "strftime failed\n");
+        fprintf(stderr, "Error: Unable to format local time\n");
         exit(EXIT_FAILURE);
     }
 
-    if (MAKE_DIR("outputs") != 0 && errno != EEXIST)
+    if (!platform_make_directory("outputs", NULL))
     {
-        perror("mkdir outputs");
+        fprintf(stderr, "Error: Unable to create directory 'outputs': %s\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
 
@@ -188,14 +197,15 @@ void createUniqueDirectory(char* outputDirectory, size_t size)
             exit(EXIT_FAILURE);
         }
 
-        if (MAKE_DIR(outputDirectory) == 0)
+        bool created = false;
+        if (!platform_make_directory(outputDirectory, &created))
+        {
+            fprintf(stderr, "Error: Unable to create directory '%s': %s\n", outputDirectory, strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        if (created)
         {
             return;
-        }
-        if (errno != EEXIST)
-        {
-            perror("Error: Unable to create directory");
-            exit(EXIT_FAILURE);
         }
     }
     fprintf(stderr, "Error: Unable to create a new folder under outputs for %s\n", datebuf);
@@ -206,22 +216,21 @@ void createUniqueDirectory(char* outputDirectory, size_t size)
  * @brief Ensures a per-dataset subdirectory exists under a base path.
  *
  * Builds `<baseDirectory>/<datasetName>` and creates the directory if missing.
- * Treats EEXIST as success without checking that the existing object is a directory.
  *
  * @param baseDirectory Parent path under which the dataset folder is created.
  * @param datasetName Leaf folder name (dataset identifier).
  * @param datasetDirectory Output buffer receiving the combined path.
  * @param size Capacity of `datasetDirectory` in bytes.
  * @return void
- * @errors Exits on buffer overflow or mkdir error other than EEXIST.
+ * @errors Exits on buffer overflow or directory-creation failure.
  */
 void createDatasetDirectory(const char* baseDirectory, const char* datasetName, char* datasetDirectory, size_t size)
 {
     joinPath(datasetDirectory, size, baseDirectory, datasetName);
 
-    if (MAKE_DIR(datasetDirectory) != 0 && errno != EEXIST)
+    if (!platform_make_directory(datasetDirectory, NULL))
     {
-        perror("Error: Unable to create dataset directory");
+        fprintf(stderr, "Error: Unable to create dataset directory '%s': %s\n", datasetDirectory, strerror(errno));
         exit(EXIT_FAILURE);
     }
 }
@@ -789,7 +798,7 @@ void textLine(const char* text, size_t index, char* line, size_t size)
  *
  * The shared header (runConfigHeader) must equal the one in the file; then one entry per call is appended:
  * the time, the command line (the program by file name, without its folder) and the resolved options
- * (mode, algorithms, runs, tracking). The LOCALTIME result is unchecked.
+ * (mode, algorithms, runs, tracking).
  */
 void writeRunConfig(const char* outputDirectory, const Options* opt, const TrackOptions* track,
                     const char* snapshotsText, const char* datasetsText, bool cliMode, int argc, char* argv[])
@@ -841,13 +850,18 @@ void writeRunConfig(const char* outputDirectory, const Options* opt, const Track
         checkFileWrite(file, path, fputs(header, file));
     }
 
-    time_t now = time(NULL);
-    struct tm local;
-    LOCALTIME(&local, &now);
+    struct tm local = {0};
+    if (!readLocalTime(&local))
+    {
+        closeOutputFile(file, path);
+        exit(EXIT_FAILURE);
+    }
     char stamp[32];
     if (strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S", &local) == 0)
     {
-        snprintf(stamp, sizeof(stamp), "unknown time");
+        fprintf(stderr, "Error: Unable to format local time\n");
+        closeOutputFile(file, path);
+        exit(EXIT_FAILURE);
     }
     checkFileWrite(file, path, fprintf(file, "%s | ", stamp));
     // The program by file name only: argv[0] can be an absolute path with the user name (PowerShell passes one)

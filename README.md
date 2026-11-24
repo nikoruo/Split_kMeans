@@ -68,7 +68,7 @@ gt/s1-cb.txt         # ground-truth centroids
 centroids/s1.txt     # one positive integer: K
 ```
 
-The three directories must contain the same number of text files. Files are paired **by sorted position**, not by matching names: sorting is case-insensitive in the program's default C locale with a bytewise tie-break. Directory scans can silently omit entries on some filesystem errors, so verify the printed pairings and input hashes before experiments. Non-text files and subdirectories are ignored. The local `data/`, `gt/` and `centroids/` datasets are not included in the repository.
+The three directories must contain the same number of text files. Files are paired **by sorted position**, not by matching names: sorting is case-insensitive in the program's default C locale with a bytewise tie-break. Directory-enumeration failures are errors; verify the printed pairings and input hashes before experiments. Non-text files and subdirectories are ignored. The local `data/`, `gt/` and `centroids/` datasets are not included in the repository.
 
 Single-dataset mode takes `-k K data.txt [gt.txt]`; the ground-truth file is optional. The program writes `NA` for CI-derived values when it is absent.
 
@@ -98,7 +98,7 @@ Options apply to batch and single-dataset mode unless noted. Each option can be 
 | `--no-track` | Off | Disable progress rows, selected snapshots and inner rows; cannot be combined with the three tracking options above. |
 | `--decimal-comma` | Off | Use decimal commas in Excel-facing output, not in input or `_runs.csv`. |
 | `--log-level <1-3>` | 1 | Basic results, per-run progress, or debug output. Use level 1 for timings. |
-| `-o <dir>` | `outputs/<timestamp>` | Output root; missing parent directories are created. |
+| `-o <dir>` | `outputs/<timestamp>` | Output root; missing parent directories are created, and existing components must be directories. |
 | `-h, --help`; `--version` | — | Print usage, or version, commit and compiler. |
 
 SKM-Local's default `both` first sends child points to their nearest centroid among all clusters, then checks the other points against the children. It adapts Random Swap's rejection-and-attraction rule to the two split children; the RS sources do not specify this split procedure. `inward`, the source-based comparison from Fränti, Kaukoranta & Nevalainen 1997 §2.4 and CBModules, checks each point against its current centroid and both children. `inward-nonchild` skips child points. Moves use fixed centroids, then touched means are recalculated. If points outside the split cluster were nearest among the unchanged centroids, `both` gives nearest-centroid assignments for the fixed centroids; the mean updates can invalidate that property.
@@ -145,7 +145,7 @@ $run = Join-Path $env:TEMP ("skm-example-" + (Get-Date -Format yyyyMMdd-HHmmss))
 $env:SKM_RUN = $run
 ```
 
-The report command accepts single-dataset output folders as well as batch output folders. For a batch subset, omit `-k` and the input files and use, for example, `--datasets s1,s4 --algo skm-local --seed 42 -r 10`. Batch mode still requires all three input directories to have matching file counts.
+The report command accepts single-dataset output folders as well as batch output folders. For a batch subset, omit `-k` and the input files and use, for example, `--datasets s1,s4 --algo skm-local --seed 42 -r 10`. Batch mode still requires all three input directories to have matching file counts. The default timestamp uses local time; clock or conversion errors terminate the call.
 
 Each output root has a `run_config.txt` with build, machine, seed and parameter information plus a record of each call. Recorded arguments can contain local paths, so review them before sharing. If `run_config.txt` exists, reusing `-o` requires a matching configuration header; if it is missing, other existing files are not checked before a new one is written. For an existing dataset folder, only K, N and D are checked, not input paths or contents. Start with a new folder and ensure appended calls use the same inputs and distinct run numbers. Different repartition modes or bisecting selection modes cannot be mixed when the configuration headers are present.
 

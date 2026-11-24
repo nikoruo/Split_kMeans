@@ -209,8 +209,14 @@ size_t list_files(const char* dir, char*** out);
  */
 size_t list_dirs(const char* dir, char*** out);
 
-/* Creates a directory and missing parents; accepts EEXIST without checking type, else returns false with errno. */
+/* Creates one directory or accepts an existing directory; created, when non-null, reports which occurred. */
+bool platform_make_directory(const char* path, bool* created);
+
+/* Creates a directory and missing parents; returns false with errno on failure. */
 bool platform_make_directories(const char* path);
+
+/* Requires non-null out and timep; returns false when local-time conversion fails. */
+bool platform_localtime(struct tm* out, const time_t* timep);
 
 /**
  * @brief Monotonic wall-clock ticks from an arbitrary origin; only differences are meaningful.
