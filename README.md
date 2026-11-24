@@ -48,6 +48,8 @@ The Makefile builds `build/release/split_kmeans` on Linux and `build\release\spl
 mingw32-make WERROR=1 check CHECK_BIN=build\msvc\x64\Release\Split_kMeans.exe CHECK_ROOT=C:\Temp\skm-msvc-check
 ```
 
+That `CHECK_BIN` check uses the Makefile's MinGW-built unit runner. Windows CI also compiles the unit suite with MSVC `/W4 /WX` and runs it against the Visual Studio executable.
+
 Other useful targets are `debug check` (assertions enabled), `asan check`, `ubsan check`, `testdata`, `bench`, `help` and `clean`. Sanitizers require a supporting compiler; the [Windows verification recipe](.github/skills/verify/SKILL.md) uses Visual Studio's clang because MinGW gcc has no sanitizers. Windows ASan has no leak checker. `golden-update` regenerates golden files and is for algorithm-change commits only. `clean` removes Makefile builds and test data, not the Visual Studio output.
 
 `make bench` runs fixed jobs on local real datasets; on Windows it compares the MinGW build with Visual Studio by default. `BENCH_REF` selects another reference binary and `BENCH_ROOT` selects an output root. Thesis timings use the MinGW gcc release build at log level 1 on an idle, plugged-in reference machine; do not time debug or sanitizer builds.
