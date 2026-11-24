@@ -42,6 +42,8 @@ const char* formatCi(size_t ci, char buffer[CI_TEXT_SIZE]);
 const char* formatFixed(double value, int decimals, char buffer[NUMBER_TEXT_SIZE]);
 bool fileExists(const char* filePath);
 void joinPath(char* out, size_t size, const char* dir, const char* name);
+/* Reports forbidden CSV name characters and returns false. */
+bool validateCsvName(const char* name, const char* kind);
 /* The returned buffer is overwritten by the next call. */
 char* removeExtension(const char* filename);
 

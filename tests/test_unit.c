@@ -2378,6 +2378,284 @@ static void expectText(const char* path, const char* expected)
     }
 }
 
+static void writeTextFixture(const char* path, const char* text)
+{
+    FILE* file = writeFixture(path);
+    require(fputs(text, file) >= 0, "could not write text fixture");
+    closeFixture(file);
+}
+
+static void writeBinaryFixture(const char* path, const char* text)
+{
+    FILE* file = fopen(path, "wb");
+    if (file == NULL)
+    {
+        perror(path);
+        exit(EXIT_FAILURE);
+    }
+    require(fputs(text, file) >= 0, "could not write binary fixture");
+    closeFixture(file);
+}
+
+static void expectCsvFailure(const char* executable, const char* arguments, const char* out, const char* err,
+                             const char* offender, const char* character)
+{
+    char command[9 * PATH_MAX + 1024];
+    const int length =
+        snprintf(command, sizeof(command), "cd . && \"%s\" %s > \"%s\" 2> \"%s\"", executable, arguments, out, err);
+    require(length >= 0 && (size_t)length < sizeof(command), "CSV failure command too long");
+    const int status = system(command);
+    require(status != -1 && status != 0, "invalid CSV name succeeded");
+    FILE* file = readFixture(out);
+    require(fgetc(file) == EOF && !ferror(file), "invalid CSV name wrote to stdout");
+    closeFixture(file);
+    expectText(err, "Error:");
+    expectText(err, offender);
+    expectText(err, character);
+}
+
+static void testCsvNames(const char* directory, const char* executable, const char* batch, const char* capture)
+{
+    char data[PATH_MAX], output[PATH_MAX], names[PATH_MAX], parent[PATH_MAX], path[PATH_MAX], errors[PATH_MAX];
+    char arguments[5 * PATH_MAX + 256], line[1024];
+    joinPath(errors, sizeof(errors), directory, "csv-errors.txt");
+    joinPath(data, sizeof(data), directory, "bad;name.txt");
+    joinPath(output, sizeof(output), directory, "bad-single-output");
+    writeTextFixture(data, "0\n2\n");
+    int length = snprintf(arguments, sizeof(arguments), "--algo km --seed 42 -r 1 --no-track -o \"%s\" -k 1 \"%s\"",
+                          output, data);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "CSV name command too long");
+    expectCsvFailure(executable, arguments, capture, errors, "bad;name", "character ';'");
+    require(!fileExists(output), "invalid dataset name created an output folder");
+
+    joinPath(parent, sizeof(parent), directory, "valid;parent");
+    require(platform_make_directories(parent), "could not create CSV parent fixture");
+    joinPath(data, sizeof(data), parent, "safe,comma.txt");
+    joinPath(output, sizeof(output), directory, "valid-comma-output");
+    writeTextFixture(data, "0\n2\n");
+    length = snprintf(arguments, sizeof(arguments),
+                      "--algo km --seed 42 -r 1 --no-track --decimal-comma -o \"%s\" -k 1 \"%s\"", output, data);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "comma dataset command too long");
+    expectCli(executable, arguments, capture, true);
+    joinPath(path, sizeof(path), output, "safe,comma");
+    joinPath(data, sizeof(data), path, "KM_runs.csv");
+    require(fileExists(data), "comma dataset output is missing");
+
+    const struct
+    {
+        const char* folder;
+        const char* contents;
+        const char* offender;
+        const char* character;
+    } cases[] = {{"name-semicolon", "s01_blobs2d Bad;Name\n", "Bad;Name", "character ';'"},
+                 {"name-quote", "s01_blobs2d Bad\"Name\n", "Bad\"Name", "character '\"'"},
+                 {"name-cr", "s01_blobs2d Bad\rName\n", "Bad\\rName", "character '\\r'"},
+                 {"name-cr-end", "s01_blobs2d Bad\r", "Bad\\r", "character '\\r'"},
+                 {"name-cr-crlf", "s01_blobs2d Bad\r\r\n", "Bad\\r", "character '\\r'"},
+                 {"name-unknown", "unknown Bad;Name\n", "Bad;Name", "character ';'"},
+                 {"name-later", "s01_blobs2d Good\nunknown Bad;Name\n", "Bad;Name", "character ';'"}};
+    joinPath(names, sizeof(names), directory, "csv-names.txt");
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i)
+    {
+        writeBinaryFixture(names, cases[i].contents);
+        joinPath(output, sizeof(output), directory, cases[i].folder);
+        length = snprintf(arguments, sizeof(arguments), "report --names \"%s\" -o \"%s\" \"%s\"", names, output, batch);
+        require(length >= 0 && (size_t)length < sizeof(arguments), "invalid display name command too long");
+        expectCsvFailure(executable, arguments, capture, errors, cases[i].offender, cases[i].character);
+        expectText(errors, "display name");
+        require(!fileExists(output), "invalid display name created a report folder");
+    }
+
+    joinPath(parent, sizeof(parent), directory, "missing-report-input");
+    joinPath(output, sizeof(output), directory, "early-name-output");
+    length = snprintf(arguments, sizeof(arguments), "report --names \"%s\" -o \"%s\" \"%s\"", names, output, parent);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "early name command too long");
+    expectCsvFailure(executable, arguments, capture, errors, "Bad;Name", "character ';'");
+    require(!fileExists(output), "early invalid display name created a report folder");
+
+    joinPath(parent, sizeof(parent), directory, "legacy-name-input");
+    joinPath(path, sizeof(path), parent, "a-good");
+    require(platform_make_directories(path), "could not create valid legacy report fixture");
+    joinPath(data, sizeof(data), path, "dataset.txt");
+    writeTextFixture(data, "k: 1\n");
+    joinPath(data, sizeof(data), path, "KM_runs.csv");
+    writeTextFixture(data, "run;seed;sse;ci;ms\n1;0;1;0;1\n");
+    joinPath(path, sizeof(path), parent, "bad;dataset");
+    require(platform_make_directories(path), "could not create legacy report fixture");
+    joinPath(data, sizeof(data), parent, "run_config.txt");
+    writeTextFixture(data, "fixture: CSV names\ncalls:\n");
+    joinPath(data, sizeof(data), path, "dataset.txt");
+    writeTextFixture(data, "k: 1\n");
+    joinPath(data, sizeof(data), path, "KM_runs.csv");
+    writeTextFixture(data, "run;seed;sse;ci;ms\n1;0;1;0;1\n");
+    joinPath(output, sizeof(output), directory, "legacy-name-report");
+    length = snprintf(arguments, sizeof(arguments), "report -o \"%s\" \"%s\"", output, parent);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "legacy name command too long");
+    expectCsvFailure(executable, arguments, capture, errors, "bad;dataset", "character ';'");
+    require(!fileExists(output), "invalid legacy dataset created a report folder");
+
+    writeBinaryFixture(names, "s01_blobs2d Comma, Name\r\n");
+    joinPath(output, sizeof(output), directory, "comma-name-report");
+    length = snprintf(arguments, sizeof(arguments), "report --names \"%s\" --decimal-comma --no-time -o \"%s\" \"%s\"",
+                      names, output, batch);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "comma display name command too long");
+    expectCli(executable, arguments, capture, true);
+    joinPath(path, sizeof(path), output, "summary.csv");
+    FILE* file = readFixture(path);
+    require(fgets(line, sizeof(line), file) != NULL && fgets(line, sizeof(line), file) != NULL &&
+                strncmp(line, "Comma, Name;KM;", strlen("Comma, Name;KM;")) == 0,
+            "comma display name changed the report row");
+    size_t separators = 0;
+    for (const char* c = line; *c != '\0'; ++c)
+        separators += *c == ';';
+    require(separators == 7, "comma display name changed the report column count");
+    char* sse = line;
+    for (size_t i = 0; i < 3; ++i)
+    {
+        sse = strchr(sse, ';');
+        require(sse != NULL, "missing report SSE field");
+        ++sse;
+    }
+    char* end = strchr(sse, ';');
+    require(end != NULL && memchr(sse, ',', (size_t)(end - sse)) != NULL, "decimal comma missing from report SSE");
+    require(fgets(line, sizeof(line), file) == NULL && !ferror(file), "unexpected comma report row");
+    closeFixture(file);
+
+    writeBinaryFixture(names, "s01_blobs2d First\nunknown Ignored\ns01_blobs2d Second\n");
+    joinPath(output, sizeof(output), directory, "ordered-name-report");
+    length = snprintf(arguments, sizeof(arguments), "report --names \"%s\" --no-time -o \"%s\" \"%s\"", names, output,
+                      batch);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "ordered display name command too long");
+    expectCli(executable, arguments, capture, true);
+    expectText(capture, "Warning: --names: unknown");
+    expectText(capture, "Warning: --names: s01_blobs2d");
+    joinPath(path, sizeof(path), output, "summary.csv");
+    expectText(path, "First;KM;");
+}
+
+static void absoluteFixturePath(char* out, size_t size, const char* cwd, const char* path)
+{
+    if (path[0] == '/' || path[0] == '\\' || (path[0] != '\0' && path[1] == ':'))
+    {
+        require(strlen(path) < size, "absolute fixture path too long");
+        STRCPY(out, size, path);
+    }
+    else
+    {
+        joinPath(out, size, cwd, path);
+    }
+}
+
+static void createCsvBatchFixture(const char* root, const char* const* names, size_t count)
+{
+    const char* folders[] = {"data", "gt", "centroids"};
+    const char* contents[] = {"0\n2\n", "1\n", "1\n"};
+    char folder[PATH_MAX], path[PATH_MAX];
+    for (size_t d = 0; d < sizeof(folders) / sizeof(folders[0]); ++d)
+    {
+        joinPath(folder, sizeof(folder), root, folders[d]);
+        require(platform_make_directories(folder), "could not create CSV batch fixture");
+        for (size_t i = 0; i < count; ++i)
+        {
+            joinPath(path, sizeof(path), folder, names[i]);
+            writeTextFixture(path, contents[d]);
+        }
+    }
+}
+
+static int runCsvBatch(const char* executable, const char* directory, const char* arguments, const char* out,
+                       const char* err, bool windows)
+{
+    char command[7 * PATH_MAX + 512];
+    const int length = snprintf(command, sizeof(command), "cd %s\"%s\" && \"%s\" %s > \"%s\" 2> \"%s\"",
+                                windows ? "/d " : "", directory, executable, arguments, out, err);
+    require(length >= 0 && (size_t)length < sizeof(command), "CSV batch command too long");
+    return system(command);
+}
+
+static void testCsvBatchNames(const char* directory, const char* executable)
+{
+    char machine[512], cwdFile[PATH_MAX], cwd[PATH_MAX], root[PATH_MAX], binary[PATH_MAX];
+    char batch[PATH_MAX], commaBatch[PATH_MAX], output[PATH_MAX], out[PATH_MAX], err[PATH_MAX], path[PATH_MAX];
+    char resultPath[PATH_MAX];
+    char command[3 * PATH_MAX + 64], arguments[2 * PATH_MAX + 256], line[32];
+    platform_machine(machine, sizeof(machine));
+    const bool windows = strncmp(machine, "Windows", 7) == 0;
+    if (windows)
+        require(strcmp(platform_basename("C:/unsafe;parent\\safe.txt"), "safe.txt") == 0,
+                "mixed Windows path did not select its basename");
+    else
+        require(strcmp(platform_basename("/tmp/unsafe;parent\\safe.txt"), "unsafe;parent\\safe.txt") == 0,
+                "POSIX backslash was treated as a path separator");
+    joinPath(cwdFile, sizeof(cwdFile), directory, "csv-working-directory.txt");
+    int length = snprintf(command, sizeof(command), "%s > \"%s\"", windows ? "cd" : "pwd", cwdFile);
+    require(length >= 0 && (size_t)length < sizeof(command) && system(command) == 0,
+            "could not obtain test working directory");
+    FILE* file = readFixture(cwdFile);
+    require(fgets(cwd, sizeof(cwd), file) != NULL, "could not read test working directory");
+    cwd[strcspn(cwd, "\r\n")] = '\0';
+    closeFixture(file);
+    absoluteFixturePath(root, sizeof(root), cwd, directory);
+    absoluteFixturePath(binary, sizeof(binary), cwd, executable);
+    joinPath(batch, sizeof(batch), root, "csv-batch-input");
+    joinPath(commaBatch, sizeof(commaBatch), root, "csv-comma-batch-input");
+    joinPath(out, sizeof(out), root, "csv-batch-stdout.txt");
+    joinPath(err, sizeof(err), root, "csv-batch-stderr.txt");
+
+    const char* names[] = {"a-good.txt", "z;bad.txt"};
+    createCsvBatchFixture(batch, names, 2);
+    joinPath(output, sizeof(output), root, "csv-batch-bad-output");
+    length = snprintf(arguments, sizeof(arguments), "--algo km --seed 42 -r 1 --no-track -o \"%s\"", output);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "CSV batch arguments too long");
+    int status = runCsvBatch(binary, batch, arguments, out, err, windows);
+    require(status != -1 && status != 0, "batch accepted a later invalid dataset name");
+    file = readFixture(out);
+    require(fgetc(file) == EOF && !ferror(file), "invalid batch name wrote to stdout");
+    closeFixture(file);
+    expectText(err, "z;bad");
+    expectText(err, "character ';'");
+    require(!fileExists(output), "invalid batch name left partial output");
+
+    joinPath(output, sizeof(output), root, "csv-batch-existing-output");
+    require(platform_make_directories(output), "could not create existing batch output");
+    joinPath(path, sizeof(path), output, "run_config.txt");
+    writeTextFixture(path, "unchanged\n");
+    length = snprintf(arguments, sizeof(arguments), "--algo km --seed 42 -r 1 --no-track -o \"%s\"", output);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "existing batch arguments too long");
+    status = runCsvBatch(binary, batch, arguments, out, err, windows);
+    require(status != -1 && status != 0, "batch accepted an invalid name in an existing output");
+    expectText(err, "z;bad");
+    file = readFixture(path);
+    require(fgets(line, sizeof(line), file) != NULL && strcmp(line, "unchanged\n") == 0 && fgetc(file) == EOF &&
+                !ferror(file),
+            "invalid batch name modified an existing configuration");
+    closeFixture(file);
+    joinPath(path, sizeof(path), output, "a-good");
+    require(!fileExists(path), "invalid batch name started an earlier dataset");
+
+    joinPath(output, sizeof(output), root, "csv-batch-selected-output");
+    length = snprintf(arguments, sizeof(arguments), "--algo km --seed 42 -r 1 --no-track --datasets a-good -o \"%s\"",
+                      output);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "selected batch arguments too long");
+    require(runCsvBatch(binary, batch, arguments, out, err, windows) == 0,
+            "unselected invalid dataset blocked the batch");
+    joinPath(path, sizeof(path), output, "a-good");
+    joinPath(resultPath, sizeof(resultPath), path, "KM_runs.csv");
+    require(fileExists(resultPath), "selected batch output is missing");
+
+    const char* commaNames[] = {"comma,name.txt"};
+    createCsvBatchFixture(commaBatch, commaNames, 1);
+    joinPath(output, sizeof(output), root, "csv-comma-batch-output");
+    length =
+        snprintf(arguments, sizeof(arguments), "--algo km --seed 42 -r 1 --no-track --decimal-comma -o \"%s\"", output);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "comma batch arguments too long");
+    require(runCsvBatch(binary, commaBatch, arguments, out, err, windows) == 0, "comma dataset failed in batch");
+    joinPath(path, sizeof(path), output, "comma,name");
+    joinPath(resultPath, sizeof(resultPath), path, "KM_runs.csv");
+    require(fileExists(resultPath), "comma batch output is missing");
+    require(remove(cwdFile) == 0, "could not remove test working directory fixture");
+}
+
 static void checkGtInformation(const char* path, size_t centroids)
 {
     FILE* file = readFixture(path);
@@ -3617,6 +3895,8 @@ static void testCliIterationLimit(const char* directory, const char* executable,
     testReportSummary(root, executable, capture);
     testReportIoFailures(root, executable, capture);
     testOutputPathFailures(root, executable, data, batch, capture);
+    testCsvNames(root, executable, batch, capture);
+    testCsvBatchNames(root, executable);
     testGtFromPartitionStreams(root, executable);
     testSseCommand(root, executable);
     testFiniteRunAverages(root, executable, capture);

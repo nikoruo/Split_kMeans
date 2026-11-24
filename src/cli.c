@@ -1016,6 +1016,15 @@ int cliMain(int argc, char* argv[])
     {
         if (selectedSets[i])
         {
+            const char* name = cliMode ? platform_basename(dataNames[i]) : dataNames[i];
+            if (!validateCsvName(removeExtension(name), "dataset name"))
+            {
+                freeStringList(dataNames, dataCount);
+                freeStringList(gtNames, dataCount);
+                freeStringList(kNames, dataCount);
+                free(selectedSets);
+                return EXIT_FAILURE;
+            }
             ++selectedCount;
         }
     }
@@ -1090,14 +1099,7 @@ int cliMain(int argc, char* argv[])
                 currentGtFile[0] = '\0'; // No ground truth
             }
 
-            baseName = removeExtension(cliDataFile);
-            char* baseNameOnly = strrchr(baseName, '/');
-            if (!baseNameOnly) baseNameOnly = strrchr(baseName, '\\');
-            if (baseNameOnly)
-                baseNameOnly++;
-            else
-                baseNameOnly = baseName;
-            baseName = baseNameOnly;
+            baseName = removeExtension(platform_basename(cliDataFile));
 
             currentK = cliNumCentroids;
             currentLoops = opt.runs;

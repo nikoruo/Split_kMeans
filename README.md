@@ -68,7 +68,7 @@ gt/s1-cb.txt         # ground-truth centroids
 centroids/s1.txt     # one positive integer: K
 ```
 
-The three directories must contain the same number of text files. Files are paired **by sorted position**, not by matching names: sorting is case-insensitive in the program's default C locale with a bytewise tie-break. Directory-enumeration failures are errors; verify the printed pairings and input hashes before experiments. Non-text files and subdirectories are ignored. The local `data/`, `gt/` and `centroids/` datasets are not included in the repository.
+The three directories must contain the same number of text files. Files are paired **by sorted position**, not by matching names: sorting is case-insensitive in the program's default C locale with a bytewise tie-break. Directory-enumeration failures are errors; verify the printed pairings and input hashes before experiments. Dataset names (data-file base names without the extension) may contain commas but not `;`, `"`, CR or LF; selected invalid names are rejected before any run. `--datasets` uses commas as separators, so a name containing a comma cannot be selected individually with that option. Non-text files and subdirectories are ignored. The local `data/`, `gt/` and `centroids/` datasets are not included in the repository.
 
 Single-dataset mode takes `-k K data.txt [gt.txt]`; the ground-truth file is optional. The program writes `NA` for CI-derived values when it is absent.
 
@@ -209,7 +209,7 @@ split_kmeans report [-o dir] [--names file] [--curve-run i] [--decimal-comma] [-
 - `summary.csv` reports mean SSE, sample SSE deviation, mean CI, relative CI, success percentage, mean time and sample time deviation. Deviations are `NA` for one run.
 - RS tables and curves end at each run's **last SSE improvement**, determined afterwards from its last progress row; if there was no improvement, that is the count-0 initial row. `full_time_ms_mean` retains the time for the full run, including all performed swaps. This is a retrospective reporting rule, not an online stopping rule.
 - RKM and RS curves use `--curve-run` (default 1) when progress rows exist. Other curves average the runs at each count, retaining a finished run's last state. Without rows, an algorithm has only its end point. Curve SSE is scaled by the power of ten shown in its header, chosen from the smallest positive SSE in that dataset's means and curves.
-- `--names <file>` lists `<dataset-folder> [display name]` per line; listed datasets come first in that order. Dataset and display names are written without CSV quoting, so avoid semicolons or line breaks in names. `--decimal-comma` formats the report for a decimal-comma spreadsheet. `--no-time` omits time columns and `table_time.csv`.
+- `--names <file>` lists `<dataset-folder> [display name]` per line; listed datasets come first in that order. Dataset folder and display names may contain commas but not `;`, `"`, CR or LF; invalid names are rejected before reports are written. Line endings delimit entries. `--decimal-comma` formats the report for a decimal-comma spreadsheet. `--no-time` omits time columns and `table_time.csv`.
 
 The standard `summary.csv` header is:
 

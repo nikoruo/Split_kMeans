@@ -53,6 +53,13 @@ typedef struct
     ReportAlgorithm algorithms[ALGORITHM_COUNT]; /**< Indexed like algorithmOptions. */
 } ReportDataset;
 
+typedef struct ReportName
+{
+    struct ReportName* next;
+    char* display;
+    char name[];
+} ReportName;
+
 /** @brief Means over the runs of one algorithm on one dataset. */
 typedef struct
 {
@@ -233,17 +240,16 @@ static void reportReadCsv(const char* path, bool isLog, ReportRows* rows)
     closeInputFile(file, path);
 }
 
-/** @brief Reads the shared header of `<directory>/run_config.txt` (the lines up to "calls:") into `header`; exits when
- * missing. */
-static void reportReadHeader(const char* directory, char* header, size_t size)
+/** @brief Reads the shared header of `<directory>/run_config.txt` (the lines up to "calls:") into `header`. */
+static bool reportReadHeader(const char* directory, char* header, size_t size)
 {
     char path[PATH_MAX];
     joinPath(path, sizeof(path), directory, "run_config.txt");
-    FILE* file;
-    if (FOPEN(file, path, "r") != 0)
+    FILE* file = fopen(path, "r");
+    if (file == NULL)
     {
         fprintf(stderr, "Error: %s not found; report needs output folders written by version 2.0.0 or later\n", path);
-        exit(EXIT_FAILURE);
+        return false;
     }
     const size_t length = fread(header, 1, size - 1, file);
     header[length] = '\0';
@@ -264,9 +270,10 @@ static void reportReadHeader(const char* directory, char* header, size_t size)
     if (calls == NULL)
     {
         fprintf(stderr, "Error: %s has no calls: line\n", path);
-        exit(EXIT_FAILURE);
+        return false;
     }
     calls[strlen("\ncalls:\n")] = '\0';
+    return true;
 }
 
 /** @brief K from `<directory>/dataset.txt`, or 0 when the file or a valid K is missing. */
@@ -811,10 +818,25 @@ static void reportWriteSummaryRow(FILE* file, const char* path, const ReportData
     checkFileWrite(file, path, fputc('\n', file));
 }
 
-/** @brief Reads run folders into `*datasets` and returns their count; the caller owns the array and its row arrays. */
-static size_t reportCollect(const char* const* directories, size_t directoryCount, ReportDataset** datasets)
+static void reportFreeDatasets(ReportDataset* datasets, size_t count)
+{
+    for (size_t d = 0; d < count; ++d)
+    {
+        for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
+        {
+            free(datasets[d].algorithms[a].runs.rows);
+            free(datasets[d].algorithms[a].log.rows);
+        }
+    }
+    free(datasets);
+}
+
+/** @brief Reads run folders into `*datasets`; the caller owns the array and its row arrays. */
+static bool reportCollect(const char* const* directories, size_t directoryCount, ReportDataset** datasets,
+                          size_t* count)
 {
     size_t datasetCount = 0;
+    *count = 0;
     for (size_t f = 0; f < directoryCount; ++f)
     {
         char** names = NULL;
@@ -836,6 +858,13 @@ static size_t reportCollect(const char* const* directories, size_t directoryCoun
                 if (!fileExists(path))
                 {
                     continue;
+                }
+                if (!validateCsvName(names[n], "dataset name"))
+                {
+                    freeStringList(names, nameCount);
+                    reportFreeDatasets(*datasets, datasetCount);
+                    *datasets = NULL;
+                    return false;
                 }
                 if (d == datasetCount)
                 {
@@ -873,65 +902,120 @@ static size_t reportCollect(const char* const* directories, size_t directoryCoun
         }
         freeStringList(names, nameCount);
     }
-    return datasetCount;
+    *count = datasetCount;
+    return true;
+}
+
+static bool reportParseNameLine(char* line, char** name, char** display)
+{
+    size_t length = strlen(line);
+    if (length > 0 && line[length - 1] == '\n')
+    {
+        line[--length] = '\0';
+        if (length > 0 && line[length - 1] == '\r') line[--length] = '\0';
+    }
+    *name = line + strspn(line, " \t");
+    if (**name == '\0') return false;
+
+    char* rest = *name + strcspn(*name, " \t");
+    if (*rest != '\0')
+    {
+        *rest++ = '\0';
+        rest += strspn(rest, " \t");
+    }
+    *display = rest;
+    return true;
+}
+
+static void reportFreeNames(ReportName* names)
+{
+    while (names != NULL)
+    {
+        ReportName* next = names->next;
+        free(names);
+        names = next;
+    }
+}
+
+static bool reportReadNamesFile(const char* namesFile, ReportName** names)
+{
+    *names = NULL;
+    if (namesFile == NULL) return true;
+    FILE* file;
+    /* Preserve embedded CR bytes before recognizing a CRLF line ending. */
+    if (FOPEN(file, namesFile, "rb") != 0) handleFileError(namesFile);
+    char line[LINE_BUFSZ];
+    ReportName** tail = names;
+    for (size_t lineNumber = 1; readDataLine(line, sizeof(line), file, namesFile, lineNumber) != NULL; ++lineNumber)
+    {
+        char* name;
+        char* display;
+        if (!reportParseNameLine(line, &name, &display)) continue;
+        if (!validateCsvName(name, "dataset name") || !validateCsvName(display, "display name"))
+        {
+            closeInputFile(file, namesFile);
+            reportFreeNames(*names);
+            *names = NULL;
+            return false;
+        }
+        const size_t nameSize = strlen(name) + 1;
+        const size_t displaySize = strlen(display) + 1;
+        ReportName* entry = malloc(sizeof(*entry) + nameSize + displaySize);
+        if (entry == NULL)
+        {
+            closeInputFile(file, namesFile);
+            reportFreeNames(*names);
+            *names = NULL;
+            fprintf(stderr, "Error: Unable to allocate memory\n");
+            return false;
+        }
+        entry->next = NULL;
+        entry->display = entry->name + nameSize;
+        memcpy(entry->name, name, nameSize);
+        memcpy(entry->display, display, displaySize);
+        *tail = entry;
+        tail = &entry->next;
+    }
+    closeInputFile(file, namesFile);
+    return true;
 }
 
 /**
- * @brief Dataset order and display names: the `namesFile` lines ("<dataset> [display name]") first, the rest by name.
+ * @brief Dataset order and display names: the names-file entries first, the rest by name.
  *
  * Fills `order` (datasetCount entries). Unknown or repeated names in the file are warnings.
  */
-static void reportOrder(const char* namesFile, ReportDataset* datasets, size_t datasetCount, size_t* order)
+static bool reportOrder(const ReportName* names, ReportDataset* datasets, size_t datasetCount, size_t* order)
 {
     bool* placed = calloc(datasetCount, sizeof(bool));
     handleMemoryError(placed);
     size_t ordered = 0;
-    if (namesFile != NULL)
+    for (const ReportName* entry = names; entry != NULL; entry = entry->next)
     {
-        FILE* file;
-        if (FOPEN(file, namesFile, "r") != 0)
+        const char* name = entry->name;
+        const char* rest = entry->display;
+        size_t d = 0;
+        while (d < datasetCount && strcmp(datasets[d].name, name) != 0)
         {
-            handleFileError(namesFile);
+            ++d;
         }
-        char line[512];
-        while (fgets(line, sizeof(line), file) != NULL)
+        if (d == datasetCount || placed[d])
         {
-            line[strcspn(line, "\r\n")] = '\0';
-            char* name = line + strspn(line, " \t");
-            if (*name == '\0')
-            {
-                continue;
-            }
-            char* rest = name + strcspn(name, " \t");
-            if (*rest != '\0')
-            {
-                *rest++ = '\0';
-                rest += strspn(rest, " \t");
-            }
-            size_t d = 0;
-            while (d < datasetCount && strcmp(datasets[d].name, name) != 0)
-            {
-                ++d;
-            }
-            if (d == datasetCount || placed[d])
-            {
-                fprintf(stderr, "Warning: --names: %s is not a dataset of the report or is listed twice\n", name);
-                continue;
-            }
-            if (*rest != '\0')
-            {
-                if (strlen(rest) >= sizeof(datasets[d].display))
-                {
-                    fprintf(stderr, "Error: --names: the display name of %s is too long\n", name);
-                    closeInputFile(file, namesFile);
-                    exit(EXIT_FAILURE);
-                }
-                STRCPY(datasets[d].display, sizeof(datasets[d].display), rest);
-            }
-            placed[d] = true;
-            order[ordered++] = d;
+            fprintf(stderr, "Warning: --names: %s is not a dataset of the report or is listed twice\n", name);
+            continue;
         }
-        closeInputFile(file, namesFile);
+        if (*rest != '\0')
+        {
+            if (strlen(rest) >= sizeof(datasets[d].display))
+            {
+                fprintf(stderr, "Error: --names: the display name of %s is too long\n", name);
+                free(placed);
+                return false;
+            }
+            STRCPY(datasets[d].display, sizeof(datasets[d].display), rest);
+        }
+        placed[d] = true;
+        order[ordered++] = d;
     }
     while (ordered < datasetCount)
     {
@@ -947,6 +1031,7 @@ static void reportOrder(const char* namesFile, ReportDataset* datasets, size_t d
         order[ordered++] = next;
     }
     free(placed);
+    return true;
 }
 
 /**
@@ -1008,14 +1093,24 @@ int commandReport(int argc, char* argv[])
         fprintf(stderr, "Error: -o path too long\n");
         return EXIT_FAILURE;
     }
+    ReportName* names = NULL;
+    if (!reportReadNamesFile(namesFile, &names)) return EXIT_FAILURE;
 
     // The folders must come from one configuration
     char first[RUN_CONFIG_SIZE];
     char other[RUN_CONFIG_SIZE];
-    reportReadHeader(directories[0], first, sizeof(first));
+    if (!reportReadHeader(directories[0], first, sizeof(first)))
+    {
+        reportFreeNames(names);
+        return EXIT_FAILURE;
+    }
     for (size_t f = 1; f < directoryCount; ++f)
     {
-        reportReadHeader(directories[f], other, sizeof(other));
+        if (!reportReadHeader(directories[f], other, sizeof(other)))
+        {
+            reportFreeNames(names);
+            return EXIT_FAILURE;
+        }
         if (strcmp(first, other) != 0)
         {
             size_t line = 0;
@@ -1029,17 +1124,36 @@ int commandReport(int argc, char* argv[])
             } while (strcmp(ours, theirs) == 0 && strcmp(ours, "(none)") != 0);
             fprintf(stderr, "Error: %s and %s come from different configurations:\n  %s\n  %s\n", directories[0],
                     directories[f], ours, theirs);
+            reportFreeNames(names);
             return EXIT_FAILURE;
         }
     }
 
     ReportDataset* datasets = NULL;
-    const size_t datasetCount = reportCollect(directories, directoryCount, &datasets);
+    size_t datasetCount = 0;
+    if (!reportCollect(directories, directoryCount, &datasets, &datasetCount))
+    {
+        reportFreeNames(names);
+        return EXIT_FAILURE;
+    }
     if (datasetCount == 0)
     {
         fprintf(stderr, "Error: no <Algo>_runs.csv files in the dataset folders of %s\n", directories[0]);
+        reportFreeNames(names);
         return EXIT_FAILURE;
     }
+
+    size_t* order = malloc(datasetCount * sizeof(size_t));
+    handleMemoryError(order);
+    if (!reportOrder(names, datasets, datasetCount, order))
+    {
+        reportFreeNames(names);
+        reportFreeDatasets(datasets, datasetCount);
+        free(order);
+        return EXIT_FAILURE;
+    }
+    reportFreeNames(names);
+
     for (size_t d = 0; d < datasetCount; ++d)
     {
         for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
@@ -1051,10 +1165,6 @@ int commandReport(int argc, char* argv[])
             }
         }
     }
-
-    size_t* order = malloc(datasetCount * sizeof(size_t));
-    handleMemoryError(order);
-    reportOrder(namesFile, datasets, datasetCount, order);
 
     char outputDirectory[PATH_MAX];
     if (outputOption != NULL)
@@ -1124,15 +1234,7 @@ int commandReport(int argc, char* argv[])
     printf("Report: %zu dataset%s from %zu folder%s -> %s\n", datasetCount, datasetCount == 1 ? "" : "s",
            directoryCount, directoryCount == 1 ? "" : "s", outputDirectory);
 
-    for (size_t d = 0; d < datasetCount; ++d)
-    {
-        for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
-        {
-            free(datasets[d].algorithms[a].runs.rows);
-            free(datasets[d].algorithms[a].log.rows);
-        }
-    }
-    free(datasets);
+    reportFreeDatasets(datasets, datasetCount);
     free(order);
     free(summaries);
     return EXIT_SUCCESS;
