@@ -2378,6 +2378,90 @@ static void expectText(const char* path, const char* expected)
     }
 }
 
+static void checkGtInformation(const char* path, size_t centroids)
+{
+    FILE* file = readFixture(path);
+    char text[3 * PATH_MAX + 512];
+    const size_t length = fread(text, 1, sizeof(text) - 1, file);
+    require(!ferror(file) && fgetc(file) == EOF, "could not read gt-from-partition output");
+    text[length] = '\0';
+    closeFixture(file);
+
+    char expected[64];
+    int written = snprintf(expected, sizeof(expected), "Successfully wrote %zu centroids", centroids);
+    require(written >= 0 && (size_t)written < sizeof(expected), "gt output expectation too long");
+    require(strstr(text, "Read 3 data points from") != NULL && strstr(text, "Read 3 labels, clusters 1 to") != NULL &&
+                strstr(text, expected) != NULL && strstr(text, "Warning:") == NULL && strstr(text, "Error:") == NULL,
+            "gt-from-partition informational output changed");
+}
+
+static void testGtFromPartitionStreams(const char* directory, const char* executable)
+{
+    char data[PATH_MAX], labels[PATH_MAX], centroids[PATH_MAX], out[PATH_MAX], err[PATH_MAX];
+    char command[6 * PATH_MAX + 256], line[PATH_MAX + 128];
+    joinPath(data, sizeof(data), directory, "gt-stream-data.txt");
+    joinPath(labels, sizeof(labels), directory, "gt-stream-labels.txt");
+    joinPath(centroids, sizeof(centroids), directory, "gt-stream-centroids.txt");
+    joinPath(out, sizeof(out), directory, "gt-stream-stdout.txt");
+    joinPath(err, sizeof(err), directory, "gt-stream-stderr.txt");
+    FILE* file = writeFixture(data);
+    closeFixture(file);
+    file = writeFixture(labels);
+    require(fputs("1\n3\n3\n", file) >= 0, "could not write gt labels");
+    closeFixture(file);
+
+    const int length =
+        snprintf(command, sizeof(command), "cd . && \"%s\" gt-from-partition \"%s\" \"%s\" \"%s\" > \"%s\" 2> \"%s\"",
+                 executable, data, labels, centroids, out, err);
+    require(length >= 0 && (size_t)length < sizeof(command), "gt-from-partition command too long");
+    int status = system(command);
+    require(status != -1 && status != 0, "empty gt input succeeded");
+    file = readFixture(out);
+    require(fgetc(file) == EOF && !ferror(file), "empty-data error wrote to stdout");
+    closeFixture(file);
+    file = readFixture(err);
+    require(fgets(line, sizeof(line), file) != NULL && strstr(line, "Error: No data points read from file") != NULL &&
+                strstr(line, data) != NULL && fgetc(file) == EOF && !ferror(file),
+            "empty-data error was not written to stderr");
+    closeFixture(file);
+    require(!fileExists(centroids), "empty gt input created centroids");
+
+    file = writeFixture(data);
+    require(fputs("0 0\n2 4\n9 8\n", file) >= 0, "could not write gt data");
+    closeFixture(file);
+    require(system(command) == 0, "gt input with a missing label failed");
+    checkGtInformation(out, 3);
+    file = readFixture(err);
+    require(fgets(line, sizeof(line), file) != NULL &&
+                strcmp(line, "Warning: Cluster 1 has no points assigned to it\n") == 0 && fgetc(file) == EOF &&
+                !ferror(file),
+            "missing-label warning was not written to stderr");
+    closeFixture(file);
+    Centroids result = readCentroids(centroids);
+    const double missingExpected[] = {0, 0, 0, 0, 5.5, 6};
+    require(result.size == 3 && result.dimensions == 2, "wrong missing-label centroid shape");
+    for (size_t i = 0; i < 6; ++i)
+        require(result.coordinates[i] == missingExpected[i], "wrong missing-label centroid");
+    freeCentroids(&result);
+
+    file = writeFixture(labels);
+    require(fputs("1\n2\n2\n", file) >= 0, "could not write complete gt labels");
+    closeFixture(file);
+    require(system(command) == 0, "gt input with complete labels failed");
+    checkGtInformation(out, 2);
+    file = readFixture(err);
+    require(fgetc(file) == EOF && !ferror(file), "complete gt labels wrote a diagnostic");
+    closeFixture(file);
+    result = readCentroids(centroids);
+    const double completeExpected[] = {0, 0, 5.5, 6};
+    require(result.size == 2 && result.dimensions == 2, "wrong complete-label centroid shape");
+    for (size_t i = 0; i < 4; ++i)
+        require(result.coordinates[i] == completeExpected[i], "wrong complete-label centroid");
+    freeCentroids(&result);
+    require(remove(data) == 0 && remove(labels) == 0 && remove(centroids) == 0 && remove(out) == 0 && remove(err) == 0,
+            "could not remove gt stream fixtures");
+}
+
 static void testOutputPathFailures(const char* directory, const char* executable, const char* data, const char* batch,
                                    const char* capture)
 {
@@ -3533,6 +3617,7 @@ static void testCliIterationLimit(const char* directory, const char* executable,
     testReportSummary(root, executable, capture);
     testReportIoFailures(root, executable, capture);
     testOutputPathFailures(root, executable, data, batch, capture);
+    testGtFromPartitionStreams(root, executable);
     testSseCommand(root, executable);
     testFiniteRunAverages(root, executable, capture);
 
