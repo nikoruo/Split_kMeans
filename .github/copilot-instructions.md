@@ -52,8 +52,14 @@
 - `platform.[ch]`, `rng.[ch]`, `locale_utils.[ch]`: platform shims and clock, seeded PCG32, and the retained locale helper.
 
 ## Working agreement
+- Ask for and receive the user's explicit approval before any installation of software, tools, packages, dependencies or extensions, including installations initiated by scripts or package managers.
+- Stop the affected operation and report security-software alerts or blocks. Never disable or bypass protections, add exceptions, or restore flagged or quarantined files.
+- Ask for the user's explicit approval before using administrator privileges or making persistent changes to PATH or the registry.
+- Ask for the user's explicit approval before running newly downloaded scripts or executables.
+- Ask for the user's explicit approval before deleting datasets or results, or rewriting Git history. Temporary run outputs created for the current task may be deleted without approval if neither the plan nor the user requires keeping them.
+- Never disclose secrets. Ask for the user's explicit approval before uploading files or logs to external services.
 - Make one plan step at a time, verify it, then stop.
 - From plan step 6.7 onward, commit each completed and verified plan step with a descriptive message; for other work, commit only when asked. Never push unless explicitly asked.
-- Never delete unused functions, macros, files or commented-out code without the user's confirmation. List them instead (see the Unused code review section in docs/refactor-plan.md).
+- Never delete unused functions, macros, files or commented-out code without the user's confirmation, except temporary run outputs as described above. List them instead (see the Unused code review section in docs/refactor-plan.md).
 - Functions marked keep in that table are ported, not dropped, when their surroundings are refactored.
 - Do not create markdown documentation unless requested.
