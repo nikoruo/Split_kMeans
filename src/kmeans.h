@@ -60,12 +60,14 @@ void initialCentroids(InitMethod init, size_t numCentroids, const Dataset* dataP
 void partitionStep(Dataset* dataPoints, const Centroids* centroids);
 /* Scratch must match the dimensionality and have capacity for the current centroids. */
 void centroidStep(Centroids* centroids, const Dataset* dataPoints, KMeansScratch* scratch);
+/* Recomputes only marked cluster means, retaining empty and unmarked centroids. */
+void centroidStepAffected(Centroids* centroids, const Dataset* dataPoints, const bool* affected,
+                          KMeansScratch* scratch);
 /* K-means calls require positive iterations and matching scratch; they return the final state's SSE. */
 double runKMeans(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage,
                  KMeansScratch* scratch);
-/* prePartition preserves the intra split's initial assignment. */
 double runKMeansView(DatasetView* view, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage,
-                     bool prePartition, KMeansScratch* scratch);
+                     KMeansScratch* scratch);
 double runKMeansWithTracking(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker,
                              KMeansScratch* scratch);
 

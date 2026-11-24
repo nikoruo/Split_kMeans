@@ -154,7 +154,6 @@ double randomSwap(Dataset* dataPoints, Centroids* centroids, size_t maxSwaps, si
     handleMemoryError(affected);
     size_t* eligible = malloc(dataPoints->size * sizeof(*eligible));
     handleMemoryError(eligible);
-    ClusterIndex membership = allocateClusterIndex(dataPoints->size, numCentroids);
     KMeansScratch scratch = allocateKMeansScratch(numCentroids, dimensions);
 
     for (size_t i = 0; i < maxSwaps; ++i)
@@ -174,7 +173,7 @@ double randomSwap(Dataset* dataPoints, Centroids* centroids, size_t maxSwaps, si
 
         memset(affected, 0, numCentroids * sizeof(*affected));
         localRepartitionForRS(dataPoints, centroids, randomCentroidId, affected);
-        updateAffectedCentroids(dataPoints, &membership, centroids, affected);
+        centroidStepAffected(centroids, dataPoints, affected, &scratch);
 
         // K-means
         double resultSse = runKMeans(dataPoints, kMeansIterations, centroids, tracker, KM_STAGE_NONE, &scratch);
@@ -221,7 +220,6 @@ double randomSwap(Dataset* dataPoints, Centroids* centroids, size_t maxSwaps, si
     free(backupPartitions);
     free(affected);
     free(eligible);
-    freeClusterIndex(&membership);
     freeKMeansScratch(&scratch);
 
     return bestSse;
@@ -259,8 +257,12 @@ double runBisectingKMeans(Dataset* dataPoints, Centroids* centroids, size_t maxC
         fprintf(stderr, "Error: Bisecting k-means requires positive iterations and tries\n");
         exit(EXIT_FAILURE);
     }
-    double* SseList = malloc((maxCentroids < 2 ? 2 : maxCentroids) * sizeof(double));
-    handleMemoryError(SseList);
+    double* SseList = NULL;
+    if (selection == BISECT_SELECT_SSE)
+    {
+        SseList = malloc((maxCentroids < 2 ? 2 : maxCentroids) * sizeof(double));
+        handleMemoryError(SseList);
+    }
     ClusterIndex membership = {0};
     if (maxCentroids > 1) membership = allocateClusterIndex(dataPoints->size, maxCentroids);
 
@@ -275,7 +277,7 @@ double runBisectingKMeans(Dataset* dataPoints, Centroids* centroids, size_t maxC
         splitScratch = allocateSplitScratch(scratch);
         trialLabels = malloc(dataPoints->size * sizeof(*trialLabels));
         handleMemoryError(trialLabels);
-        SseList[0] = calculateClusterSSE(dataPoints, centroids, 0);
+        if (selection == BISECT_SELECT_SSE) SseList[0] = calculateClusterSSE(dataPoints, centroids, 0);
     }
     size_t* bestLabels = malloc(dataPoints->size * sizeof(*bestLabels));
     handleMemoryError(bestLabels);
@@ -322,8 +324,9 @@ double runBisectingKMeans(Dataset* dataPoints, Centroids* centroids, size_t maxC
         applyTentativeSplit(dataPoints, &membership, centroids, clusterToSplit, &bestSplit, bestLabels);
         trackerSplitSnapshot(tracker, dataPoints, centroids, clusterToSplit);
 
-        splitClusterSSEs(dataPoints, &membership, centroids, clusterToSplit, &SseList[clusterToSplit],
-                         &SseList[centroids->size - 1]);
+        if (selection == BISECT_SELECT_SSE)
+            splitClusterSSEs(dataPoints, &membership, centroids, clusterToSplit, &SseList[clusterToSplit],
+                             &SseList[centroids->size - 1]);
 
         trackerRecord(tracker, iterationCount, "step", dataPoints, centroids, clusterToSplit);
         ++iterationCount;

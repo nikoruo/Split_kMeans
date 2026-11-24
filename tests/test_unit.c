@@ -357,7 +357,7 @@ static void testKMeansView(void)
 
     partitionStep(&copy, &dense);
     double expected = runKMeans(&copy, 10, &dense, NULL, KM_STAGE_NONE, unitKMeansScratch(&dense));
-    double actual = runKMeansView(&view, 10, &indexed, NULL, KM_STAGE_NONE, true, unitKMeansScratch(&indexed));
+    double actual = runKMeansView(&view, 10, &indexed, NULL, KM_STAGE_NONE, unitKMeansScratch(&indexed));
     require(expected == actual && memcmp(dense.coordinates, indexed.coordinates, 4 * sizeof(double)) == 0,
             "indexed k-means changed SSE or centroid coordinates");
     for (size_t i = 0; i < view.size; ++i)
@@ -401,7 +401,7 @@ static void testKMeansScratchReuse(void)
     Centroids local = allocateCentroids(2, 1);
     centroidRow(&local, 0)[0] = values[0];
     centroidRow(&local, 1)[0] = values[2];
-    double sse = runKMeansView(&view, 10, &local, NULL, KM_STAGE_NONE, false, &scratch);
+    double sse = runKMeansView(&view, 10, &local, NULL, KM_STAGE_NONE, &scratch);
     const double expectedSse = (values[2] - secondMean) * (values[2] - secondMean) +
                                (values[3] - secondMean) * (values[3] - secondMean);
     require(sse == expectedSse && centroidRow(&local, 0)[0] == values[0] &&
@@ -498,7 +498,7 @@ static void testLastKMeansState(void)
     for (size_t i = 0; i < ROUNDING_COUNT; ++i) indices[i] = i;
     DatasetView view = {&indexed, indices, scratch, ROUNDING_COUNT};
     double viewSse =
-        runKMeansView(&view, 10, &viewCentroids, NULL, KM_STAGE_NONE, false, unitKMeansScratch(&viewCentroids));
+        runKMeansView(&view, 10, &viewCentroids, NULL, KM_STAGE_NONE, unitKMeansScratch(&viewCentroids));
     for (size_t i = 0; i < indexed.size; ++i) indexed.partitions[i] = scratch[i];
     require(viewSse == denseSse && calculateSSE(&indexed, &viewCentroids) == viewSse &&
                 memcmp(viewCentroids.coordinates, denseCentroids.coordinates, 3 * sizeof(double)) == 0,
@@ -880,6 +880,46 @@ static void testRandomSwapRepartition(void)
             "Random Swap did not retain the swapped centroid of an empty cluster");
     freeClusterIndex(&index);
     freeCentroids(&centroids);
+    freeDataset(&points);
+}
+
+static void testAffectedCentroidStep(void)
+{
+    const double values[][2] = {{1e16, 0.1}, {10.1, -2.0}, {-1e16, 0.3}, {1.0, 1.0},
+                                {1.0, 0.2}, {8.0, 5.0}, {6.5, 4.0}};
+    const size_t labels[] = {0, 1, 0, 2, 0, 2, 1};
+    const bool affected[] = {true, false, true, true};
+    Dataset points = allocateDataset(7, 2);
+    Centroids expected = allocateCentroids(4, 2);
+    Centroids actual = allocateCentroids(4, 2);
+    for (size_t i = 0; i < points.size; ++i)
+    {
+        copyCoordinates(datasetRow(&points, i), values[i], points.dimensions);
+        points.partitions[i] = labels[i];
+    }
+    centroidRow(&actual, 1)[0] = 100.0;
+    centroidRow(&actual, 1)[1] = 200.0;
+    centroidRow(&actual, 3)[0] = 7.0;
+    centroidRow(&actual, 3)[1] = -3.0;
+    deepCopyCentroids(&actual, &expected);
+
+    ClusterIndex index = allocateClusterIndex(points.size, actual.size);
+    updateAffectedCentroids(&points, &index, &expected, affected);
+    KMeansScratch scratch = allocateKMeansScratch(actual.size, actual.dimensions);
+    for (size_t i = 0; i < actual.size * actual.dimensions; ++i) scratch.sums.coordinates[i] = 123.0;
+    for (size_t i = 0; i < actual.size; ++i) scratch.counts[i] = 42;
+    centroidStepAffected(&actual, &points, affected, &scratch);
+    require(memcmp(actual.coordinates, expected.coordinates, actual.size * actual.dimensions * sizeof(double)) == 0 &&
+                centroidRow(&actual, 0)[0] == 1.0 / 3.0 && centroidRow(&actual, 1)[0] == 100.0 &&
+                centroidRow(&actual, 3)[0] == 7.0 && centroidRow(&actual, 3)[1] == -3.0,
+            "affected means changed summation order or an empty or untouched centroid");
+    for (size_t i = 0; i < points.size; ++i)
+        require(points.partitions[i] == labels[i], "affected centroid update changed partition labels");
+
+    freeKMeansScratch(&scratch);
+    freeClusterIndex(&index);
+    freeCentroids(&actual);
+    freeCentroids(&expected);
     freeDataset(&points);
 }
 
@@ -3249,7 +3289,7 @@ int main(int argc, char* argv[])
         {
             size_t index = 0;
             DatasetView view = {&points, &index, &partition, 1};
-            (void)runKMeansView(&view, 0, &centroids, NULL, KM_STAGE_NONE, false, unitKMeansScratch(&centroids));
+            (void)runKMeansView(&view, 0, &centroids, NULL, KM_STAGE_NONE, unitKMeansScratch(&centroids));
         }
         else
         {
@@ -3464,6 +3504,7 @@ int main(int argc, char* argv[])
     testRkmNoFiniteFallback(argv[1]);
     testRepartition();
     testRandomSwapRepartition();
+    testAffectedCentroidStep();
     testRandomSwapAcceptance();
     testRandomSwapDistinctTargets();
     testRandomSwapNoTarget();
