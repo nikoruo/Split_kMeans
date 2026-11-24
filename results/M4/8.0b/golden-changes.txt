@@ -1,0 +1,5 @@
+Step 8.0b golden changes, 2026-11-24
+
+mingw32-make WERROR=1 golden-update was run after the old goldens passed.
+All 108 final run files, three repartition-mode files, the bisect-size file,
+and nine report files remain unchanged. No golden rows changed.

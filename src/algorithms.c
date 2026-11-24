@@ -265,7 +265,7 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
     Centroids trialCentroids = {0};
     size_t* trialLabels = NULL;
     InnerTrace* trialTraces = NULL;
-    if (maxCentroids > 1 && splitType != ALGO_SKM_GLOBAL_BASIC)
+    if (maxCentroids > 2 && splitType != ALGO_SKM_GLOBAL_BASIC)
     {
         if (capacity > SIZE_MAX / 2)
         {
@@ -316,14 +316,16 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
 
         trackerRecord(tracker, 1, "step", dataPoints, centroids, initialClusterToSplit);
 
-        if (splitType != ALGO_SKM_LOCAL)
-            splittable = rebuildClusterIndex(&membership, dataPoints, centroids->size);
-        // Runs for every K >= 2: at K = 2 no later split uses these trials (kept on purpose, plan D12)
-        for (size_t i = 0; i < centroids->size; ++i)
+        if (centroids->size < maxCentroids)
         {
-            clusterSSEs[i] = indexedClusterSSE(dataPoints, &membership, centroids, i);
-            SseDrops[i] = evaluateSplitDrop(dataPoints, &membership, i, maxIterations, clusterSSEs[i],
-                                            &trialCentroids, trialLabels, tracker, trialTraces, rng, &splitScratch);
+            if (splitType != ALGO_SKM_LOCAL)
+                splittable = rebuildClusterIndex(&membership, dataPoints, centroids->size);
+            for (size_t i = 0; i < centroids->size; ++i)
+            {
+                clusterSSEs[i] = indexedClusterSSE(dataPoints, &membership, centroids, i);
+                SseDrops[i] = evaluateSplitDrop(dataPoints, &membership, i, maxIterations, clusterSSEs[i],
+                                                &trialCentroids, trialLabels, tracker, trialTraces, rng, &splitScratch);
+            }
         }
 
         iterationCount = 2;

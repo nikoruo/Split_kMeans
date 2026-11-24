@@ -38,6 +38,7 @@ See [CHANGELOG.md](CHANGELOG.md).
     - 0 = IntraCluster: split cluster by local k-means on that cluster’s points.
     - 1 = Global: local split, global refinement.
     - 2 = LocalRepartition: local split then targeted reassignments near the split.
+    - For K=2 these variants and SKM-Global-Basic skip trial splits, since no later split is needed.
   - Bisecting k-means: repeatedly split the eligible cluster with the largest SSE (or most rows), using multiple local tries; keep the best split, then run global k-means. This is bisecting plus final refinement, not the unrefined variant.
 
 - Initialization
