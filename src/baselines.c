@@ -107,16 +107,16 @@ static size_t randomDistinctSwapTarget(const Dataset* dataPoints, const Centroid
  * Per swap, in the step order of Fränti 2018 p. 7: local repartition, update of the affected means, then two k-means
  * iterations (partition, then means). The rs.txt and CBModules rs.c instead run two iterations of means, then
  * partition, with no separate mean update; the 2018 order is kept on purpose (plan, Resolved). A rejected swap
- * restores the centroids and partitions. The tracker records the initial
- * solution (count 0) and every improvement (count = swap number); CI is computed only for
- * the tracker and the level-2 log, with the stopwatch paused.
+ * restores the centroids and partitions. The tracker records the initial solution (count 0) and every improvement
+ * (count = swap number); tracker and level-2 CI work is paused, while level-3 k-means diagnostics may compute CI
+ * inside the timed region.
  *
  * @param dataPoints Dataset; its partitions must belong to `centroids` on entry.
  * @param centroids Initial centroids; updated in place to the best solution.
- * @param maxSwaps Number of trial swaps.
- * @param distinctRows Number of distinct rows, capped at K+1.
+ * @param maxSwaps Maximum trial swaps; no swaps run when K equals the distinct-row count.
+ * @param distinctRows Actual distinct-row count capped at K+1; trusted rather than generally validated.
  * @return The best SSE found.
- * @errors Exits on allocation failure, a non-finite initial SSE or a `distinctRows` that does not match the data.
+ * @errors Exits on allocation failure, non-finite initial SSE, nonzero SSE when distinctRows == K, or no swap target.
  */
 double randomSwap(Dataset* dataPoints, Centroids* centroids, size_t maxSwaps, size_t distinctRows, Tracker* tracker,
                   Rng* rng)

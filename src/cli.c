@@ -23,7 +23,7 @@
  * 2. CLI mode: split_kmeans [options] -k <K> <data.txt> [gt.txt]; without gt.txt,
  *    CI and success rate are NA.
  * 3. Subcommands: ci, sse, gt-from-partition (score finished results); report (tables
- *    and curves from finished batch folders).
+ *    and curves from finished run folders).
  *
  * OUTPUT (outputs/<timestamp>/ or -o <dir>):
  *    run_config.txt                      # build, machine, seed, parameters; one entry per call
@@ -37,7 +37,7 @@
  *       └─ <Algorithm>_{centroids,partitions}_{perfect,failed}.txt  # first run with CI = 0 and CI > 0
  *
  * REQUIREMENTS:
- * - Input files: whitespace-separated finite numbers with a decimal point, the same
+ * - Input files: space/tab-separated finite numbers with a decimal point, the same
  *   column count on every row; the program never changes the locale
  * - K files: a single positive integer
  * - Ground truth: the same dimensionality as the data
@@ -66,15 +66,14 @@
 /**
  * @brief Builds ground-truth centroids from data and a partition file (the gt-from-partition subcommand).
  *
- * Reads points (uniform dimensionality), then one 1-based cluster label per point (whitespace-separated
- * integers, usually one per line), and writes the cluster means (`%f` with a trailing space). K is the
+ * Reads points (uniform dimensionality), then one 1-based cluster label per point (separated by spaces,
+ * tabs or line breaks), and writes the cluster means (`%f` with a trailing space). K is the
  * largest label; an empty cluster keeps a zero centroid with a warning.
  *
- * @param dataFileName Path to data points (whitespace-separated doubles).
- * @param partitionFileName Path to partition labels (integers 1..K, one per data point).
+ * @param dataFileName Path to data points (space/tab-separated doubles, one point per line).
+ * @param partitionFileName Path to labels (one integer 1..N per data point, separated by spaces, tabs or line breaks).
  * @param outputFileName Path to write centroids (space-separated doubles per row).
- * @return 0 on success; 1 when the data file has no rows, a file cannot be opened, a label is not an integer from
- *         1 to N, or the partition file has fewer or more labels than the data file has points.
+ * @return 0 on success; 1 for empty data, a partition/output open failure, an invalid label or a label-count mismatch.
  * @errors The data file is read by readDataset, which exits on its errors; lines over LINE_BUFSZ - 1 characters
  *         and allocation failures exit.
  */
@@ -230,8 +229,8 @@ int generateGroundTruthCentroids(const char* dataFileName, const char* partition
 /**
  * @brief Prints the Centroid Index between a centroid file and a ground-truth file, with the file names and sizes.
  *
- * Used by runDebuggery. Does not check that the files are non-empty or have the same dimensionality
- * (an empty file is read out of bounds); the ci subcommand checks both.
+ * Used by runDebuggery. Does not check that the files are non-empty or have the same dimensionality;
+ * the ci subcommand checks both.
  */
 void debugCalculateCI(const char* debugCentroidsFile, const char* groundTruthFile)
 {
@@ -353,8 +352,8 @@ static int commandSse(int argc, char* argv[])
     return EXIT_SUCCESS;
 }
 
-/** @brief `gt-from-partition <data.txt> <partition.txt> <out.txt>`: writes the mean of each cluster (labels 1..K, one
- * per line). */
+/** @brief `gt-from-partition <data.txt> <partition.txt> <out.txt>`: writes means from labels 1..N separated by
+ * spaces, tabs or line breaks. */
 static int commandGtFromPartition(int argc, char* argv[])
 {
     if (argc != 3)
@@ -553,17 +552,17 @@ static void printUsage(const char* program)
     printf("       %s ci <centroids.txt> <ground-truth.txt>       prints the Centroid Index\n", program);
     printf("       %s sse <data.txt> <centroids.txt>              prints the SSE (nearest centroids)\n", program);
     printf("       %s gt-from-partition <data.txt> <partition.txt> <out.txt>\n", program);
-    printf("                                writes the cluster means (labels 1..K, one per line)\n");
-    printf("       %s report [-o dir] [--names file] [--curve-run i] [--decimal-comma] [--no-time] <batch dir>...\n",
+    printf("                                writes means from 1-based labels separated by spaces, tabs or line breaks\n");
+    printf("       %s report [-o dir] [--names file] [--curve-run i] [--decimal-comma] [--no-time] <run-folder>...\n",
            program);
     printf(
-        "                                merges batch folders into summary.csv, the seminar tables and the curves\n\n");
+        "                                merges run folders into summary.csv, the seminar tables and the curves\n\n");
     printf("Split k-means clustering experiments, version %s.\n", SKM_VERSION);
     printf("Without a data file, runs batch mode over data/, gt/ and centroids/.\n\n");
 
     printf("Single dataset:\n");
     printf("  -k <K>              Number of clusters, at most the distinct data points (required with a data file)\n");
-    printf("  <data.txt>          Input data file (whitespace-separated doubles)\n");
+    printf("  <data.txt>          Input data file (space/tab-separated doubles, one point per line)\n");
     printf("  [gt.txt]            Ground truth centroids for CI (optional; without it CI and success rate are NA)\n\n");
 
     printf("Batch mode:\n");
@@ -616,8 +615,8 @@ static void printUsage(const char* program)
  * CLI mode needs `-k <K> <data.txt>`; the ground truth file is optional.
  * Options (see printUsage) apply to both modes; all of them are validated before any output folder exists.
  *
- * @return 0 on success
- * @errors Exits on invalid arguments, file I/O errors, missing K parameter, or validation failures.
+ * @return 0 on success or a subcommand's failure status.
+ * @errors Most option and input errors exit; some subcommand argument errors return failure.
  */
 int cliMain(int argc, char* argv[])
 {
@@ -879,7 +878,7 @@ int cliMain(int argc, char* argv[])
     }
 
     // ============================================================
-    // Validate everything before any output folder is created
+    // Validate CLI options and mode before creating an output folder; input contents are read later
     // ============================================================
     const bool cliMode = (cliDataFile != NULL);
 

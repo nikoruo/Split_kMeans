@@ -28,7 +28,7 @@ typedef struct
     size_t dimensions;
 } Centroids;
 
-/* Row pointers are borrowed and remain valid until the owning buffer is freed. */
+/* Row pointers are borrowed and remain valid until the owning buffer is freed or reallocated. */
 static inline double* datasetRow(Dataset* dataset, size_t index)
 {
     assert(index < dataset->size);
@@ -53,6 +53,7 @@ static inline const double* centroidRowConst(const Centroids* centroids, size_t 
     return centroids->coordinates + index * centroids->dimensions;
 }
 
+/* Equal pointers or non-overlapping ranges of at least dimensions doubles. */
 static inline void copyCoordinates(double* destination, const double* source, size_t dimensions)
 {
     if (destination != source) memcpy(destination, source, dimensions * sizeof(double));
@@ -65,13 +66,15 @@ static inline bool coordinatesEqual(const double* first, const double* second, s
     return true;
 }
 
+/* Allocations require positive sizes and dimensions; invalid shapes or allocation failures exit. */
 Dataset allocateDataset(size_t size, size_t dimensions);
 Centroids allocateCentroids(size_t size, size_t dimensions);
 void freeDataset(Dataset* dataset);
 void freeCentroids(Centroids* centroids);
+/* Destination must be initialized and independently owned, unless it is source; copying may reallocate it. */
 void deepCopyCentroids(const Centroids* source, Centroids* destination);
 void resetPartitions(Dataset* dataset);
-/* Returns the number of distinct rows, stopping at limit. */
+/* Requires a nonempty dataset, positive dimensions and positive limit; returns the distinct-row count up to that limit. */
 size_t countDistinctRowsUpTo(const Dataset* dataset, size_t limit);
 
 /* Returned datasets and centroids are owned by the caller. */

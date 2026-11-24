@@ -10,11 +10,14 @@
 #include "rng.h"
 #include "tracking.h"
 
+/* Marks affected[K]; removed and every input label must be below K. */
 void localRepartitionForRS(Dataset* dataPoints, const Centroids* centroids, size_t removed, bool* affected);
-/* distinctRows is the data's distinct count capped at K+1. */
+/* Requires assigned labels, a live tracker/RNG, and the correct distinct-row count capped at K+1.
+ * The count is not generally validated; K equal to the distinct count performs no swaps. */
 double randomSwap(Dataset* dataPoints, Centroids* centroids, size_t maxSwaps, size_t distinctRows, Tracker* tracker,
                   Rng* rng);
-/* Bisecting requires centroid capacity of at least maxCentroids. */
+/* Start with one centroid and all labels 0; require positive iteration/try limits, a live tracker/RNG and
+ * centroid and dimension-compatible scratch capacity for maxCentroids. */
 double runBisectingKMeans(Dataset* dataPoints, Centroids* centroids, size_t maxCentroids, size_t maxIterations,
                           size_t bisectingIterations, BisectSelect selection, Tracker* tracker, Rng* rng,
                           struct KMeansScratch* scratch);

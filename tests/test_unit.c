@@ -3225,6 +3225,12 @@ static void testCliIterationLimit(const char* directory, const char* executable,
     joinPath(report, sizeof(report), root, "report");
     joinPath(capture, sizeof(capture), root, "command.txt");
 
+    expectCli(executable, "--help", capture, true);
+    expectText(capture, "writes means from 1-based labels separated by spaces, tabs or line breaks");
+    expectText(capture, "<run-folder>...");
+    expectCli(executable, "report", capture, false);
+    expectText(capture, "<run-folder>...");
+
     testReportSummary(root, executable, capture);
 
     require(kmIterations(batch) == 1, "batch-mode KM did not respect its iteration limit");

@@ -26,7 +26,7 @@
 #  include <unistd.h>
 #endif
 
-/* ASCII case-insensitive, then byte order, so the result is the same on every OS and locale. */
+/* Case-fold in the current C locale, then use byte order; the program leaves the default C locale. */
 static int compare_file_names(const void* a, const void* b)
 {
     const unsigned char* sa = *(const unsigned char* const*)a;
@@ -302,7 +302,7 @@ void platform_cpu(char* buffer, size_t size)
 }
 #endif
 
-/** @brief Creates `path` and its missing parent folders (as mkdir -p); false with errno set on failure. */
+/** @brief Creates `path` and missing parents; accepts EEXIST without checking type, else false with errno. */
 bool platform_make_directories(const char* path)
 {
     char partial[PATH_MAX];

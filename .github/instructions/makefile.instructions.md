@@ -14,4 +14,4 @@ applyTo: "**/Makefile"
 - Executable suffix: `.exe` on Windows only, via a variable.
 - Header dependencies via `-MMD -MP`, included with `-include`.
 - `WERROR=1` adds `-Werror`. CI uses it.
-- On Windows, `mingw32-make` runs recipes in cmd.exe (no `sh.exe` on PATH). Define `MKDIR`, `RM` and path separators once per OS under `ifeq ($(OS),Windows_NT)`. Recipes are plain command invocations: no shell loops, `test`, `[ ]` or globs. Put test logic in C programs under `tests/`.
+- On Windows, `mingw32-make` runs recipes in cmd.exe (no `sh.exe` on PATH). Define `MKDIR`, `RMDIR` and path conversion once per OS under `ifeq ($(OS),Windows_NT)`. Recipes are plain command invocations: no shell loops, `test`, `[ ]` or globs. Put test logic in C programs under `tests/`.

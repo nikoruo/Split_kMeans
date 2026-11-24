@@ -15,7 +15,7 @@
 /**
  * @brief Wall-clock stopwatch on the monotonic platform clock (platform_ticks).
  *
- * Paused time is left out, so tracking and snapshot I/O can pause it. Times are in ms.
+ * Paused time is left out, so tracking and snapshot I/O can pause it. Fields are ticks; reported times are in ms.
  */
 typedef struct
 {
@@ -36,8 +36,8 @@ typedef struct
 /** @brief The k-means runs that --track-inner logs (`_inner.csv` stage column); KM_STAGE_NONE logs nothing. */
 typedef enum
 {
-    KM_STAGE_NONE,   /**< Not logged: k-means of KM, RKM and RS, trial splits. */
-    KM_STAGE_SPLIT,  /**< Local 2-means that splits the chosen cluster. */
+    KM_STAGE_NONE,   /**< Not logged: k-means of KM, RKM and RS, and uncaptured trials. */
+    KM_STAGE_SPLIT,  /**< Applied local split or the cached trial selected for application. */
     KM_STAGE_TRY,    /**< Local 2-means of one bisecting try. */
     KM_STAGE_GLOBAL, /**< Global k-means after a split (SKM-Global, SKM-Global-Basic). */
     KM_STAGE_FINAL   /**< Final k-means of a split algorithm or bisecting. */
@@ -55,7 +55,7 @@ typedef struct
     double ms;
 } InnerRow;
 
-/* Owns captured inner rows; free its rows after use. */
+/* Owns captured inner rows; initialize to zero or a valid reusable trace, and free rows after use. */
 typedef struct
 {
     InnerRow* rows;
@@ -91,7 +91,7 @@ typedef struct
     bool inner;
 } TrackOptions;
 
-/* Owns row buffers; its options and ground truth must outlive the tracker. */
+/* Owns row buffers; its non-null options, output-directory string and optional ground truth must outlive it. */
 typedef struct Tracker
 {
     const Centroids* groundTruth;
@@ -115,25 +115,29 @@ typedef struct Tracker
 Tracker trackerCreate(Algorithm algorithm, const char* outputDirectory, const Centroids* groundTruth,
                       const TrackOptions* options);
 void trackerFree(Tracker* tracker);
+/* Begin takes a zero-based run index; End flushes buffered rows and returns counted milliseconds. */
 void trackerBeginRun(Tracker* tracker, size_t run);
 double trackerEndRun(Tracker* tracker);
 size_t trackerRecord(Tracker* tracker, size_t count, const char* phase, const Dataset* dataPoints,
                      const Centroids* centroids, size_t splitCluster);
+/* Snapshot and row writers check open failures but not all subsequent write or close failures. */
 void trackerSnapshot(Tracker* tracker, size_t count, const char* phase, const Dataset* dataPoints,
                      const Centroids* centroids, size_t splitCluster);
 void trackerInnerRow(Tracker* tracker, KMeansStage stage, size_t iteration, const Centroids* centroids, double sse);
-/* Begin redirects inner rows into `trace` until the matching End; the caller owns and frees trace->rows. The rows
- * keep their evaluation time; trackerAppendTrace copies them into the run's rows when the trial is applied. */
+/* Begin redirects inner rows into an initialized `trace` until End receives its matching return value.
+ * Capture may reallocate rows, so do not access trace storage until End; the caller owns and frees trace->rows.
+ * Rows keep their evaluation time; trackerAppendTrace copies them into the run's rows when the trial is applied. */
 InnerTrace trackerCaptureBegin(Tracker* tracker, InnerTrace* trace);
 void trackerCaptureEnd(Tracker* tracker, InnerTrace* trace, InnerTrace previous);
 void trackerAppendTrace(Tracker* tracker, const InnerTrace* trace, size_t count);
 void trackerAddRow(Tracker* tracker, size_t count, double sse, size_t ci);
-/* Leave untimed bookkeeping inside a run out of the run time; every pause needs a resume. */
+/* Pauses are not nested: tracking helpers may resume the stopwatch, so do not call them inside an outer pause. */
 void trackerPause(Tracker* tracker);
 void trackerResume(Tracker* tracker);
 size_t trackerCi(Tracker* tracker, const Centroids* centroids);
 void trackerSplitSnapshot(Tracker* tracker, const Dataset* dataPoints, const Centroids* centroids,
                           size_t splitCluster);
+/* run is zero-based; the file records run + 1 and milliseconds. Open/path errors exit; writes and close are unchecked. */
 void appendRunCsv(const char* outputDirectory, const char* algorithmName, size_t run, uint64_t seed,
                   double sse, size_t ci, double ms);
 void algorithmFilePath(Algorithm algorithm, const char* outputDirectory, const char* suffix, char* path, size_t pathSize);

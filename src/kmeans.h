@@ -31,7 +31,8 @@ typedef struct
     size_t capacity;
 } InitScratch;
 
-/* Borrows the source coordinates, row indices and local partition buffer. */
+/* Borrows source, indices and partitions for the view lifetime. Both arrays hold at least size entries;
+ * each index is below source->size, while partitions are indexed and written by view position. */
 typedef struct
 {
     const Dataset* source;
@@ -63,7 +64,9 @@ void centroidStep(Centroids* centroids, const Dataset* dataPoints, KMeansScratch
 /* Recomputes only marked cluster means, retaining empty and unmarked centroids. */
 void centroidStepAffected(Centroids* centroids, const Dataset* dataPoints, const bool* affected,
                           KMeansScratch* scratch);
-/* K-means calls require positive iterations and matching scratch; they return the final state's SSE. */
+/* K-means calls require positive iterations and matching scratch; they return the final state's SSE.
+ * The first two allow a NULL tracker and may return non-finite SSE; the tracked variant needs a tracker and exits
+ * on non-finite SSE. */
 double runKMeans(Dataset* dataPoints, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage,
                  KMeansScratch* scratch);
 double runKMeansView(DatasetView* view, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage,

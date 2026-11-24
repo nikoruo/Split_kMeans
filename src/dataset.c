@@ -131,7 +131,7 @@ Centroids allocateCentroids(size_t size, size_t dimensions)
 }
 
 /**
- * @brief Load whitespace-separated double vectors, enforcing a consistent dimensionality per row.
+ * @brief Load space/tab-separated double vectors, enforcing a consistent dimensionality per row.
  *
  * Skips whitespace-only lines. The first non-empty row defines the expected column count;
  * every subsequent non-empty row must match or the function terminates with an error.
@@ -139,7 +139,7 @@ Centroids allocateCentroids(size_t size, size_t dimensions)
  *
  * @param filename Path to a space/tab-delimited text file of doubles.
  * @return Dataset with one row per data point and partitions initialized to SIZE_MAX.
- * @errors Exits on file open/read failures, allocation failures, inconsistent column counts,
+ * @errors Exits on file open/detected read failures, allocation failures, inconsistent column counts,
  *         values that are not finite numbers, and lines longer than LINE_BUFSZ - 1 characters.
  * @note Parsing uses strtod and the current locale (the program never changes it, so dot decimals).
  */
@@ -308,7 +308,7 @@ Dataset readDataset(const char* filename)
 }
 
 /**
- * @brief Reads centroids from a whitespace-delimited text file.
+ * @brief Reads centroids from a space/tab-delimited text file.
  *
  * Treats each non-empty row as one centroid; columns are coordinates. Reuses the
  * allocation from `readDataset` and returns it as `Centroids` (ownership transfers
@@ -316,7 +316,7 @@ Dataset readDataset(const char* filename)
  *
  * @param filename Path to a space/tab-separated text file of doubles.
  * @return Centroids with `size == rows` and `dimensions == columns`.
- * @errors The errors of readDataset (open and read errors, inconsistent column counts, values that are not
+ * @errors The errors of readDataset (open and detected read errors, inconsistent column counts, values that are not
  *         finite numbers, overlong lines). Prints the size at log level 2 and every centroid at level 3.
  * @note Skips whitespace-only lines; parsing uses the current C locale for `strtod`.
  */

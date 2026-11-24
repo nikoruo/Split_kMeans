@@ -21,7 +21,7 @@ Format:
 
 Output: the message in one fenced `text` block, then a one-line note on anything to check before committing.
 
-Example (Phase 1):
+Historical formatting example (Phase 1 only; its counts and `NATIVE`/`THREADS` settings are not current):
 ```text
 Phase 1: build system, seeded RNG, CLI and golden-file regression tests
 

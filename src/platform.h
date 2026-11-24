@@ -60,10 +60,10 @@
 * Macro reference (public API)
 * --------------------------------------------------------------------
 * STRTOK(str,delim,ctx)  Thread-safe tokenizer (Windows: strtok_s, POSIX: strtok_r).
-* STRCPY(dest,dstsz,src) Copy with guaranteed NUL-termination; POSIX path truncates if needed.
+* STRCPY(dest,dstsz,src) Requires non-overlap, positive capacity and room for src; undersized behavior differs by CRT.
 * FOPEN(fp,name,mode)    Open file; assigns to fp; returns 0 on success or errno on failure.
 * MAKE_DIR(path)         Create directory; POSIX mode 0755. Check errno == EEXIST on failure.
-* LOCALTIME(out,timep)   Thread-safe localtime variant (localtime_s/localtime_r).
+* LOCALTIME(out,timep)   Writes local time on success; return types differ, and MinGW thread-safety is CRT-dependent.
 * PATHSEP                Directory separator ('\\' on Windows, '/' on POSIX).
 * SKM_HOT_INLINE         Inline hot helpers (forced for MSVC).
 * -------------------------------------------------------------------- */
@@ -195,22 +195,22 @@ static inline struct tm* _mingw_localtime_r(const time_t* timep, struct tm* resu
 #endif /* _MSC_VER */
 
 /**
- * @brief Lists the *.txt files (not folders) in `dir`, sorted ASCII case-insensitively, then by byte order.
+ * @brief Lists the *.txt files (not folders) in `dir`, case-folded in the current C locale, then by byte order.
  *
  * Returns the count; `*out` receives a malloc'd array of malloc'd names, or NULL when there are none
- * or the folder cannot be read. The caller frees each name and the array. Exits on allocation failure.
+ * or the folder cannot be opened. The caller frees each name and the array. Exits on allocation failure;
+ * enumeration and stat failures can leave a partial list without an error.
  */
 size_t list_files(const char* dir, char*** out);
 
 /**
  * @brief Lists the subfolders of `dir` (without `.` and `..`), sorted like list_files.
  *
- * Returns the count; `*out` receives a malloc'd array of malloc'd names, or NULL when there are none or the
- * folder cannot be read. The caller frees each name and the array. Exits on allocation failure.
+ * Returns the count with the same ownership, ordering and partial-error limitations as list_files.
  */
 size_t list_dirs(const char* dir, char*** out);
 
-/* Creates a directory and its missing parents; returns false with errno set on failure. */
+/* Creates a directory and missing parents; accepts EEXIST without checking type, else returns false with errno. */
 bool platform_make_directories(const char* path);
 
 /**

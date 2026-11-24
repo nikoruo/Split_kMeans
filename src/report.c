@@ -37,7 +37,7 @@ typedef struct
     size_t capacity;
 } ReportRows;
 
-/** @brief The runs and tracked states of one algorithm on one dataset, merged over the batch folders. */
+/** @brief The runs and tracked states of one algorithm on one dataset, merged over run folders. */
 typedef struct
 {
     ReportRows runs; /**< `_runs.csv`. */
@@ -157,7 +157,7 @@ static bool reportNumber(const char* text, double* value)
  *
  * Skips the header line (a first line that is not the header is read as data: a file emptied by an interrupted
  * call gets no header on the next append); exits on a malformed line. For `_runs.csv`, a run number that is
- * already in `rows` (the same run twice, in one or two batch folders) is an error.
+ * already in `rows` (the same run twice, in one or more run folders) is an error.
  */
 static void reportReadCsv(const char* path, bool isLog, ReportRows* rows)
 {
@@ -222,7 +222,7 @@ static void reportReadCsv(const char* path, bool isLog, ReportRows* rows)
                 if (rows->rows[i].run == row.run)
                 {
                     fclose(file);
-                    fprintf(stderr, "Error: run %zu appears twice (in %s, or in it and an earlier batch folder)\n",
+                    fprintf(stderr, "Error: run %zu appears twice (in %s, or in it and an earlier run folder)\n",
                             row.run, path);
                     exit(EXIT_FAILURE);
                 }
@@ -269,7 +269,7 @@ static void reportReadHeader(const char* directory, char* header, size_t size)
     calls[strlen("\ncalls:\n")] = '\0';
 }
 
-/** @brief K from `<directory>/dataset.txt`, or 0 when the file is missing. */
+/** @brief K from `<directory>/dataset.txt`, or 0 when the file or a valid K is missing. */
 static size_t reportReadK(const char* directory)
 {
     char path[PATH_MAX];
@@ -610,8 +610,8 @@ static FILE* reportOpen(const char* directory, const char* name)
     return file;
 }
 
-/** @brief Writes `curves_<dataset>.csv`: per algorithm a block of count, time, SSE (scaled) and CI; an `end` row, then
- * the points. */
+/** @brief Writes `curves_<dataset>.csv`: per algorithm count, time, scaled SSE and CI; time is omitted with noTime.
+ * The first data row is `end`, followed by the curve points. */
 static void reportWriteCurves(const char* outputDirectory, const ReportDataset* dataset, const ReportSummary* summaries,
                               const ReportOptions* options)
 {
@@ -803,8 +803,7 @@ static void reportWriteSummaryRow(FILE* file, const ReportDataset* dataset, Algo
     fputc('\n', file);
 }
 
-/** @brief Reads the datasets of every batch folder into `*datasets`; returns their number. Exits on unreadable files.
- */
+/** @brief Reads run folders into `*datasets` and returns their count; the caller owns the array and its row arrays. */
 static size_t reportCollect(const char* const* directories, size_t directoryCount, ReportDataset** datasets)
 {
     size_t datasetCount = 0;
@@ -859,7 +858,7 @@ static size_t reportCollect(const char* const* directories, size_t directoryCoun
                 }
                 else if (k != 0 && k != dataset->k)
                 {
-                    fprintf(stderr, "Error: %s has K = %zu, another batch folder K = %zu\n", folder, k, dataset->k);
+                    fprintf(stderr, "Error: %s has K = %zu, another run folder K = %zu\n", folder, k, dataset->k);
                     exit(EXIT_FAILURE);
                 }
             }
@@ -942,7 +941,7 @@ static void reportOrder(const char* namesFile, ReportDataset* datasets, size_t d
 }
 
 /**
- * @brief `report [options] <batch dir>...`: merges batch output folders into Excel-ready tables (plan step 3.9).
+ * @brief `report [options] <run-folder>...`: merges run output folders into Excel-ready tables (plan step 3.9).
  *
  * The folders' run_config.txt headers must agree. Writes summary.csv, table_ci.csv, table_success.csv,
  * table_time.csv, table_sse.csv and curves_<dataset>.csv into `-o` (default `<first dir>/report`).
@@ -992,7 +991,7 @@ int commandReport(int argc, char* argv[])
     if (directoryCount == 0)
     {
         fprintf(stderr, "Usage: split_kmeans report [-o dir] [--names file] [--curve-run i] [--decimal-comma] "
-                        "[--no-time] <batch dir>...\n");
+                        "[--no-time] <run-folder>...\n");
         return EXIT_FAILURE;
     }
     if (outputOption != NULL && strlen(outputOption) >= PATH_MAX)

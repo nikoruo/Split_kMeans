@@ -89,8 +89,8 @@ static void handleFileReadError(const char* filename)
 /**
  * @brief Reads one line into `buffer` with fgets; NULL at end of file.
  *
- * Exits when the line does not fit in `size - 1` characters (a split line would be read as two rows)
- * or on a read error. `lineNumber` is 1-based and only used in the error message.
+ * Exits when the line does not fit in `size - 1` characters or when fgets reports a read error; an error during
+ * the one-character look-ahead is not checked there. `lineNumber` is 1-based and only used in the error message.
  */
 char* readDataLine(char* buffer, size_t size, FILE* file, const char* filename, size_t lineNumber)
 {
@@ -206,6 +206,7 @@ char* removeExtension(const char* filename)
    * @brief Writes `value` with `decimals` fixed decimals into `buffer` and returns it (Excel-facing files).
    *
    * The program never calls setlocale, so printf writes a decimal point; with --decimal-comma it becomes a comma.
+   * Output needing NUMBER_TEXT_SIZE or more characters is truncated.
    */
   const char* formatFixed(double value, int decimals, char buffer[NUMBER_TEXT_SIZE])
   {
