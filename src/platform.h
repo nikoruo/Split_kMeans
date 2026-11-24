@@ -209,6 +209,9 @@ size_t list_files(const char* dir, char*** out);
  */
 size_t list_dirs(const char* dir, char*** out);
 
+/* Returns the final path component as a pointer into path. */
+const char* platform_basename(const char* path);
+
 /* Creates one directory or accepts an existing directory; created, when non-null, reports which occurred. */
 bool platform_make_directory(const char* path, bool* created);
 

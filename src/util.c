@@ -199,6 +199,38 @@ void joinPath(char* out, size_t size, const char* dir, const char* name)
     }
 }
 
+bool validateCsvName(const char* name, const char* kind)
+{
+    const char* invalid = strpbrk(name, ";\"\r\n");
+    if (invalid == NULL) return true;
+
+    fprintf(stderr, "Error: %s '", kind);
+    for (const unsigned char* p = (const unsigned char*)name; *p != '\0'; ++p)
+    {
+        switch (*p)
+        {
+            case '\r':
+                fputs("\\r", stderr);
+                break;
+            case '\n':
+                fputs("\\n", stderr);
+                break;
+            case '\\':
+                fputs("\\\\", stderr);
+                break;
+            case '\'':
+                fputs("\\'", stderr);
+                break;
+            default:
+                fputc(*p, stderr);
+                break;
+        }
+    }
+    const char* character = *invalid == ';' ? ";" : *invalid == '"' ? "\"" : *invalid == '\r' ? "\\r" : "\\n";
+    fprintf(stderr, "' contains forbidden character '%s'\n", character);
+    return false;
+}
+
 /**
  * @brief Returns a copy of filename without its trailing extension.
  *

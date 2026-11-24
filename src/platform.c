@@ -232,6 +232,18 @@ size_t list_dirs(const char* dir, char*** out)
 {
     return list_entries(dir, out, true);
 }
+
+const char* platform_basename(const char* path)
+{
+    const char* separator = strrchr(path, '/');
+#ifdef _WIN32
+    const char* backslash = strrchr(path, '\\');
+    if (backslash != NULL && (separator == NULL || backslash > separator)) separator = backslash;
+    if (separator == NULL && path[0] != '\0' && path[1] == ':') return path + 2;
+#endif
+    return separator != NULL ? separator + 1 : path;
+}
+
 #ifdef _WIN32
 uint64_t platform_ticks(void)
 {
