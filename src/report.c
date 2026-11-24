@@ -1068,7 +1068,7 @@ int commandReport(int argc, char* argv[])
     if (!platform_make_directories(outputDirectory))
     {
         // exit, as the other report errors after reading: datasets and order are still allocated
-        perror("Error: Unable to create the report folder");
+        fprintf(stderr, "Error: Unable to create the report folder '%s': %s\n", outputDirectory, strerror(errno));
         exit(EXIT_FAILURE);
     }
 

@@ -1046,7 +1046,7 @@ int cliMain(int argc, char* argv[])
         STRCPY(outputDirectory, sizeof(outputDirectory), outputOption);
         if (!platform_make_directories(outputDirectory))
         {
-            perror("Error: Unable to create output folder");
+            fprintf(stderr, "Error: Unable to create output folder '%s': %s\n", outputDirectory, strerror(errno));
             exit(EXIT_FAILURE);
         }
     }

@@ -13,6 +13,7 @@
 #include "split.h"
 #include "util.h"
 
+#include <errno.h>
 #include <float.h>
 #include <inttypes.h>
 #include <math.h>
@@ -21,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 static void require(bool condition, const char* message)
 {
@@ -2151,6 +2153,48 @@ static void testFileIoFailures(const char* executable, const char* directory)
     require(remove(path) == 0 && remove(errorPath) == 0, "could not remove I/O fixtures");
 }
 
+static void testPathsAndTime(const char* directory)
+{
+    char root[PATH_MAX], path[PATH_MAX], child[PATH_MAX], name[32], line[32];
+    unsigned attempt = 0;
+    do
+    {
+        require(++attempt <= 1000, "too many path test folders");
+        snprintf(name, sizeof(name), "paths-%u", attempt);
+        joinPath(root, sizeof(root), directory, name);
+    } while (fileExists(root));
+
+    bool created = false;
+    require(platform_make_directory(root, &created) && created, "new directory was not created");
+    require(platform_make_directory(root, &created) && !created, "existing directory was not accepted");
+    require(platform_make_directories(root), "existing directory tree was not accepted");
+    joinPath(path, sizeof(path), root, "file");
+    joinPath(child, sizeof(child), path, "child");
+    FILE* file = writeFixture(path);
+    require(fputs("unchanged\n", file) >= 0, "could not write path collision fixture");
+    closeFixture(file);
+
+    errno = 0;
+    require(!platform_make_directory(path, &created) && errno == ENOTDIR, "file accepted as a directory");
+    errno = 0;
+    require(!platform_make_directories(path) && errno == ENOTDIR, "file accepted as a directory tree");
+    errno = 0;
+    require(!platform_make_directories(child) && errno == ENOTDIR, "file accepted as a parent directory");
+    file = readFixture(path);
+    require(fgets(line, sizeof(line), file) != NULL && strcmp(line, "unchanged\n") == 0,
+            "directory collision changed the file");
+    closeFixture(file);
+
+    const time_t now = time(NULL);
+    struct tm local = {0};
+    require(now != (time_t)-1 && platform_localtime(&local, &now), "valid local time was rejected");
+    if (sizeof(time_t) >= sizeof(int64_t))
+    {
+        const time_t extreme = (time_t)INT64_MAX;
+        require(!platform_localtime(&local, &extreme), "invalid local time was accepted");
+    }
+}
+
 static void testInvalidInternalInputs(const char* executable, const char* directory)
 {
     char errorPath[PATH_MAX];
@@ -2332,6 +2376,54 @@ static void expectText(const char* path, const char* expected)
         fprintf(stderr, "test_unit: expected '%s' in %s:\n%s\n", expected, path, text);
         exit(EXIT_FAILURE);
     }
+}
+
+static void testOutputPathFailures(const char* directory, const char* executable, const char* data, const char* batch,
+                                   const char* capture)
+{
+    char filePath[PATH_MAX], nested[PATH_MAX], output[PATH_MAX], datasetPath[PATH_MAX];
+    char arguments[3 * PATH_MAX + 128];
+    joinPath(filePath, sizeof(filePath), directory, "not-a-directory");
+    joinPath(nested, sizeof(nested), filePath, "child");
+    FILE* file = writeFixture(filePath);
+    require(fputs("unchanged\n", file) >= 0, "could not write directory collision fixture");
+    closeFixture(file);
+
+    int length =
+        snprintf(arguments, sizeof(arguments), "--algo km --seed 42 -r 1 -o \"%s\" -k 4 \"%s\"", filePath, data);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "output collision command too long");
+    expectCli(executable, arguments, capture, false);
+    expectText(capture, "Unable to create output folder");
+    expectText(capture, filePath);
+    expectText(filePath, "unchanged");
+
+    length = snprintf(arguments, sizeof(arguments), "--algo km --seed 42 -r 1 -o \"%s\" -k 4 \"%s\"", nested, data);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "nested collision command too long");
+    expectCli(executable, arguments, capture, false);
+    expectText(capture, "Unable to create output folder");
+    expectText(capture, nested);
+    expectText(filePath, "unchanged");
+
+    length = snprintf(arguments, sizeof(arguments), "report -o \"%s\" \"%s\"", filePath, batch);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "report collision command too long");
+    expectCli(executable, arguments, capture, false);
+    expectText(capture, "Unable to create the report folder");
+    expectText(capture, filePath);
+    expectText(filePath, "unchanged");
+
+    joinPath(output, sizeof(output), directory, "dataset-collision");
+    require(platform_make_directories(output), "could not create dataset collision root");
+    joinPath(datasetPath, sizeof(datasetPath), output, "s01_blobs2d");
+    file = writeFixture(datasetPath);
+    require(fputs("unchanged\n", file) >= 0, "could not write dataset collision fixture");
+    closeFixture(file);
+    length = snprintf(arguments, sizeof(arguments), "--algo km --seed 42 -r 1 -o \"%s\" -k 4 \"%s\"", output, data);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "dataset collision command too long");
+    expectCli(executable, arguments, capture, false);
+    expectText(capture, "Unable to create dataset directory");
+    expectText(capture, output);
+    expectText(capture, "s01_blobs2d");
+    expectText(datasetPath, "unchanged");
 }
 
 static void testSseCommand(const char* directory, const char* executable)
@@ -3440,6 +3532,7 @@ static void testCliIterationLimit(const char* directory, const char* executable,
 
     testReportSummary(root, executable, capture);
     testReportIoFailures(root, executable, capture);
+    testOutputPathFailures(root, executable, data, batch, capture);
     testSseCommand(root, executable);
     testFiniteRunAverages(root, executable, capture);
 
@@ -3812,6 +3905,7 @@ int main(int argc, char* argv[])
     testNumbers();
     testDatasetParser(argv[0], argv[1]);
     testFileIoFailures(argv[0], argv[1]);
+    testPathsAndTime(argv[1]);
     testInvalidInternalInputs(argv[0], argv[1]);
     testZeroIterationRunners(argv[0], argv[1]);
     testNonfiniteRandomSwap(argv[0], argv[1]);

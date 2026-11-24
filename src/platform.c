@@ -359,7 +359,31 @@ void platform_cpu(char* buffer, size_t size)
 }
 #endif
 
-/** @brief Creates `path` and missing parents; accepts EEXIST without checking type, else false with errno. */
+bool platform_make_directory(const char* path, bool* created)
+{
+    if (MAKE_DIR(path) == 0)
+    {
+        if (created != NULL) *created = true;
+        return true;
+    }
+    if (errno != EEXIST) return false;
+
+    struct stat status;
+    if (stat(path, &status) != 0) return false;
+#ifdef _MSC_VER
+    const bool isDirectory = (status.st_mode & _S_IFMT) == _S_IFDIR;
+#else
+    const bool isDirectory = S_ISDIR(status.st_mode) != 0;
+#endif
+    if (!isDirectory)
+    {
+        errno = ENOTDIR;
+        return false;
+    }
+    if (created != NULL) *created = false;
+    return true;
+}
+
 bool platform_make_directories(const char* path)
 {
     char partial[PATH_MAX];
@@ -381,10 +405,19 @@ bool platform_make_directories(const char* path)
         {
             continue; // drive root such as C:
         }
-        if (MAKE_DIR(partial) != 0 && errno != EEXIST)
+        if (!platform_make_directory(partial, NULL))
         {
             return false;
         }
     }
     return true;
+}
+
+bool platform_localtime(struct tm* out, const time_t* timep)
+{
+#ifdef _MSC_VER
+    return LOCALTIME(out, timep) == 0;
+#else
+    return LOCALTIME(out, timep) != NULL;
+#endif
 }

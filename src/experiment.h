@@ -32,7 +32,7 @@ typedef struct
 } Options;
 
 void createUniqueDirectory(char* outputDirectory, size_t size);
-/* Accepts EEXIST without checking the existing object's type. */
+/* Existing paths must be directories. */
 void createDatasetDirectory(const char* baseDirectory, const char* datasetName, char* datasetDirectory, size_t size);
 /* Only an existing configuration header is checked; dataset metadata checks K/N/D, not input identity. */
 void writeRunConfig(const char* outputDirectory, const Options* opt, const TrackOptions* track,

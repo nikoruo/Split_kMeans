@@ -34,6 +34,7 @@
 - 8.0b (D12): for K=2, all four SSE-split variants skip the two unused trial evaluations and their cache after the first split. No later random step uses the changed RNG state; K>2 trial evaluations remain unchanged. Debug level 3 no longer prints the unused trials. Golden files are unchanged after `golden-update`; paired scores, snapshots and timings are in `results/M4/8.0b/`.
 - 8.2d: input-file reads and result-file writes, flushes and closes, including the line-length look-ahead, now report failures; directory enumeration and entry-inspection failures no longer silently return partial lists. Regression and benchmark tools also check file I/O. Failed calls can leave incomplete files; normal outputs and goldens are unchanged.
 - 8.2e: `sse` exits with an error for a non-finite score. Per-call SSE means retain the ordinary sum-and-divide calculation, using a 2^-64 scaled accumulator only when the sum overflows; an unrepresentable fallback is an error. Goldens are unchanged.
+- 8.2f: directory creation accepts existing paths only when they are directories; timestamp collisions with directories still use numeric suffixes. Clock, local-time conversion and timestamp-formatting failures now terminate explicitly.
 
 ## v1.0.0 - 26-10-2025
 
