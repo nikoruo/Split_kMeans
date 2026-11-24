@@ -321,7 +321,7 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
         // Runs for every K >= 2: at K = 2 no later split uses these trials (kept on purpose, plan D12)
         for (size_t i = 0; i < centroids->size; ++i)
         {
-            clusterSSEs[i] = calculateClusterSSE(dataPoints, centroids, i);
+            clusterSSEs[i] = indexedClusterSSE(dataPoints, &membership, centroids, i);
             SseDrops[i] = evaluateSplitDrop(dataPoints, &membership, i, maxIterations, clusterSSEs[i],
                                             &trialCentroids, trialLabels, tracker, trialTraces, rng, &splitScratch);
         }
@@ -381,8 +381,9 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
             {
                 splittable = rebuildClusterIndex(&membership, dataPoints, centroids->size);
                 // Recalculate SSE for the affected clusters
-                clusterSSEs[clusterToSplit] = calculateClusterSSE(dataPoints, centroids, clusterToSplit);
-                clusterSSEs[centroids->size - 1] = calculateClusterSSE(dataPoints, centroids, centroids->size - 1);
+                clusterSSEs[clusterToSplit] = indexedClusterSSE(dataPoints, &membership, centroids, clusterToSplit);
+                clusterSSEs[centroids->size - 1] =
+                    indexedClusterSSE(dataPoints, &membership, centroids, centroids->size - 1);
 
                 // Update SseDrops for the affected clusters
                 SseDrops[clusterToSplit] =
@@ -399,7 +400,7 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
                 splittable = rebuildClusterIndex(&membership, dataPoints, centroids->size);
                 for (size_t i = 0; i < centroids->size; ++i)
                 {
-                    clusterSSEs[i] = calculateClusterSSE(dataPoints, centroids, i);
+                    clusterSSEs[i] = indexedClusterSSE(dataPoints, &membership, centroids, i);
                     SseDrops[i] = evaluateSplitDrop(dataPoints, &membership, i, maxIterations, clusterSSEs[i],
                                                     &trialCentroids, trialLabels, tracker, trialTraces, rng,
                                                     &splitScratch);
@@ -411,7 +412,7 @@ double runSseSplit(Dataset* dataPoints, Centroids* centroids, size_t maxCentroid
                 {
                     if (clustersAffected[i])
                     {
-                        clusterSSEs[i] = calculateClusterSSE(dataPoints, centroids, i);
+                        clusterSSEs[i] = indexedClusterSSE(dataPoints, &membership, centroids, i);
                         SseDrops[i] = evaluateSplitDrop(dataPoints, &membership, i, maxIterations, clusterSSEs[i],
                                                         &trialCentroids, trialLabels, tracker, trialTraces, rng,
                                                         &splitScratch);

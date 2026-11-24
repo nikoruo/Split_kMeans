@@ -46,6 +46,12 @@ ClusterIndex allocateClusterIndex(size_t pointCount, size_t capacity);
 void freeClusterIndex(ClusterIndex* index);
 /* Rebuilds stable slices and returns the number with at least two distinct coordinates. */
 size_t rebuildClusterIndex(ClusterIndex* index, const Dataset* dataPoints, size_t numClusters);
+/* Requires membership rebuilt for the current partitions and centroids. */
+double indexedClusterSSE(const Dataset* dataPoints, const ClusterIndex* index, const Centroids* centroids,
+                         size_t clusterLabel);
+/* Uses the old cluster's slice immediately after one split, before rebuilding membership. */
+void splitClusterSSEs(const Dataset* dataPoints, const ClusterIndex* index, const Centroids* centroids,
+                      size_t clusterLabel, double* firstSSE, double* secondSSE);
 /* Rebuilds membership and recomputes only marked nonempty cluster means. */
 size_t updateAffectedCentroids(Dataset* dataPoints, ClusterIndex* index, Centroids* centroids, const bool* affected);
 

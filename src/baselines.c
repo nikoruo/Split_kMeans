@@ -322,8 +322,8 @@ double runBisectingKMeans(Dataset* dataPoints, Centroids* centroids, size_t maxC
         applyTentativeSplit(dataPoints, &membership, centroids, clusterToSplit, &bestSplit, bestLabels);
         trackerSplitSnapshot(tracker, dataPoints, centroids, clusterToSplit);
 
-        SseList[clusterToSplit] = calculateClusterSSE(dataPoints, centroids, clusterToSplit);
-        SseList[centroids->size - 1] = calculateClusterSSE(dataPoints, centroids, centroids->size - 1);
+        splitClusterSSEs(dataPoints, &membership, centroids, clusterToSplit, &SseList[clusterToSplit],
+                         &SseList[centroids->size - 1]);
 
         trackerRecord(tracker, iterationCount, "step", dataPoints, centroids, clusterToSplit);
         ++iterationCount;

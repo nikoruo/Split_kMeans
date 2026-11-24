@@ -1853,6 +1853,65 @@ static void testClusterIndex(void)
     freeDataset(&points);
 }
 
+static void testIndexedClusterSSE(void)
+{
+    const double values[][2] = {{1e8, 0.0}, {1.25, -0.5}, {1.0, 0.0}, {-2.5, 0.25},
+                                {1.0, 0.0}, {0.5, 2.0}, {1.0, 0.0}, {1.0, 0.0}};
+    const size_t labels[] = {0, 1, 0, 1, 0, 1, 0, 0};
+    Dataset points = allocateDataset(8, 2);
+    Centroids centroids = allocateCentroids(4, 2);
+    centroidRow(&centroids, 1)[0] = 0.2;
+    centroidRow(&centroids, 1)[1] = 0.3;
+    centroidRow(&centroids, 3)[0] = 0.3;
+    centroids.size = 3;
+    for (size_t i = 0; i < points.size; ++i)
+    {
+        copyCoordinates(datasetRow(&points, i), values[i], points.dimensions);
+        points.partitions[i] = labels[i];
+    }
+    ClusterIndex index = allocateClusterIndex(points.size, centroids.capacity);
+    rebuildClusterIndex(&index, &points, centroids.size);
+
+    for (size_t c = 0; c < centroids.size; ++c)
+    {
+        double expected = calculateClusterSSE(&points, &centroids, c);
+        double actual = indexedClusterSSE(&points, &index, &centroids, c);
+        require(memcmp(&actual, &expected, sizeof(actual)) == 0,
+                "indexed cluster SSE differs from the dataset-order scan");
+    }
+    double reverse = 0.0;
+    for (size_t i = points.size; i-- > 0;)
+    {
+        if (points.partitions[i] == 0)
+            reverse += calculateSquaredEuclideanDistance(datasetRowConst(&points, i), centroidRowConst(&centroids, 0),
+                                                          points.dimensions);
+    }
+    require(reverse != indexedClusterSSE(&points, &index, &centroids, 0),
+            "cluster SSE fixture does not distinguish summation order");
+
+    centroids.size = 4;
+    double first = -1.0, second = -1.0;
+    splitClusterSSEs(&points, &index, &centroids, 0, &first, &second);
+    require(first == calculateClusterSSE(&points, &centroids, 0) && second == 0.0,
+            "split SSE did not retain an empty child");
+    points.partitions[2] = 3;
+    points.partitions[6] = 3;
+    splitClusterSSEs(&points, &index, &centroids, 0, &first, &second);
+    double expectedFirst = calculateClusterSSE(&points, &centroids, 0);
+    double expectedSecond = calculateClusterSSE(&points, &centroids, 3);
+    require(memcmp(&first, &expectedFirst, sizeof(first)) == 0 &&
+                memcmp(&second, &expectedSecond, sizeof(second)) == 0,
+            "split child SSEs differ from separate dataset-order scans");
+    rebuildClusterIndex(&index, &points, centroids.size);
+    require(indexedClusterSSE(&points, &index, &centroids, 0) == expectedFirst &&
+                indexedClusterSSE(&points, &index, &centroids, 3) == expectedSecond,
+            "indexed cluster SSE did not use rebuilt membership");
+
+    freeClusterIndex(&index);
+    freeCentroids(&centroids);
+    freeDataset(&points);
+}
+
 static void testDistinctSplitEligibility(void)
 {
     const double values[] = {0, -0.0, 7, 7, 2, 3};
@@ -3421,6 +3480,7 @@ int main(int argc, char* argv[])
     testLocalFirstAndFinalSplit();
     testSplitCapacity();
     testClusterIndex();
+    testIndexedClusterSSE();
     testDistinctSplitEligibility();
     if (argc == 6) testCliIterationLimit(argv[1], argv[2], argv[3], argv[4], argv[5]);
     puts("test_unit: parser, flat data, metrics, RNG, k-means, membership and repartition cases passed");

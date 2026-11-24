@@ -1,0 +1,37 @@
+Step 7.2 paired benchmarks, 2026-11-24
+
+The clean 44b9763 MinGW gcc 16.2.0 release binary is the before build;
+it uses -O3, -ffp-contract=off and -Werror. The after build records
+44b9763-dirty. Their SHA-256 values are respectively:
+  66B82572CDC699425F94B7A2115D2F9478A9CEA2BA026D29E417C334B6EFDEBE
+  65EC0A8FD1C8BD36948C08A9666204A1093C4B2196215317FD1D30677FCC804D
+The Visual Studio 2026 Release x64 before and after binaries have SHA-256:
+  6CF469623E90C6341A45B4E340A12923FA2781EF37E9F9FB51FEA3F90E3BFAD8
+  F272CE718ED3369E5FC58E6C757BBB0799DBDE771951A21941D97E554DB63A4B
+The source patch has SHA-256
+8A3B2E5F91EF8B4C0D3465798C523F8ED414FCB7C0B7BD1BECD102636F3649DF;
+source-hashes.csv records the compiled source and tests.
+
+Each session uses the five 7.0 jobs, seed 20261119, log level 1, no
+tracking, 25 RKM repeats and 300 RS swaps. Four rounds alternate after
+and before. All 64 run/seed/SSE/CI identities matched in every round.
+The laptop was on AC power. Sums of per-run minima:
+  compiler  session    after ms    before ms    after/before
+  MinGW       1        6139.466     6201.187       0.990047
+  MinGW       2        6112.137     6165.668       0.991318
+  MSVC        1        7214.786     7263.629       0.993276
+Individual ratios and these small gains include timing noise. The a3
+Global job was 0.980 and 0.979 of before in the two MinGW sessions;
+the birch1 jobs were 0.975 and 0.977. comparison.csv and the individual
+session files retain the results by dataset, algorithm and run.
+
+A separate MinGW/MSVC session matched all 64 identities; its results
+are in cross-platform.csv. The 21 input hashes were checked against
+M3b-ref before and after the real-data runs.
+
+Commands:
+  mingw32-make WERROR=1 bench BENCH_REF=<ROOT>\before-7.2-mingw.exe BENCH_ROOT=<ROOT>\bench-7.2-mingw
+  build\release\bench.exe <ROOT>\after-7.2-msvc.exe <ROOT>\before-7.2-msvc.exe <ROOT>\bench-7.2-msvc NUL
+  mingw32-make WERROR=1 bench BENCH_ROOT=<ROOT>\cross-7.2
+ROOT is %TEMP%\skm_phase7_20261124_081023. The exact binaries, source
+patch, full benchmark rounds, real-data tracking runs and logs remain there.

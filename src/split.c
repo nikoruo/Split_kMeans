@@ -125,6 +125,47 @@ size_t rebuildClusterIndex(ClusterIndex* index, const Dataset* dataPoints, size_
     return splittable;
 }
 
+double indexedClusterSSE(const Dataset* dataPoints, const ClusterIndex* index, const Centroids* centroids,
+                         size_t clusterLabel)
+{
+    assert(index->dataset == dataPoints && index->clusterCount == centroids->size);
+    assert(clusterLabel < index->clusterCount && dataPoints->dimensions == centroids->dimensions);
+    const double* centroid = centroidRowConst(centroids, clusterLabel);
+    double sse = 0.0;
+    for (size_t i = index->offsets[clusterLabel]; i < index->offsets[clusterLabel + 1]; ++i)
+    {
+        size_t point = index->indices[i];
+        assert(dataPoints->partitions[point] == clusterLabel);
+        sse += calculateSquaredEuclideanDistance(datasetRowConst(dataPoints, point), centroid, dataPoints->dimensions);
+    }
+    return sse;
+}
+
+void splitClusterSSEs(const Dataset* dataPoints, const ClusterIndex* index, const Centroids* centroids,
+                      size_t clusterLabel, double* firstSSE, double* secondSSE)
+{
+    assert(index->dataset == dataPoints && centroids->size == index->clusterCount + 1);
+    assert(clusterLabel < index->clusterCount && dataPoints->dimensions == centroids->dimensions);
+    assert(firstSSE != NULL && secondSSE != NULL && firstSSE != secondSSE);
+    const size_t newCluster = centroids->size - 1;
+    const double* first = centroidRowConst(centroids, clusterLabel);
+    const double* second = centroidRowConst(centroids, newCluster);
+    double firstSum = 0.0, secondSum = 0.0;
+    for (size_t i = index->offsets[clusterLabel]; i < index->offsets[clusterLabel + 1]; ++i)
+    {
+        size_t point = index->indices[i];
+        size_t label = dataPoints->partitions[point];
+        assert(label == clusterLabel || label == newCluster);
+        const double* centroid = label == clusterLabel ? first : second;
+        double distance = calculateSquaredEuclideanDistance(datasetRowConst(dataPoints, point), centroid,
+                                                            dataPoints->dimensions);
+        if (label == clusterLabel) firstSum += distance;
+        else secondSum += distance;
+    }
+    *firstSSE = firstSum;
+    *secondSSE = secondSum;
+}
+
 static DatasetView clusterView(const Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel)
 {
     assert(index->dataset == dataPoints && clusterLabel < index->clusterCount);
