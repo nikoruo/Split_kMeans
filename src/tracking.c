@@ -70,17 +70,18 @@ static void appendLogCsv(const char* filePath, size_t run, const TrackRow* rows,
     }
     if (writeHeader)
     {
-        fprintf(file, "run;count;sse;ci;ms\n");
+        checkFileWrite(file, filePath, fprintf(file, "run;count;sse;ci;ms\n"));
     }
     char ciText[CI_TEXT_SIZE];
     char sseText[NUMBER_TEXT_SIZE];
     char msText[NUMBER_TEXT_SIZE];
     for (size_t i = 0; i < rowCount; ++i)
     {
-        fprintf(file, "%zu;%zu;%s;%s;%s\n", run + 1, rows[i].count, formatFixed(rows[i].sse, 6, sseText),
-                formatCi(rows[i].ci, ciText), formatFixed(rows[i].ms, 3, msText));
+        checkFileWrite(file, filePath,
+                       fprintf(file, "%zu;%zu;%s;%s;%s\n", run + 1, rows[i].count, formatFixed(rows[i].sse, 6, sseText),
+                               formatCi(rows[i].ci, ciText), formatFixed(rows[i].ms, 3, msText)));
     }
-    fclose(file);
+    closeOutputFile(file, filePath);
 }
 
 /**
@@ -109,19 +110,19 @@ void appendRunCsv(const char* outputDirectory, const char* algorithmName, size_t
 
     if (writeHeader)
     {
-        fprintf(file, "run;seed;sse;ci;ms\n");
+        checkFileWrite(file, path, fprintf(file, "run;seed;sse;ci;ms\n"));
     }
     char ciText[CI_TEXT_SIZE];
-    fprintf(file, "%zu;%" PRIu64 ";%.17g;%s;%.17g\n", run + 1, seed, sse, formatCi(ci, ciText), ms);
-    fclose(file);
+    checkFileWrite(file, path,
+                   fprintf(file, "%zu;%" PRIu64 ";%.17g;%s;%.17g\n", run + 1, seed, sse, formatCi(ci, ciText), ms));
+    closeOutputFile(file, path);
 }
 
 /**
  * @brief Writes centroids to `outputDirectory/filename`: one row per centroid, attributes `%f` separated by one space.
  *
  * `%f` keeps 6 decimals (snapshot files for the figures, not for exact comparisons); the program never changes
- * the locale, so the decimal separator is a point. The folder must exist. Exits when the file cannot be opened;
- * write errors are not checked.
+ * the locale, so the decimal separator is a point. The folder must exist; file I/O failures are fatal.
  */
 static void writeCentroidsToFile(const char* filename, const Centroids* centroids, const char* outputDirectory)
 {
@@ -139,13 +140,13 @@ static void writeCentroidsToFile(const char* filename, const Centroids* centroid
         const double* c = centroidRowConst(centroids, i);
         for (size_t j = 0; j < centroids->dimensions; ++j)
         {
-            if (j) fputc(' ', centroidFile);
-            fprintf(centroidFile, "%f", c[j]);
+            if (j) checkFileWrite(centroidFile, outputFilePath, fputc(' ', centroidFile));
+            checkFileWrite(centroidFile, outputFilePath, fprintf(centroidFile, "%f", c[j]));
         }
-        fputc('\n', centroidFile);
+        checkFileWrite(centroidFile, outputFilePath, fputc('\n', centroidFile));
     }
 
-    fclose(centroidFile);
+    closeOutputFile(centroidFile, outputFilePath);
 }
 
 /**
@@ -158,7 +159,7 @@ static void writeCentroidsToFile(const char* filename, const Centroids* centroid
  * @param dataPoints Points whose partitions to serialize; size determines line count.
  * @param outputDirectory Destination directory; must exist.
  * @return void
- * @errors Exits on open failure via handleFileError. Write errors are not checked.
+ * @errors Exits on file I/O failure.
  * @note Output intended for debugging/postprocessing; format is line-oriented text.
  */
 static void writeDataPointPartitionsToFile(const char* filename, const Dataset* dataPoints,
@@ -175,10 +176,10 @@ static void writeDataPointPartitionsToFile(const char* filename, const Dataset* 
 
     for (size_t i = 0; i < dataPoints->size; ++i)
     {
-        fprintf(file, "%zu\n", dataPoints->partitions[i]);
+        checkFileWrite(file, outputFilePath, fprintf(file, "%zu\n", dataPoints->partitions[i]));
     }
 
-    fclose(file);
+    closeOutputFile(file, outputFilePath);
 }
 
 /**
@@ -213,7 +214,7 @@ void algorithmFilePath(Algorithm algorithm, const char* outputDirectory, const c
  * @param outputDirectory Directory where files are saved.
  * @param savedPerfect Pointer to a bool tracking if perfect example was saved.
  * @param savedFailed Pointer to a bool tracking if failed example was saved.
- * @errors Exits when a file cannot be opened (via writeCentroidsToFile and writeDataPointPartitionsToFile).
+ * @errors Exits on file I/O failure.
  */
 void saveExampleSnapshots(const Centroids* centroids, const Dataset* dataPoints, size_t centroidIndex,
                           const char* algorithmPrefix, const char* outputDirectory, bool* savedPerfect,
@@ -304,19 +305,21 @@ static void writeIterationStats(const Centroids* centroids, size_t ci, size_t ru
     }
 
     /* Write header once when the file is empty */
-    fseek(statsFile, 0, SEEK_END);
-    if (ftell(statsFile) == 0)
+    if (fileIsEmpty(statsFile, outputFilePath))
     {
-        fprintf(statsFile, "Run;Iteration;Phase;NumCentroids;SSE;CI;SplitCluster;MS\n");
+        checkFileWrite(statsFile, outputFilePath,
+                       fprintf(statsFile, "Run;Iteration;Phase;NumCentroids;SSE;CI;SplitCluster;MS\n"));
     }
 
     char ciText[CI_TEXT_SIZE];
     char sseText[NUMBER_TEXT_SIZE];
     char msText[NUMBER_TEXT_SIZE];
-    fprintf(statsFile, "%zu;%zu;%s;%zu;%s;%s;%zu;%s\n", run, iteration, phase, centroids->size,
-            formatFixed(sse, 6, sseText), formatCi(ci, ciText), splitCluster, formatFixed(elapsedMs, 3, msText));
+    checkFileWrite(statsFile, outputFilePath,
+                   fprintf(statsFile, "%zu;%zu;%s;%zu;%s;%s;%zu;%s\n", run, iteration, phase, centroids->size,
+                           formatFixed(sse, 6, sseText), formatCi(ci, ciText), splitCluster,
+                           formatFixed(elapsedMs, 3, msText)));
 
-    fclose(statsFile);
+    closeOutputFile(statsFile, outputFilePath);
 }
 
 /**
@@ -384,7 +387,7 @@ static void appendInnerCsv(const char* filePath, size_t run, const InnerRow* row
     }
     if (writeHeader)
     {
-        fprintf(file, "run;count;stage;iteration;k;sse;ci;ms\n");
+        checkFileWrite(file, filePath, fprintf(file, "run;count;stage;iteration;k;sse;ci;ms\n"));
     }
     char ciText[CI_TEXT_SIZE];
     char sseText[NUMBER_TEXT_SIZE];
@@ -392,10 +395,12 @@ static void appendInnerCsv(const char* filePath, size_t run, const InnerRow* row
     for (size_t i = 0; i < rowCount; ++i)
     {
         const InnerRow* row = &rows[i];
-        fprintf(file, "%zu;%zu;%s;%zu;%zu;%s;%s;%s\n", run + 1, row->count, kmeansStageName(row->stage), row->iteration,
-                row->k, formatFixed(row->sse, 6, sseText), formatCi(row->ci, ciText), formatFixed(row->ms, 3, msText));
+        checkFileWrite(file, filePath,
+                       fprintf(file, "%zu;%zu;%s;%zu;%zu;%s;%s;%s\n", run + 1, row->count, kmeansStageName(row->stage),
+                               row->iteration, row->k, formatFixed(row->sse, 6, sseText), formatCi(row->ci, ciText),
+                               formatFixed(row->ms, 3, msText)));
     }
-    fclose(file);
+    closeOutputFile(file, filePath);
 }
 
 /**

@@ -39,6 +39,15 @@ static void freeLines(Lines* lines)
     lines->count = 0;
 }
 
+static int closeInput(FILE* file, const char* path)
+{
+    const int readError = ferror(file);
+    const int closeError = fclose(file);
+    if (readError) fprintf(stderr, "compare_runs: read failed for %s\n", path);
+    if (closeError != 0) fprintf(stderr, "compare_runs: close failed for %s\n", path);
+    return readError || closeError != 0 ? -1 : 0;
+}
+
 /* Truncates the line before field KEPT_FIELDS + 1 (the ms column); no-op with --whole. */
 static void keepComparedFields(char* line)
 {
@@ -78,7 +87,7 @@ static int readLines(const char* path, Lines* out)
         if (buffer[length] == '\0' && !feof(file))
         {
             fprintf(stderr, "compare_runs: line too long in %s\n", path);
-            fclose(file);
+            closeInput(file, path);
             freeLines(out);
             return -1;
         }
@@ -92,7 +101,7 @@ static int readLines(const char* path, Lines* out)
             if (grown == NULL)
             {
                 fprintf(stderr, "compare_runs: out of memory\n");
-                fclose(file);
+                closeInput(file, path);
                 freeLines(out);
                 return -1;
             }
@@ -103,7 +112,7 @@ static int readLines(const char* path, Lines* out)
         if (out->lines[out->count] == NULL)
         {
             fprintf(stderr, "compare_runs: out of memory\n");
-            fclose(file);
+            closeInput(file, path);
             freeLines(out);
             return -1;
         }
@@ -111,7 +120,11 @@ static int readLines(const char* path, Lines* out)
         out->count++;
     }
 
-    fclose(file);
+    if (closeInput(file, path) != 0)
+    {
+        freeLines(out);
+        return -1;
+    }
     return 0;
 }
 
@@ -123,11 +136,16 @@ static int writeLines(const char* path, const Lines* lines)
         fprintf(stderr, "compare_runs: cannot write %s\n", path);
         return -1;
     }
+    int writeError = 0;
     for (size_t i = 0; i < lines->count; ++i)
     {
-        fprintf(file, "%s\n", lines->lines[i]);
+        writeError |= fprintf(file, "%s\n", lines->lines[i]) < 0;
     }
-    return fclose(file) == 0 ? 0 : -1;
+    writeError |= ferror(file) != 0;
+    writeError |= fflush(file) != 0;
+    writeError |= fclose(file) != 0;
+    if (writeError) fprintf(stderr, "compare_runs: write or close failed for %s\n", path);
+    return writeError ? -1 : 0;
 }
 
 static int compareFile(const char* goldenPath, const char* outputPath)
@@ -140,7 +158,6 @@ static int compareFile(const char* goldenPath, const char* outputPath)
     }
     if (readLines(goldenPath, &golden) != 0)
     {
-        fprintf(stderr, "compare_runs: no golden file; run make golden-update in an algorithm-change commit\n");
         freeLines(&output);
         return -1;
     }

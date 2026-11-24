@@ -139,7 +139,7 @@ Centroids allocateCentroids(size_t size, size_t dimensions)
  *
  * @param filename Path to a space/tab-delimited text file of doubles.
  * @return Dataset with one row per data point and partitions initialized to SIZE_MAX.
- * @errors Exits on file open/detected read failures, allocation failures, inconsistent column counts,
+ * @errors Exits on file open, read, seek or close failures, allocation failures, inconsistent column counts,
  *         values that are not finite numbers, and lines longer than LINE_BUFSZ - 1 characters.
  * @note Parsing uses strtod and the current locale (the program never changes it, so dot decimals).
  */
@@ -197,7 +197,7 @@ Dataset readDataset(const char* filename)
         }
         else if (tokenCount != expectedDims)
         {
-            fclose(file);
+            closeInputFile(file, filename);
             fprintf(stderr, "Error: Inconsistent column count in '%s' line %zu (expected %zu, got %zu)\n", filename,
                     lineNumber, expectedDims, tokenCount);
             exit(EXIT_FAILURE);
@@ -209,13 +209,18 @@ Dataset readDataset(const char* filename)
     // No data rows -> return empty container
     if (lineCount == 0)
     {
-        fclose(file);
+        closeInputFile(file, filename);
         Dataset empty = {0};
         return empty;
     }
 
     // Second pass: parse into the flat dataset
-    rewind(file);
+    if (fseek(file, 0, SEEK_SET) != 0)
+    {
+        fprintf(stderr, "Error: Unable to seek file '%s'\n", filename);
+        closeInputFile(file, filename);
+        exit(EXIT_FAILURE);
+    }
 
     Dataset dataPoints = allocateDataset(lineCount, expectedDims);
 
@@ -257,7 +262,7 @@ Dataset readDataset(const char* filename)
         }
         if (expectedDims != SIZE_MAX && tokenCount != expectedDims)
         {
-            fclose(file);
+            closeInputFile(file, filename);
             freeDataset(&dataPoints);
             fprintf(stderr, "Error: Inconsistent column count in '%s' line %zu (expected %zu, got %zu)\n", filename,
                     lineNumber, expectedDims, tokenCount);
@@ -272,7 +277,7 @@ Dataset readDataset(const char* filename)
         {
             if (!parseFiniteDouble(token, &datasetRow(&dataPoints, currentPoint)[dim]))
             {
-                fclose(file);
+                closeInputFile(file, filename);
                 fprintf(stderr, "Error: '%s' in '%s' line %zu, column %zu is not a finite number\n", token, filename,
                         lineNumber, dim + 1);
                 freeDataset(&dataPoints);
@@ -285,7 +290,7 @@ Dataset readDataset(const char* filename)
         // Final sanity check
         if (dim != expectedDims)
         {
-            fclose(file);
+            closeInputFile(file, filename);
             freeDataset(&dataPoints);
             fprintf(stderr, "Error: Row truncated in '%s' (expected %zu values, got %zu)\n", filename, expectedDims,
                     dim);
@@ -295,7 +300,7 @@ Dataset readDataset(const char* filename)
         ++currentPoint;
     }
 
-    fclose(file);
+    closeInputFile(file, filename);
 
     if (currentPoint != lineCount)
     {
@@ -316,7 +321,7 @@ Dataset readDataset(const char* filename)
  *
  * @param filename Path to a space/tab-separated text file of doubles.
  * @return Centroids with `size == rows` and `dimensions == columns`.
- * @errors The errors of readDataset (open and detected read errors, inconsistent column counts, values that are not
+ * @errors The errors of readDataset (file I/O, inconsistent column counts, values that are not
  *         finite numbers, overlong lines). Prints the size at log level 2 and every centroid at level 3.
  * @note Skips whitespace-only lines; parsing uses the current C locale for `strtod`.
  */
@@ -348,9 +353,17 @@ Centroids readCentroids(const char* filename)
     return centroids;
 }
 
-/**
- * @brief Reads a single positive integer K from a file (strict, no extra content).
- */
+static void pushBackKChar(FILE* file, int ch, const char* path)
+{
+    if (ch != EOF && ungetc(ch, file) == EOF)
+    {
+        fprintf(stderr, "Error: Unable to push back a character in file '%s'\n", path);
+        closeInputFile(file, path);
+        exit(EXIT_FAILURE);
+    }
+}
+
+/** @brief Reads a single positive integer K from a file (strict, no extra content). */
 size_t readKFromFile(const char* path)
 {
     FILE* fp;
@@ -361,26 +374,28 @@ size_t readKFromFile(const char* path)
 
     /* Skip UTF-8 BOM if present */
     int c1 = fgetc(fp);
+    if (ferror(fp)) closeInputFile(fp, path);
     if (c1 == 0xEF)
     {
         int c2 = fgetc(fp);
         int c3 = fgetc(fp);
+        if (ferror(fp)) closeInputFile(fp, path);
         if (!(c2 == 0xBB && c3 == 0xBF))
         {
-            if (c3 != EOF) ungetc(c3, fp);
-            if (c2 != EOF) ungetc(c2, fp);
-            ungetc(c1, fp);
+            pushBackKChar(fp, c3, path);
+            pushBackKChar(fp, c2, path);
+            pushBackKChar(fp, c1, path);
         }
     }
     else if (c1 != EOF)
     {
-        ungetc(c1, fp);
+        pushBackKChar(fp, c1, path);
     }
 
     long k = 0;
     if (fscanf(fp, "%ld", &k) != 1 || k <= 0)
     {
-        fclose(fp);
+        closeInputFile(fp, path);
         fprintf(stderr, "Bad K in %s\n", path);
         exit(EXIT_FAILURE);
     }
@@ -393,12 +408,12 @@ size_t readKFromFile(const char* path)
     } while (ch != EOF && isspace((unsigned char)ch));
     if (ch != EOF)
     {
-        fclose(fp);
+        closeInputFile(fp, path);
         fprintf(stderr, "Bad K (extra content) in %s\n", path);
         exit(EXIT_FAILURE);
     }
 
-    fclose(fp);
+    closeInputFile(fp, path);
     return (size_t)k;
 }
 

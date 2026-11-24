@@ -169,7 +169,7 @@ static void writeSummary(const char* root, bool compare)
     if (n < 0 || (size_t)n >= sizeof(path)) fail("summary path too long", root);
     FILE* file = fopen(path, "w");
     if (file == NULL) fail("cannot write summary", path);
-    fprintf(file, "dataset;algorithm;run;seed;sse;ci;primary_best_ms;reference_best_ms\n");
+    int writeError = fprintf(file, "dataset;algorithm;run;seed;sse;ci;primary_best_ms;reference_best_ms\n") < 0;
     double totals[2] = {0.0, 0.0};
     for (size_t c = 0; c < CASE_COUNT; ++c)
     {
@@ -179,19 +179,21 @@ static void writeSummary(const char* root, bool compare)
             {
                 const Sample* sample = &samples[c][a][r];
                 totals[0] += sample->best[0];
-                fprintf(file, "%s;%s;%s;%.17g;", cases[c].dataset, cases[c].outputs[a], sample->identity,
-                        sample->best[0]);
+                writeError |= fprintf(file, "%s;%s;%s;%.17g;", cases[c].dataset, cases[c].outputs[a], sample->identity,
+                                      sample->best[0]) < 0;
                 if (compare)
                 {
                     totals[1] += sample->best[1];
-                    fprintf(file, "%.17g", sample->best[1]);
+                    writeError |= fprintf(file, "%.17g", sample->best[1]) < 0;
                 }
-                fputc('\n', file);
+                writeError |= fputc('\n', file) == EOF;
             }
         }
     }
-    int writeError = ferror(file);
-    if (fclose(file) != 0 || writeError) fail("cannot write summary", path);
+    writeError |= ferror(file) != 0;
+    writeError |= fflush(file) != 0;
+    writeError |= fclose(file) != 0;
+    if (writeError) fail("cannot write summary", path);
     printf("Results: %s\n", root);
     printf("Sum of per-run minima: primary %.3f ms", totals[0]);
     if (compare)
@@ -232,7 +234,7 @@ int main(int argc, char** argv)
                 char output[PATH_MAX];
                 checkedPath(output, sizeof(output), root, round, cases[c].dataset, build);
                 printf("Round %zu: %s %s\n", round + 1, cases[c].dataset, build == 0 ? "primary" : "reference");
-                fflush(stdout);
+                if (fflush(stdout) != 0) fail("cannot flush progress", root);
                 runCase(argv[build + 1], output, &cases[c], argv[4]);
                 readResults(output, c, round, build);
             }

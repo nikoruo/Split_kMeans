@@ -74,8 +74,7 @@
  * @param partitionFileName Path to labels (one integer 1..N per data point, separated by spaces, tabs or line breaks).
  * @param outputFileName Path to write centroids (space-separated doubles per row).
  * @return 0 on success; 1 for empty data, a partition/output open failure, an invalid label or a label-count mismatch.
- * @errors The data file is read by readDataset, which exits on its errors; lines over LINE_BUFSZ - 1 characters
- *         and allocation failures exit.
+ * @errors File read, write and close failures, overlong lines and allocation failures exit.
  */
 int generateGroundTruthCentroids(const char* dataFileName, const char* partitionFileName, const char* outputFileName)
 {
@@ -133,7 +132,7 @@ int generateGroundTruthCentroids(const char* dataFileName, const char* partition
             }
         }
     }
-    fclose(partitionFile);
+    closeInputFile(partitionFile, partitionFileName);
 
     if (valid && labelCount != dataPoints.size)
     {
@@ -209,12 +208,12 @@ int generateGroundTruthCentroids(const char* dataFileName, const char* partition
     {
         for (size_t j = 0; j < centroids.dimensions; ++j)
         {
-            fprintf(outputFile, "%f ", centroidRow(&centroids, i)[j]);
+            checkFileWrite(outputFile, outputFileName, fprintf(outputFile, "%f ", centroidRow(&centroids, i)[j]));
         }
-        fprintf(outputFile, "\n");
+        checkFileWrite(outputFile, outputFileName, fprintf(outputFile, "\n"));
     }
 
-    fclose(outputFile);
+    closeOutputFile(outputFile, outputFileName);
 
     printf("Successfully wrote %zu centroids to %s\n", numCentroids, outputFileName);
 

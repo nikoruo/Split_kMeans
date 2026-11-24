@@ -73,7 +73,7 @@ static void addRunStatistics(Statistics* stats, double sse, size_t ci, double ms
  * Algorithm;Average CI;SSE;Relative CI;MS;Success Rate, averaged over `loopCount` runs (> 0); SSE divided by
  * `scaling` (> 0); CI, relative CI and success rate NA without ground truth. Success Rate is a fraction, while
  * console/report success is a percentage. Fixed decimals through formatFixed (decimal comma with --decimal-comma).
- * Exits when the file cannot be opened; write errors are not checked.
+ * Exits on file I/O failure.
  */
 static void writeResultsToFile(const char* filename, Statistics stats, size_t numCentroids, const char* algorithm,
                                size_t loopCount, size_t scaling, const char* outputDirectory)
@@ -95,10 +95,9 @@ static void writeResultsToFile(const char* filename, Statistics stats, size_t nu
     }
 
     /* Write header once when the file is empty */
-    fseek(file, 0, SEEK_END);
-    if (ftell(file) == 0)
+    if (fileIsEmpty(file, outputFilePath))
     {
-        fprintf(file, "Algorithm;Average CI;SSE;Relative CI;MS;Success Rate\n");
+        checkFileWrite(file, outputFilePath, fprintf(file, "Algorithm;Average CI;SSE;Relative CI;MS;Success Rate\n"));
     }
 
     double avgCI = (double)stats.ciSum / loopCount;
@@ -115,15 +114,19 @@ static void writeResultsToFile(const char* filename, Statistics stats, size_t nu
     char rateText[NUMBER_TEXT_SIZE];
     if (stats.ciAvailable)
     {
-        fprintf(file, "%s;%s;%s;%s;%s;%s\n", algorithm, formatFixed(avgCI, 2, ciText), formatFixed(sse, 0, sseText),
-                formatFixed(relCI, 2, relText), formatFixed(avgTime, 0, msText), formatFixed(succRate, 2, rateText));
+        checkFileWrite(file, outputFilePath,
+                       fprintf(file, "%s;%s;%s;%s;%s;%s\n", algorithm, formatFixed(avgCI, 2, ciText),
+                               formatFixed(sse, 0, sseText), formatFixed(relCI, 2, relText),
+                               formatFixed(avgTime, 0, msText), formatFixed(succRate, 2, rateText)));
     }
     else
     {
-        fprintf(file, "%s;NA;%s;NA;%s;NA\n", algorithm, formatFixed(sse, 0, sseText), formatFixed(avgTime, 0, msText));
+        checkFileWrite(file, outputFilePath,
+                       fprintf(file, "%s;NA;%s;NA;%s;NA\n", algorithm, formatFixed(sse, 0, sseText),
+                               formatFixed(avgTime, 0, msText)));
     }
 
-    fclose(file);
+    closeOutputFile(file, outputFilePath);
 }
 
 /**
@@ -787,7 +790,7 @@ void writeRunConfig(const char* outputDirectory, const Options* opt, const Track
         char existing[RUN_CONFIG_SIZE];
         const size_t length = fread(existing, 1, sizeof(existing) - 1, file);
         existing[length] = '\0';
-        fclose(file);
+        closeInputFile(file, path);
 
         const size_t headerLength = strlen(header);
         if (length < headerLength || memcmp(existing, header, headerLength) != 0)
@@ -814,7 +817,7 @@ void writeRunConfig(const char* outputDirectory, const Options* opt, const Track
     }
     if (!exists)
     {
-        fputs(header, file);
+        checkFileWrite(file, path, fputs(header, file));
     }
 
     time_t now = time(NULL);
@@ -825,7 +828,7 @@ void writeRunConfig(const char* outputDirectory, const Options* opt, const Track
     {
         snprintf(stamp, sizeof(stamp), "unknown time");
     }
-    fprintf(file, "%s | ", stamp);
+    checkFileWrite(file, path, fprintf(file, "%s | ", stamp));
     // The program by file name only: argv[0] can be an absolute path with the user name (PowerShell passes one)
     const char* program = argc > 0 && argv[0] != NULL ? argv[0] : "split_kmeans";
     for (const char* c = program; *c != '\0'; ++c)
@@ -835,25 +838,26 @@ void writeRunConfig(const char* outputDirectory, const Options* opt, const Track
             program = c + 1;
         }
     }
-    fputs(program, file);
+    checkFileWrite(file, path, fputs(program, file));
     for (int i = 1; i < argc; ++i)
     {
-        fprintf(file, " %s", argv[i]);
+        checkFileWrite(file, path, fprintf(file, " %s", argv[i]));
     }
-    fprintf(file, "\n  mode: %s; algorithms:", cliMode ? "cli" : "batch");
+    checkFileWrite(file, path, fprintf(file, "\n  mode: %s; algorithms:", cliMode ? "cli" : "batch"));
     for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
     {
         if (opt->algorithms[a])
         {
-            fprintf(file, " %s", algorithmOptions[a].name);
+            checkFileWrite(file, path, fprintf(file, " %s", algorithmOptions[a].name));
         }
     }
-    fprintf(
-        file,
-        "; runs: %zu to %zu (RKM and RS: to %zu); datasets: %s; track-progress: %s; snapshots: %s; track-inner: %s\n",
-        opt->firstRun, opt->runs, opt->runsGiven ? opt->runs : (size_t)1, datasetsText, track->rows ? "on" : "off",
-        snapshotsText, track->inner ? "on" : "off");
-    fclose(file);
+    checkFileWrite(file, path,
+                   fprintf(file,
+                           "; runs: %zu to %zu (RKM and RS: to %zu); datasets: %s; track-progress: %s; snapshots: %s; "
+                           "track-inner: %s\n",
+                           opt->firstRun, opt->runs, opt->runsGiven ? opt->runs : (size_t)1, datasetsText,
+                           track->rows ? "on" : "off", snapshotsText, track->inner ? "on" : "off"));
+    closeOutputFile(file, path);
 }
 
 /**
@@ -880,7 +884,7 @@ void writeDatasetInfo(const char* datasetDirectory, const char* dataFile, const 
         char existing[2 * PATH_MAX + 256];
         const size_t length = fread(existing, 1, sizeof(existing) - 1, file);
         existing[length] = '\0';
-        fclose(file);
+        closeInputFile(file, path);
         if (strstr(existing, shape) == NULL)
         {
             fprintf(
@@ -897,6 +901,8 @@ void writeDatasetInfo(const char* datasetDirectory, const char* dataFile, const 
     {
         handleFileError(path);
     }
-    fprintf(file, "data: %s\nground-truth: %s\n%s", dataFile, gtFile[0] != '\0' ? gtFile : "none", shape);
-    fclose(file);
+    checkFileWrite(
+        file, path,
+        fprintf(file, "data: %s\nground-truth: %s\n%s", dataFile, gtFile[0] != '\0' ? gtFile : "none", shape));
+    closeOutputFile(file, path);
 }

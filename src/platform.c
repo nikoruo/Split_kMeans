@@ -91,6 +91,13 @@ static void append_name(char*** list, size_t* count, size_t* capacity, const cha
     (*list)[(*count)++] = copy;
 }
 
+static void free_names(char** list, size_t count)
+{
+    for (size_t i = 0; i < count; ++i)
+        free(list[i]);
+    free(list);
+}
+
 /* True for "." and "..". */
 static bool is_dot_entry(const char* name)
 {
@@ -107,17 +114,21 @@ static size_t list_entries(const char* dir, char*** out, bool wantDirs)
 
 #ifdef _MSC_VER
     char pattern[PATH_MAX];
-    if (snprintf(pattern, sizeof pattern, "%s\\*", dir) >= (int)sizeof pattern)
+    const int patternLength = snprintf(pattern, sizeof pattern, "%s\\*", dir);
+    if (patternLength < 0 || (size_t)patternLength >= sizeof pattern)
     {
         fprintf(stderr, "Error: Folder path too long: %s\n", dir);
-        return 0;
+        exit(EXIT_FAILURE);
     }
 
     WIN32_FIND_DATAA fd;
     HANDLE h = FindFirstFileA(pattern, &fd);
     if (h == INVALID_HANDLE_VALUE)
     {
-        return 0;
+        const DWORD error = GetLastError();
+        if (error == ERROR_FILE_NOT_FOUND) return 0;
+        fprintf(stderr, "Error: Unable to enumerate directory '%s' (Windows error %lu)\n", dir, (unsigned long)error);
+        exit(EXIT_FAILURE);
     }
 
     do
@@ -129,37 +140,79 @@ static size_t list_entries(const char* dir, char*** out, bool wantDirs)
         }
     } while (FindNextFileA(h, &fd));
 
-    FindClose(h);
+    const DWORD enumerationError = GetLastError();
+    const BOOL closed = FindClose(h);
+    const DWORD closeError = closed ? ERROR_SUCCESS : GetLastError();
+    if (enumerationError != ERROR_NO_MORE_FILES || !closed)
+    {
+        free_names(list, count);
+        if (enumerationError != ERROR_NO_MORE_FILES)
+            fprintf(stderr, "Error: Unable to enumerate directory '%s' (Windows error %lu)\n", dir,
+                    (unsigned long)enumerationError);
+        if (!closed)
+            fprintf(stderr, "Error: Unable to close directory '%s' (Windows error %lu)\n", dir,
+                    (unsigned long)closeError);
+        exit(EXIT_FAILURE);
+    }
 #else
     DIR* d = opendir(dir);
     if (d == NULL)
     {
-        return 0;
+        fprintf(stderr, "Error: Unable to enumerate directory '%s': %s\n", dir, strerror(errno));
+        exit(EXIT_FAILURE);
     }
 
-    struct dirent* e;
-    while ((e = readdir(d)) != NULL)
+    int error = 0;
+    const char* operation = "enumerate directory";
+    const char* errorPath = dir;
+    char path[PATH_MAX];
+    for (;;)
     {
+        errno = 0;
+        struct dirent* e = readdir(d);
+        if (e == NULL)
+        {
+            error = errno;
+            break;
+        }
         if (wantDirs ? is_dot_entry(e->d_name) : !has_txt_extension(e->d_name))
         {
             continue;
         }
         /* d_type is not portable (MinGW has none); stat the entry instead */
-        char path[PATH_MAX];
         struct stat st;
-        if (snprintf(path, sizeof path, "%s/%s", dir, e->d_name) >= (int)sizeof path)
+        const int length = snprintf(path, sizeof path, "%s/%s", dir, e->d_name);
+        if (length < 0 || (size_t)length >= sizeof path)
         {
-            fprintf(stderr, "Warning: Skipping %s/%s (path too long)\n", dir, e->d_name);
-            continue;
+            fprintf(stderr, "Error: Directory entry path too long: %s/%s\n", dir, e->d_name);
+            error = ENAMETOOLONG;
+            operation = NULL;
+            break;
         }
-        if (stat(path, &st) != 0 || (S_ISDIR(st.st_mode) != 0) != wantDirs)
+        if (stat(path, &st) != 0)
+        {
+            error = errno;
+            operation = "inspect directory entry";
+            errorPath = path;
+            break;
+        }
+        if ((S_ISDIR(st.st_mode) != 0) != wantDirs)
         {
             continue;
         }
         append_name(&list, &count, &capacity, e->d_name);
     }
 
-    closedir(d);
+    const int closeResult = closedir(d);
+    const int closeError = errno;
+    if (error != 0 || closeResult != 0)
+    {
+        free_names(list, count);
+        if (error != 0 && operation != NULL)
+            fprintf(stderr, "Error: Unable to %s '%s': %s\n", operation, errorPath, strerror(error));
+        if (closeResult != 0) fprintf(stderr, "Error: Unable to close directory '%s': %s\n", dir, strerror(closeError));
+        exit(EXIT_FAILURE);
+    }
 #endif
 
     if (count > 1)
@@ -298,7 +351,11 @@ void platform_cpu(char* buffer, size_t size)
             break;
         }
     }
-    fclose(file);
+    const bool readFailed = ferror(file) != 0;
+    const bool closeFailed = fclose(file) != 0;
+    if (readFailed) fprintf(stderr, "Error: Unable to read from file '/proc/cpuinfo'\n");
+    if (closeFailed) fprintf(stderr, "Error: Unable to close file '/proc/cpuinfo'\n");
+    if (readFailed || closeFailed) exit(EXIT_FAILURE);
 }
 #endif
 

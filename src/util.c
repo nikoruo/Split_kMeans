@@ -77,20 +77,58 @@ void handleFileError(const char* filename)
     exit(EXIT_FAILURE);
 }
 
-/**
- * @brief Handles file read errors and terminates the program.
- */
-static void handleFileReadError(const char* filename)
+void closeInputFile(FILE* file, const char* filename)
 {
-    fprintf(stderr, "Error: Unable to read from file '%s'\n", filename);
-    exit(EXIT_FAILURE);
+    const bool readFailed = ferror(file) != 0;
+    const bool closeFailed = fclose(file) != 0;
+    if (readFailed) fprintf(stderr, "Error: Unable to read from file '%s'\n", filename);
+    if (closeFailed) fprintf(stderr, "Error: Unable to close file '%s'\n", filename);
+    if (readFailed || closeFailed) exit(EXIT_FAILURE);
+}
+
+static void finishOutputFile(FILE* file, const char* filename, bool writeFailed)
+{
+    writeFailed = writeFailed || ferror(file) != 0;
+    if (fflush(file) != 0) writeFailed = true;
+    const bool closeFailed = fclose(file) != 0;
+    if (writeFailed) fprintf(stderr, "Error: Unable to write to file '%s'\n", filename);
+    if (closeFailed) fprintf(stderr, "Error: Unable to close file '%s'\n", filename);
+    if (writeFailed || closeFailed) exit(EXIT_FAILURE);
+}
+
+void checkFileWrite(FILE* file, const char* filename, int result)
+{
+    if (result < 0) finishOutputFile(file, filename, true);
+}
+
+void closeOutputFile(FILE* file, const char* filename)
+{
+    finishOutputFile(file, filename, false);
+}
+
+bool fileIsEmpty(FILE* file, const char* filename)
+{
+    if (fseek(file, 0, SEEK_END) != 0)
+    {
+        fprintf(stderr, "Error: Unable to seek file '%s'\n", filename);
+        closeOutputFile(file, filename);
+        exit(EXIT_FAILURE);
+    }
+    const long position = ftell(file);
+    if (position < 0)
+    {
+        fprintf(stderr, "Error: Unable to determine position in file '%s'\n", filename);
+        closeOutputFile(file, filename);
+        exit(EXIT_FAILURE);
+    }
+    return position == 0;
 }
 
 /**
  * @brief Reads one line into `buffer` with fgets; NULL at end of file.
  *
- * Exits when the line does not fit in `size - 1` characters or when fgets reports a read error; an error during
- * the one-character look-ahead is not checked there. `lineNumber` is 1-based and only used in the error message.
+ * Exits when the line does not fit in `size - 1` characters or a read fails.
+ * `lineNumber` is 1-based and only used in the error message.
  */
 char* readDataLine(char* buffer, size_t size, FILE* file, const char* filename, size_t lineNumber)
 {
@@ -98,8 +136,7 @@ char* readDataLine(char* buffer, size_t size, FILE* file, const char* filename, 
     {
         if (ferror(file))
         {
-            fclose(file);
-            handleFileReadError(filename);
+            closeInputFile(file, filename);
         }
         return NULL;
     }
@@ -108,9 +145,13 @@ char* readDataLine(char* buffer, size_t size, FILE* file, const char* filename, 
     {
         // The buffer is full: fine only if the line ends right here
         const int next = fgetc(file);
+        if (ferror(file))
+        {
+            closeInputFile(file, filename);
+        }
         if (next != '\n' && next != EOF)
         {
-            fclose(file);
+            closeInputFile(file, filename);
             fprintf(stderr, "Error: Line %zu in '%s' is longer than %zu characters\n", lineNumber, filename, size - 1);
             exit(EXIT_FAILURE);
         }
@@ -139,7 +180,10 @@ bool parseFiniteDouble(const char* token, double* value)
 bool fileExists(const char* filePath)
 {
     struct stat buffer;
-    return (stat(filePath, &buffer) == 0);
+    if (stat(filePath, &buffer) == 0) return true;
+    if (errno == ENOENT || errno == ENOTDIR) return false;
+    fprintf(stderr, "Error: Unable to inspect '%s': %s\n", filePath, strerror(errno));
+    exit(EXIT_FAILURE);
 }
 
 /**
