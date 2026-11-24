@@ -1,0 +1,49 @@
+Step 7.3 paired benchmarks, 2026-11-24
+
+The before binaries use the 9d0c970 production sources and build files.
+Both record 9d0c970-dirty because an unrelated local instruction edit
+was already present; the after binaries additionally include this step's
+source changes. MinGW gcc 16.2.0 uses -O3, -ffp-contract=off and -Werror.
+Before and after MinGW SHA-256:
+  1264FDF51E964D91BB41F8E2923D7A870FB93E12FD6C9D749437EA07911023D0
+  000A86C430CD7BC18760A6D7F334C7D08F48217C9E07500464C1D84EE0300A93
+Visual Studio 2026 Release x64 before and after SHA-256:
+  3B792B12E3523FB549A8E278D70F36AEB3094DBCFEB01D66FB4753017243C188
+  5723317113725A1A326A5EE1E6322C87DBB636321D6408AC41165CB9C72C1266
+The source patch SHA-256 is
+58CE83B5F2A6FFC643FD13A407241F5A5C445EC63EC1B2341FB5E3F9A6597EDF;
+source-hashes.csv records the compiled source and tests.
+
+Each session uses the five 7.0 jobs, seed 20261119, log level 1, no
+tracking, 25 RKM repeats and 300 RS swaps. Four rounds alternate after
+and before. All 64 run/seed/SSE/CI identities matched in every round.
+The laptop was on AC power. Both binaries and their launcher were pinned
+to logical CPU 2 (performance efficiency class 1); a child-process check
+confirmed that the affinity was inherited. Sums of per-run minima:
+  compiler  session    after ms    before ms    after/before
+  MinGW       1        5984.766     6066.183       0.986579
+  MinGW       2        6042.453     6041.259       1.000198
+  MinGW       3        6154.332     6212.014       0.990714
+  MSVC        1        7201.477     7266.623       0.991035
+The gains are small and include timing noise. In an earlier candidate,
+unrestricted sessions varied substantially, especially worms_2d
+bisecting. The final candidate retains the normal centroid-update hot
+path and the paired benchmark uses a single performance core to reduce
+variation; the source of the earlier variability was not established.
+Unrestricted diagnostic results remain in the local ROOT below.
+
+comparison.csv and the individual session files retain results by dataset,
+algorithm and run. A separate pinned bisect-size benchmark used 10 runs
+each on s1 and a3 and two on worms_2d, with four alternating rounds;
+all 22 identities matched. After/before minima ratios were 0.9983,
+0.9945 and 1.0002 respectively, within the noise of these small jobs.
+bisect-size.csv holds each run. A separate pinned MinGW/MSVC session
+matched all 64 identities and is retained in cross-platform.csv.
+All 21 reference input hashes remained unchanged.
+
+In a dedicated PowerShell process, set ProcessorAffinity to 4, then run:
+  mingw32-make WERROR=1 bench BENCH_REF=<ROOT>\before-7.3-mingw.exe BENCH_ROOT=<ROOT>\bench-7.3-final-mingw
+  build\release\bench.exe <ROOT>\after-7.3-final-msvc.exe <ROOT>\before-7.3-msvc.exe <ROOT>\bench-7.3-final-msvc NUL
+  mingw32-make WERROR=1 bench BENCH_ROOT=<ROOT>\cross-7.3
+ROOT is %TEMP%\skm_phase7_20261124_081023. The exact binaries, source
+patch, full benchmark rounds, diagnostic scripts and logs remain there.

@@ -271,22 +271,26 @@ static inline void accumulatePoint(const double* point, size_t clusterLabel, siz
     counts[clusterLabel]++;
 }
 
+static inline void updateCentroid(Centroids* centroids, const double* sums, size_t count, size_t clusterLabel)
+{
+    if (count > 0)
+    {
+        for (size_t dim = 0; dim < centroids->dimensions; ++dim)
+        {
+            centroidRow(centroids, clusterLabel)[dim] = sums[clusterLabel * centroids->dimensions + dim] / count;
+        }
+    }
+    else if (logLevel >= 3)
+    {
+        fprintf(stderr, "Warning: Cluster %zu has no points assigned.\n", clusterLabel);
+    }
+}
+
 static void updateCentroids(Centroids* centroids, const double* sums, const size_t* counts)
 {
     for (size_t clusterLabel = 0; clusterLabel < centroids->size; ++clusterLabel)
     {
-        if (counts[clusterLabel] > 0)
-        {
-            for (size_t dim = 0; dim < centroids->dimensions; ++dim)
-            {
-                centroidRow(centroids, clusterLabel)[dim] =
-                    sums[clusterLabel * centroids->dimensions + dim] / counts[clusterLabel];
-            }
-        }
-        else if (logLevel >= 3)
-        {
-            fprintf(stderr, "Warning: Cluster %zu has no points assigned.\n", clusterLabel);
-        }
+        updateCentroid(centroids, sums, counts[clusterLabel], clusterLabel);
     }
 }
 
@@ -327,6 +331,28 @@ void centroidStep(Centroids* centroids, const Dataset* dataPoints, KMeansScratch
 
     // Update the centroids
     updateCentroids(centroids, sums, counts);
+}
+
+void centroidStepAffected(Centroids* centroids, const Dataset* dataPoints, const bool* affected,
+                          KMeansScratch* scratch)
+{
+    const size_t numClusters = centroids->size;
+    const size_t dimensions = dataPoints->dimensions;
+    assert(affected != NULL && centroids->dimensions == dimensions);
+    assert(scratch != NULL && scratch->sums.capacity >= numClusters && scratch->sums.dimensions == dimensions);
+
+    double* sums = scratch->sums.coordinates;
+    size_t* counts = scratch->counts;
+    memset(sums, 0, numClusters * dimensions * sizeof(*sums));
+    memset(counts, 0, numClusters * sizeof(*counts));
+    for (size_t i = 0; i < dataPoints->size; ++i)
+    {
+        size_t label = dataPoints->partitions[i];
+        assert(label < numClusters);
+        if (affected[label]) accumulatePoint(datasetRowConst(dataPoints, i), label, dimensions, sums, counts);
+    }
+    for (size_t c = 0; c < numClusters; ++c)
+        if (affected[c]) updateCentroid(centroids, sums, counts[c], c);
 }
 
 /* Separate indexed kernels keep view checks out of the dense hot loops. */
@@ -432,7 +458,7 @@ double runKMeans(Dataset* dataPoints, size_t iterations, Centroids* centroids, T
 }
 
 double runKMeansView(DatasetView* view, size_t iterations, Centroids* centroids, Tracker* tracker, KMeansStage stage,
-                     bool prePartition, KMeansScratch* scratch)
+                     KMeansScratch* scratch)
 {
     if (iterations == 0)
     {
@@ -443,8 +469,6 @@ double runKMeansView(DatasetView* view, size_t iterations, Centroids* centroids,
     double bestSse = DBL_MAX;
     double sse = DBL_MAX;
     const Centroids* groundTruth = tracker != NULL ? tracker->groundTruth : NULL;
-    if (prePartition) partitionView(view, centroids);
-
     for (size_t iteration = 0; iteration < iterations; ++iteration)
     {
         partitionView(view, centroids);
