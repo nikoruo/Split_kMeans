@@ -588,7 +588,7 @@ static void printUsage(const char* program)
     printf("                      Bisecting cluster selection: sse (default) or size\n");
     printf("  --init <method>     Initial centroids of KM, RKM and RS: random (default) or kmeans++\n");
     printf("  --repartition <mode>\n");
-    printf("                      SKM-Local: inward (default), inward-nonchild, or both\n");
+    printf("                      SKM-Local: both (default), inward, or inward-nonchild\n");
     printf("  --track-progress    _log.csv rows of every run (default in batch mode)\n");
     printf("  --snapshots <spec>  Snapshot files: none, or RUNS[:ITERATIONS][:split] (default: batch mode 1,\n");
     printf("                      CLI none). RUNS (1-based) and ITERATIONS (_log.csv counts) are all or lists\n");
@@ -649,7 +649,7 @@ int cliMain(int argc, char* argv[])
     opt.bisectTries = 5;
     opt.bisectSelect = BISECT_SELECT_SSE;
     opt.init = INIT_RANDOM;
-    opt.repartition = REPARTITION_INWARD;
+    opt.repartition = REPARTITION_BOTH;
     opt.firstRun = 1;
     for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
     {

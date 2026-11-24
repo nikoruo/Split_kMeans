@@ -30,6 +30,8 @@
 
 - Phase 7 (performance tuning; golden files unchanged): reuse per-run k-means, initialization and local two-means scratch and RKM candidates; compute per-cluster SSE from stable dataset-order membership; remove the redundant Random Swap membership rebuild, split pre-partition and label copies, non-debug touched counting, and unused bisecting size-mode cluster SSEs. M3b matches `results/M3b-ref/` in all 63 run files and 4590 run/seed/SSE/CI rows; the benchmark and methods are in `results/M3b/`. No algorithm changes.
 
+- 8.0a (D9): SKM-Local now defaults to `--repartition both`; `inward` and `inward-nonchild` remain selectable. The default adapts Random Swap's rejection-and-attraction rule to the two split children, rather than claiming that the RS sources specify this split procedure. `inward` retains the source-based comparison from Fränti, Kaukoranta & Nevalainen 1997 §2.4 and CBModules `Remapping`. The 6.7 comparison covers both modes on 100 paired runs per dataset. `golden-update` changed eight intermediate Local curve rows, but no final run goldens; the rows and new default-versus-explicit checks are in `results/M4/8.0a/`.
+
 ## v1.0.0 - 26-10-2025
 
 - Initial release by Niko Ruohonen.
