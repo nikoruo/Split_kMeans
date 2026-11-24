@@ -25,9 +25,9 @@ function fig = generalizedplotting(varargin)
 %
 %   Files: centroids one space-separated row per centroid, partitions one 0-based
 %   label per line. Decimal commas (the v1 snapshots) are read as decimal points.
-%   The split cluster is found from the snapshots: the cluster whose points moved to
-%   the new cluster, or, when the split only placed two centroids (SKM-Global-Basic,
-%   bisecting), the cluster whose centroid changed.
+%   The split cluster is inferred from the most common previous label of points in the
+%   new cluster; if none have the new label, it uses the centroid with the largest
+%   movement. Bisecting split snapshots already contain the applied trial labels.
 %   Text arguments can be char ('...') or MATLAB strings ("..."); strings become char.
 %
 %   Written for MATLAB R2026b and GNU Octave 11 with functions both have; tested in
@@ -209,7 +209,7 @@ function s = splitCluster(Cprev, Lprev, Ccur, Lcur)
     if any(inNew)
         s = mode(Lprev(inNew));
     else
-        % Only the two centroids were placed: the split cluster is the one whose centroid changed
+        % No point has the new label: use the centroid with the largest movement
         [~, s] = max(sum((Ccur(1:end - 1, :) - Cprev) .^ 2, 2));
     end
 end

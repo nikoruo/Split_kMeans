@@ -58,12 +58,17 @@ static SKM_HOT_INLINE size_t findNearestCentroid(const double* queryPoint, const
 }
 
 double calculateEuclideanDistance(const double* point1, const double* point2, size_t dimensions);
+/* SSE requires matching dimensions and valid centroid labels for every point. */
 double calculateSSE(const Dataset* dataPoints, const Centroids* centroids);
+/* Retained legacy helper: SSE/(N*D), with N and D positive; not a reported measure. */
 double calculateMSE(const Dataset* dataPoints, const Centroids* centroids);
+/* Cluster SSE requires matching dimensions and a cluster label below the centroid count. */
 double calculateClusterSSE(const Dataset* dataPoints, const Centroids* centroids, size_t clusterLabel);
+/* Both sets must be nonempty and dimension-compatible; CI is the larger orphan count in the two directions. */
 size_t countOrphans(const Centroids* centroids1, const Centroids* centroids2);
 size_t calculateCentroidIndex(const Centroids* centroids1, const Centroids* centroids2);
 bool hasGroundTruth(const Centroids* groundTruth);
+/* Returns CI_NA without ground truth; otherwise the same CI preconditions apply. */
 size_t centroidIndexOrNA(const Centroids* centroids, const Centroids* groundTruth);
 
 #endif /* METRICS_H */

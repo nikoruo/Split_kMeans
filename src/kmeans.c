@@ -483,8 +483,8 @@ double runKMeansView(DatasetView* view, size_t iterations, Centroids* centroids,
 /**
  * @brief k-means that records the state after every iteration with the tracker (count = iteration, 1-based).
  *
- * Runs the same steps as `runKMeans`, so the result is identical; stops when the SSE does not
- * strictly decrease or after `iterations` iterations.
+ * Runs the same steps as `runKMeans` for finite results; stops when the SSE does not strictly decrease
+ * or after `iterations` iterations. Unlike `runKMeans`, it requires a tracker and rejects non-finite SSE.
  *
  * @param dataPoints Dataset to cluster; partitions updated in place.
  * @param centroids Centroid set updated in place.

@@ -21,14 +21,16 @@ typedef struct
     Centroids centroids;
 } ClusteringResult;
 
-/* Owns a local two-centroid result and borrows k-means scratch; free with freeSplitScratch. */
+/* Owns a local two-centroid result and borrows dimension-compatible k-means scratch with capacity >= 2.
+ * The scratch must outlive this object; free the result with freeSplitScratch. */
 typedef struct
 {
     KMeansScratch* kmeans;
     ClusteringResult trial;
 } SplitScratch;
 
-/* Owns membership and local-label scratch; rebuild after the dataset's partitions change. */
+/* Owns one backing allocation for membership and local-label slices; borrows the dataset after rebuild.
+ * Rebuild after coordinates or partitions change before another split/trial, with labels below the cluster count. */
 typedef struct
 {
     size_t* indices;
@@ -44,7 +46,8 @@ typedef struct
 
 ClusterIndex allocateClusterIndex(size_t pointCount, size_t capacity);
 void freeClusterIndex(ClusterIndex* index);
-/* Rebuilds stable slices and returns the number with at least two distinct coordinates. */
+/* Rebuilds stable slices for pointCount rows and 1 <= numClusters <= capacity; returns the count with
+ * at least two distinct coordinates. */
 size_t rebuildClusterIndex(ClusterIndex* index, const Dataset* dataPoints, size_t numClusters);
 /* Requires membership rebuilt for the current partitions and centroids. */
 double indexedClusterSSE(const Dataset* dataPoints, const ClusterIndex* index, const Centroids* centroids,
@@ -66,16 +69,21 @@ void splitClusterIntraCluster(Dataset* dataPoints, const ClusterIndex* index, Ce
 double splitClusterGlobal(Dataset* dataPoints, const ClusterIndex* index, Centroids* centroids,
                           size_t clusterToSplit, size_t globalMaxIterations, Tracker* tracker, Rng* rng,
                           KMeansScratch* scratch);
+/* clustersAffected has at least K initially clear entries; clusterToSplit is below K-1. Rebuilds the index. */
 size_t localRepartition(Dataset* dataPoints, ClusterIndex* index, Centroids* centroids, size_t clusterToSplit,
                         RepartitionMode mode, bool* clustersAffected);
 double tentativeSseDrop(Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel, size_t localMaxIterations,
                         double originalClusterSSE, Rng* rng, SplitScratch* scratch);
-/* Saves the final trial centroids and labels indexed by dataset row; trace is optional. */
+/* For an eligible cluster, writes two dimension-matched trial centroids and labels for its members into a
+ * dataset-sized buffer.
+ * For an ineligible cluster returns 0 without writing those outputs; an optional trace's count is reset. */
 double cacheTentativeSplit(Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel,
                            size_t localMaxIterations, double originalClusterSSE, Centroids* trialCentroids,
                            size_t* trialLabels, Tracker* tracker, InnerTrace* trace, Rng* rng, SplitScratch* scratch);
+/* Requires cached labels for every current member; applying them invalidates the membership index. */
 void applyTentativeSplit(Dataset* dataPoints, const ClusterIndex* index, Centroids* centroids, size_t clusterLabel,
                          const Centroids* bestCentroids, const size_t* bestLabels);
+/* Requires an eligible cluster, positive iterations, two centroids and dataset-sized labels; writes member labels only. */
 double runBisectingTrial(Dataset* dataPoints, const ClusterIndex* index, size_t clusterLabel, size_t localMaxIterations,
                          Centroids* trialCentroids, size_t* trialLabels, Tracker* tracker, Rng* rng,
                          SplitScratch* scratch);

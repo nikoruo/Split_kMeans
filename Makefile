@@ -249,7 +249,7 @@ bench: $(BENCH_DEFAULT_REF)
 endif
 endif
 
-# Removes the Makefile configurations only; the Visual Studio output in build/msvc stays.
+# Removes the Makefile configurations, test data and build/check; build/msvc stays.
 clean:
 	$(call RMDIR,build/release)
 	$(call RMDIR,build/debug)
@@ -268,7 +268,7 @@ help:
 	@echo   golden-update  regenerate golden files, algorithm-change commits only
 	@echo   bench          benchmark release builds on local real datasets
 	@echo   testdata       generate the synthetic test datasets in build/testdata
-	@echo   clean          remove the Makefile builds and test data; build/msvc stays
+	@echo   clean          remove Makefile builds, build/testdata and build/check; build/msvc stays
 	@echo Variables:
 	@echo   CC=gcc or clang, WERROR=1
 	@echo   CHECK_ROOT=dir  check output root, default build; dir/check is deleted first, no spaces

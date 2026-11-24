@@ -32,14 +32,18 @@ typedef struct
 } Options;
 
 void createUniqueDirectory(char* outputDirectory, size_t size);
+/* Accepts EEXIST without checking the existing object's type. */
 void createDatasetDirectory(const char* baseDirectory, const char* datasetName, char* datasetDirectory, size_t size);
+/* Only an existing configuration header is checked; dataset metadata checks K/N/D, not input identity. */
 void writeRunConfig(const char* outputDirectory, const Options* opt, const TrackOptions* track,
                     const char* snapshotsText, const char* datasetsText, bool cliMode, int argc, char* argv[]);
 void writeDatasetInfo(const char* datasetDirectory, const char* dataFile, const char* gtFile, size_t k, size_t n,
                       size_t d);
 void textLine(const char* text, size_t index, char* line, size_t size);
 
-/* KM and RKM require a positive k-means iteration limit. */
+/* Wrappers use the zero-based range [firstRun, loopCount), with firstRun < loopCount and scaling > 0.
+ * Data must be nonempty with 1 <= K <= distinct rows; track must be non-null and groundTruth may be NULL or empty.
+ * Iteration limits, RKM repeats and bisecting tries must be positive where used. */
 void runKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations,
                         size_t firstRun, size_t loopCount, size_t scaling, const char* fileName,
                         const char* outputDirectory, const TrackOptions* track, InitMethod init, uint64_t seed);

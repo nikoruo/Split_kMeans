@@ -71,8 +71,9 @@ static void addRunStatistics(Statistics* stats, double sse, size_t ci, double ms
  * empty).
  *
  * Algorithm;Average CI;SSE;Relative CI;MS;Success Rate, averaged over `loopCount` runs (> 0); SSE divided by
- * `scaling` (> 0); CI, relative CI and success rate NA without ground truth. Fixed decimals through formatFixed
- * (decimal comma with --decimal-comma). Exits when the file cannot be opened; write errors are not checked.
+ * `scaling` (> 0); CI, relative CI and success rate NA without ground truth. Success Rate is a fraction, while
+ * console/report success is a percentage. Fixed decimals through formatFixed (decimal comma with --decimal-comma).
+ * Exits when the file cannot be opened; write errors are not checked.
  */
 static void writeResultsToFile(const char* filename, Statistics stats, size_t numCentroids, const char* algorithm,
                                size_t loopCount, size_t scaling, const char* outputDirectory)
@@ -129,7 +130,8 @@ static void writeResultsToFile(const char* filename, Statistics stats, size_t nu
  * @brief Creates a new folder `outputs/<YYYY-MM-DD_HH-MM-SS>` (local time; `_2`, `_3`, ... when it exists) and writes
  * its path into `outputDirectory`.
  *
- * Creates `outputs` when missing. Exits on a path longer than `size` or a mkdir error.
+ * Creates `outputs` when missing, accepting EEXIST without checking its type. Tries the timestamp and suffixes
+ * 2..99; exits on exhaustion, a path longer than `size`, or another mkdir error. The LOCALTIME result is unchecked.
  */
 void createUniqueDirectory(char* outputDirectory, size_t size)
 {
@@ -180,7 +182,7 @@ void createUniqueDirectory(char* outputDirectory, size_t size)
  * @brief Ensures a per-dataset subdirectory exists under a base path.
  *
  * Builds `<baseDirectory>/<datasetName>` and creates the directory if missing.
- * Treats pre-existing directories as success.
+ * Treats EEXIST as success without checking that the existing object is a directory.
  *
  * @param baseDirectory Parent path under which the dataset folder is created.
  * @param datasetName Leaf folder name (dataset identifier).
@@ -303,8 +305,8 @@ void runKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_
  *
  * Each run makes `maxRepeats` k-means from new initial centroids (by `init`) and keeps the lowest SSE.
  * The winning repeat's partition is copied with the stopwatch paused for example snapshots; if no repeat
- * has an SSE below DBL_MAX, the fallback relabels with the retained centroids. Tracking: one row per repeat
- * with the best SSE and CI so far, snapshots at the improvements.
+ * has an SSE below DBL_MAX, the fallback reports DBL_MAX and relabels against zero-initialized centroids.
+ * Tracking: one row per repeat with the best SSE and CI so far, snapshots at the improvements.
  */
 void runRepeatedKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
                                 size_t maxIterations, size_t maxRepeats, size_t firstRun, size_t loopCount,
@@ -409,8 +411,8 @@ void runRepeatedKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTrut
 /**
  * @brief Random Swap runs firstRun..loopCount-1 (see runKMeansAlgorithm for the shared run loop and outputs).
  *
- * Each run starts from initial centroids by `init` and their optimal partition and makes `maxSwaps` trial swaps
- * (randomSwap). Tracking: the initial solution and every improvement, with its swap number.
+ * Each run starts from initial centroids by `init` and their optimal partition and makes at most `maxSwaps` trial
+ * swaps (none when K equals the distinct-row count). Tracking: the initial solution and every improvement.
  */
 void runRandomSwapAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxSwaps,
                             size_t firstRun, size_t loopCount, size_t scaling, const char* fileName,
@@ -759,12 +761,11 @@ void textLine(const char* text, size_t index, char* line, size_t size)
 }
 
 /**
- * @brief Creates or extends `<outputDirectory>/run_config.txt`; exits when the folder holds results of another
- * configuration.
+ * @brief Creates or extends `<outputDirectory>/run_config.txt`; checks the configuration only when that file exists.
  *
  * The shared header (runConfigHeader) must equal the one in the file; then one entry per call is appended:
  * the time, the command line (the program by file name, without its folder) and the resolved options
- * (mode, algorithms, runs, tracking).
+ * (mode, algorithms, runs, tracking). The LOCALTIME result is unchecked.
  */
 void writeRunConfig(const char* outputDirectory, const Options* opt, const TrackOptions* track,
                     const char* snapshotsText, const char* datasetsText, bool cliMode, int argc, char* argv[])
@@ -858,7 +859,7 @@ void writeRunConfig(const char* outputDirectory, const Options* opt, const Track
 /**
  * @brief Writes `<datasetDirectory>/dataset.txt` (data and ground-truth files, K, N, D; `report` reads K from it).
  *
- * Exits when the folder already describes a dataset with another K, N or D (no mixing of datasets in one folder).
+ * Existing metadata must contain the expected K, N and D block; input paths and file contents are not compared.
  */
 void writeDatasetInfo(const char* datasetDirectory, const char* dataFile, const char* gtFile, size_t k, size_t n,
                       size_t d)

@@ -20,9 +20,11 @@ Split_kMeans is a C11 program for reproducible clustering experiments. It compar
 
 KM, RKM and RS default to coordinate-distinct random data points as initial centroids. Split algorithms and bisecting start from the dataset mean. Their split seeds are distinct by coordinate; clusters without two distinct points cannot be split. For K=2, all four SSE-selected split variants skip trial splits because no further split needs them. This changes the final RNG state, but no later K=2 step draws randomness and each run is seeded independently. Empty clusters keep their previous centroid.
 
-SSE is the sum of squared distances to the **assigned** centroids. CI is the larger of the two orphan-centroid counts obtained by matching each centroid set to its nearest centroids in the other set. Success rate is the percentage of runs with CI = 0; relative CI is mean CI divided by K. Without ground truth, CI and success rate are `NA`.
+SSE is the sum of squared distances to the **assigned** centroids. CI is the larger of the two orphan-centroid counts obtained by matching each centroid set to its nearest centroids in the other set. Success rate is the fraction of runs with CI = 0 (shown as a percentage in the console and report); relative CI is mean CI divided by K. Without ground truth, CI and success rate are `NA`.
 
-Each k-means call returns the SSE and solution of its **last** iteration, including a non-improving final iteration. Floating-point rounding can make that SSE higher than an earlier one, and labels need not be nearest to the newly updated centroids. Reported SSE, labels, centroids, CI and final snapshots describe the same returned state. RKM still selects the best repeat, and bisecting selects the best try.
+Each k-means call returns the SSE and solution of its **last** iteration, including a non-improving final iteration. Floating-point rounding can make that SSE higher than an earlier one, and labels need not be nearest to the newly updated centroids. For a finite selected solution, reported SSE, labels, centroids, CI and final snapshots describe the same returned state. RKM selects the best repeat, and bisecting selects the best try.
+
+An exceptional RKM fallback remains: if no repeat produces an SSE below `DBL_MAX`, it reports `DBL_MAX` and reassigns labels to zero-initialized centroids rather than returning a scored winning repeat. Do not treat this fallback as a valid solution.
 
 ## Build and test
 
@@ -42,7 +44,7 @@ mingw32-make WERROR=1 check CHECK_ROOT=C:\Temp\skm-check
 
 The Makefile builds `build/release/split_kmeans` on Linux and `build\release\split_kmeans.exe` on Windows. For Visual Studio, open `Split_kMeans.sln` and build **Release | x64**; the executable is `build\msvc\x64\Release\Split_kMeans.exe`.
 
-`check` generates synthetic data in `build/testdata`, runs unit and golden tests, checks tracking variants and report output, and smoke-tests the default batch and single-dataset invocations. `CHECK_ROOT` is the output root for these checks: its `check` subfolder is **deleted first**. Use a disposable path without spaces, outside OneDrive on Windows. To test the Visual Studio executable with the same golden suite:
+`check` regenerates synthetic data in `build/testdata`, runs unit and golden tests, checks tracking variants and report output, and smoke-tests the default batch and single-dataset invocations. Most check output goes under `CHECK_ROOT`, whose `check` subfolder is **deleted first**; the default-invocation smoke tests also write under `build/testdata/main/outputs`. Use a disposable `CHECK_ROOT` path without spaces, outside OneDrive on Windows. To test the Visual Studio executable with the same golden suite:
 
 ```powershell
 mingw32-make WERROR=1 check CHECK_BIN=build\msvc\x64\Release\Split_kMeans.exe CHECK_ROOT=C:\Temp\skm-msvc-check
@@ -50,13 +52,13 @@ mingw32-make WERROR=1 check CHECK_BIN=build\msvc\x64\Release\Split_kMeans.exe CH
 
 That `CHECK_BIN` check uses the Makefile's MinGW-built unit runner. Windows CI also compiles the unit suite with MSVC `/W4 /WX` and runs it against the Visual Studio executable.
 
-Other useful targets are `debug check` (assertions enabled), `asan check`, `ubsan check`, `testdata`, `bench`, `help` and `clean`. Sanitizers require a supporting compiler; the [Windows verification recipe](.github/skills/verify/SKILL.md) uses Visual Studio's clang because MinGW gcc has no sanitizers. Windows ASan has no leak checker. `golden-update` regenerates golden files and is for algorithm-change commits only. `clean` removes Makefile builds and test data, not the Visual Studio output.
+Other useful targets are `debug check` (assertions enabled), `asan check`, `ubsan check`, `testdata`, `bench`, `help` and `clean`. Sanitizers require a supporting compiler; the [Windows verification recipe](.github/skills/verify/SKILL.md) uses Visual Studio's clang because MinGW gcc has no sanitizers. Windows ASan has no leak checker. `golden-update` regenerates golden files and is for algorithm-change commits only. `clean` removes Makefile builds, `build/testdata` and `build/check`, not the Visual Studio output; preserve any wanted files before using it.
 
 `make bench` runs fixed jobs on local real datasets; on Windows it compares the MinGW build with Visual Studio by default. `BENCH_REF` selects another reference binary and `BENCH_ROOT` selects an output root. Thesis timings use the MinGW gcc release build at log level 1 on an idle, plugged-in reference machine; do not time debug or sanitizer builds.
 
 ## Input files
 
-Dataset and centroid files are plain text: one point or centroid per line, with the same number of whitespace-separated finite numeric coordinates on every nonempty line. Blank lines are ignored. Use a decimal point, not a decimal comma; lines must not exceed 16,383 characters. K must be positive and no larger than the number of distinct data points. Ground-truth centroids must have the same dimension as the data; if their count differs from K, the program warns and compares the sets as given.
+Dataset and centroid files are plain text: one point or centroid per line, with the same number of space- or tab-separated finite numeric coordinates on every nonempty line. Blank lines are ignored. Use a decimal point, not a decimal comma; lines must not exceed 16,383 characters. K must be positive and no larger than the number of distinct data points. Ground-truth centroids must have the same dimension as the data; if their count differs from K, the program warns and compares the sets as given.
 
 For default batch mode, place `.txt` files in these folders under the working directory:
 
@@ -66,7 +68,7 @@ gt/s1-cb.txt         # ground-truth centroids
 centroids/s1.txt     # one positive integer: K
 ```
 
-The three directories must contain the same number of text files. Files are paired **by sorted position**, not by matching names: sorting is case-insensitive with a bytewise tie-break. Check that the orders correspond before running; non-text files and subdirectories are ignored. The local `data/`, `gt/` and `centroids/` datasets are not included in the repository.
+The three directories must contain the same number of text files. Files are paired **by sorted position**, not by matching names: sorting is case-insensitive in the program's default C locale with a bytewise tie-break. Directory scans can silently omit entries on some filesystem errors, so verify the printed pairings and input hashes before experiments. Non-text files and subdirectories are ignored. The local `data/`, `gt/` and `centroids/` datasets are not included in the repository.
 
 Single-dataset mode takes `-k K data.txt [gt.txt]`; the ground-truth file is optional. The program writes `NA` for CI-derived values when it is absent.
 
@@ -82,7 +84,7 @@ Options apply to batch and single-dataset mode unless noted. Each option can be 
 | `--seed <N>` | Time-based | Non-negative master seed, printed at startup. Set it explicitly for reproducibility. |
 | `-k <K>` | Required in single mode | Cluster count for the supplied data file. Batch mode reads K files. |
 | `--max-iterations <N>` | Until SSE stops strictly improving | Positive per-call k-means cap for diagnostics, not a wall-clock timeout. Capped runs may not converge. RS retains its separate two-iteration limit. |
-| `--max-swaps <N>` | 5000 | Random Swap trials per run. |
+| `--max-swaps <N>` | 5000 | Maximum Random Swap trials per run; if K equals the distinct-point count, there are no swaps. |
 | `--repeats <N>` | 1000 | RKM repeats per run. |
 | `--bisect-tries <N>` | 5 | Local tries at every bisecting split, including the first. |
 | `--bisect-select sse\|size` | `sse` | Select the eligible cluster by SSE or assigned row count; ties use the lowest index. |
@@ -145,7 +147,7 @@ $env:SKM_RUN = $run
 
 The report command accepts single-dataset output folders as well as batch output folders. For a batch subset, omit `-k` and the input files and use, for example, `--datasets s1,s4 --algo skm-local --seed 42 -r 10`. Batch mode still requires all three input directories to have matching file counts.
 
-Each output root has a `run_config.txt` with build, machine, seed and parameter information plus a record of each call. Reusing `-o` appends results only when the configuration header agrees; the dataset metadata must also agree within that output root. Use distinct run numbers when resuming. Different repartition modes or bisecting selection modes cannot be mixed in one output folder or report.
+Each output root has a `run_config.txt` with build, machine, seed and parameter information plus a record of each call. Recorded arguments can contain local paths, so review them before sharing. If `run_config.txt` exists, reusing `-o` requires a matching configuration header; if it is missing, other existing files are not checked before a new one is written. For an existing dataset folder, only K, N and D are checked, not input paths or contents. Start with a new folder and ensure appended calls use the same inputs and distinct run numbers. Different repartition modes or bisecting selection modes cannot be mixed when the configuration headers are present.
 
 ## Tracking and snapshots
 
@@ -172,13 +174,13 @@ The output root contains `run_config.txt` and one subfolder per dataset. Algorit
 | `<Algo>_iteration_stats.txt` | `Run;Iteration;Phase;NumCentroids;SSE;CI;SplitCluster;MS`, one row per selected snapshot. |
 | `<Algo>_run<RRR>_iter<IIII>_<phase>_centroids.txt` | Snapshot centroids, one whitespace-separated row per centroid. |
 | `<Algo>_run<RRR>_iter<IIII>_<phase>_partitions.txt` | Snapshot labels, one **0-based** label per input point. |
-| `<dataset>.csv` | Per-call algorithm summary. |
+| `<dataset>.csv` | Per-call algorithm summary; `Success Rate` is a fraction from 0 to 1. |
 
-Snapshot phases include `start`, `split`, `step` and `final` where applicable. When ground truth is present, the first perfect and first failed example solutions can also be saved as `<Algo>_centroids_perfect.txt`, `<Algo>_partitions_perfect.txt` and corresponding `failed` files. These example files are independent of `--no-track`; without ground truth they are not saved.
+Snapshot phases include `start`, `split`, `step` and `final` where applicable. Run and count padding are minimum widths; names with more than three run digits or four count digits do not necessarily sort numerically. In an SKM-Global-Basic `split` snapshot, new centroids are placed before global reassignment, so labels still describe the previous partition; bisecting snapshots already contain the selected trial labels. When ground truth is present, the first perfect and first failed example solutions can also be saved as `<Algo>_centroids_perfect.txt`, `<Algo>_partitions_perfect.txt` and corresponding `failed` files. These example files are independent of `--no-track`; without ground truth they are not saved.
 
 For SSE-selected splits, a selected trial's inner rows retain their evaluation timestamps and are appended when that trial is applied. Their timestamps can therefore precede rows for earlier applied splits. Bisecting records each try.
 
-CSV files use semicolons. `_runs.csv` writes SSE and milliseconds with `%.17g` and a decimal point. Excel-facing progress, inner, summary and iteration-stat files use fixed decimals and follow `--decimal-comma`. Snapshot centroids are written with **six decimal places**, so they are intended for figures, not exact floating-point comparisons. Snapshot labels stay 0-based.
+CSV files use semicolons. `_runs.csv` writes SSE and milliseconds with `%.17g` and a decimal point. Excel-facing progress, inner, summary and iteration-stat files use fixed decimals and follow `--decimal-comma`. Snapshot centroids are written with **six decimal places**, so they are intended for figures, not exact floating-point comparisons. Snapshot labels stay 0-based. Some output writers check opening but not later write or close failures; validate important output files.
 
 ## Scoring existing results
 
@@ -188,9 +190,9 @@ split_kmeans sse <data.txt> <centroids.txt>
 split_kmeans gt-from-partition <data.txt> <partition.txt> <out.txt>
 ```
 
-`ci` prints the Centroid Index. `sse` assigns each point to its nearest supplied centroid and prints SSE with `%.17g`; this can differ from a run's assigned-partition SSE, especially when using rounded snapshots. Both commands require nonempty, dimension-compatible files.
+`ci` prints the Centroid Index. `sse` assigns each point to its nearest supplied centroid and prints SSE with `%.17g`; this can differ from a run's assigned-partition SSE, especially when using rounded snapshots. If arithmetic overflows, `sse` can print `inf` and still exit successfully; reject non-finite results before using them. Both commands require nonempty, dimension-compatible files.
 
-`gt-from-partition` accepts exactly one integer label per data point, whitespace-separated, in the range 1 through N. It writes one centroid per label through the largest label, with six decimal places; a missing label produces a zero centroid and a warning. Snapshot partitions are 0-based and must be converted to 1-based labels before using this command.
+`gt-from-partition` accepts exactly one integer label per data point, separated by spaces, tabs or line breaks, in the range 1 through N. It writes one centroid per label through the largest label, with six decimal places; a missing label produces a zero centroid and a warning. Snapshot partitions are 0-based and must be converted to 1-based labels before using this command.
 
 ## Reports
 
@@ -203,9 +205,9 @@ split_kmeans report [-o dir] [--names file] [--curve-run i] [--decimal-comma] [-
 - Configuration headers must match, and a run number may occur only once per dataset and algorithm. Dataset folders are matched by name; K is checked when available, but input contents and hashes are **not** compared. Ensure merged jobs use the same data and ground truth.
 - For each algorithm, either every run has `_log.csv` rows or none does. RS requires them. Use the same master seed and non-overlapping `--first-run`/`--runs` ranges to split a job.
 - `summary.csv` reports mean SSE, sample SSE deviation, mean CI, relative CI, success percentage, mean time and sample time deviation. Deviations are `NA` for one run.
-- RS tables and curves end at each run's **last SSE improvement**, determined afterwards from its last progress row; if there was no improvement, that is the count-0 initial row. `full_time_ms_mean` retains the time for all swaps. This is a retrospective reporting rule, not an online stopping rule.
+- RS tables and curves end at each run's **last SSE improvement**, determined afterwards from its last progress row; if there was no improvement, that is the count-0 initial row. `full_time_ms_mean` retains the time for the full run, including all performed swaps. This is a retrospective reporting rule, not an online stopping rule.
 - RKM and RS curves use `--curve-run` (default 1) when progress rows exist. Other curves average the runs at each count, retaining a finished run's last state. Without rows, an algorithm has only its end point. Curve SSE is scaled by the power of ten shown in its header, chosen from the smallest positive SSE in that dataset's means and curves.
-- `--names <file>` lists `<dataset-folder> [display name]` per line; listed datasets come first in that order. `--decimal-comma` formats the report for a decimal-comma spreadsheet. `--no-time` omits time columns and `table_time.csv`.
+- `--names <file>` lists `<dataset-folder> [display name]` per line; listed datasets come first in that order. Dataset and display names are written without CSV quoting, so avoid semicolons or line breaks in names. `--decimal-comma` formats the report for a decimal-comma spreadsheet. `--no-time` omits time columns and `table_time.csv`.
 
 The standard `summary.csv` header is:
 

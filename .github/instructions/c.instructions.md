@@ -7,7 +7,7 @@ applyTo: "**/*.{c,h}"
 - Target C11. Compile warning-free with `-Wall -Wextra -Wpedantic`.
 - Module pattern: `name.h` holds public types and declarations; `name.c` holds definitions. Mark helpers `static`.
 - Header guards on every header. No non-inline function definitions in headers; `static inline` is allowed for small hot helpers.
-- Ownership: every allocation has a matching `x_alloc` / `x_free` pair. The owner frees; document it in the header.
+- Ownership: every allocation is checked and released by its owner. Use the existing allocation/error helpers and matching module free functions; document ownership and borrowed lifetimes in the header.
 - Avoid `DataPoint`-style per-point heap allocations. Use flat arrays (`double` buffer of N*D) and index arithmetic.
 - No allocation inside iteration loops. Allocate scratch memory once per run.
 - Validate external input at the boundary with a checked error path (`die()` with file and line). Use `assert` for internal invariants. Checks inside hot loops are asserts too, so release builds (NDEBUG) do not pay for them.

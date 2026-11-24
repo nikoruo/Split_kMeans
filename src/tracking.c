@@ -252,8 +252,8 @@ void saveExampleSnapshots(const Centroids* centroids, const Dataset* dataPoints,
  * @brief Writes a snapshot: `<algo>_run<RRR>_iter<IIII>_<phase>_centroids.txt` and `..._partitions.txt` in
  * `outputDirectory`.
  *
- * `run` is 1-based and `iteration` is the count of `_log.csv`; both are zero-padded (3 and 4 digits) so the
- * names sort in order. Phases: start, split (after the two-way split), step, final (after the final k-means).
+ * `run` is 1-based and `iteration` is the count of `_log.csv`; both are zero-padded to at least 3 and 4 digits.
+ * Phases: start, split (after the two-way split), step, final (after the final k-means).
  * Centroids: one space-separated row per centroid; partitions: one 0-based label per line.
  */
 static void saveIterationState(const Dataset* dataPoints, const Centroids* centroids, size_t run, size_t iteration,
@@ -595,7 +595,7 @@ void trackerSnapshot(Tracker* tracker, size_t count, const char* phase, const Da
 
 /**
  * @brief With `--snapshots ...:split`, writes the state after the two-way split of `splitCluster`, before the follow-up
- * step.
+ * step. Global-Basic has placed new centroids but still has the previous labels at this point.
  *
  * Phase "split" at the count of the split being made. NULL tracker: no-op.
  */
