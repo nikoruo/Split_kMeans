@@ -1,0 +1,22 @@
+# Split_kMeans run configuration. Every call that writes to this folder must match the lines above "calls:".
+version: 2.0.0-dev
+commit: 06f6228
+compiler: gcc 16.2.0
+flags: gcc -DNDEBUG -std=c11 -Wall -Wextra -Wpedantic -ffp-contract=off -O3 -Werror
+asserts: off (NDEBUG)
+timer: QueryPerformanceCounter (monotonic wall clock)
+machine: Windows, 20 logical processors
+cpu: 12th Gen Intel(R) Core(TM) i7-12800H
+seed: 20261119
+log-level: 1
+max-iterations: until the SSE stops improving
+max-swaps: 300
+repeats: 25
+bisect-tries: 5
+bisect-select: sse
+init: random
+repartition: inward
+decimal-comma: off
+calls:
+2026-11-24 09:11:07 | split_kmeans.exe --seed 20261119 --log-level 1 --no-track --repeats 25 --max-swaps 300 --algo km,rkm,rs,skm-random,skm-intra,skm-global,skm-global-basic,skm-local,bisecting -r 3 -o %TEMP%\skm_phase7_20261124_081023\bench-M3b/bench-4079233563728/round1/s1/primary -k 15 data/s1.txt gt/s1-cb.txt
+  mode: cli; algorithms: km rkm rs skm-random skm-intra skm-global skm-global-basic skm-local bisecting; runs: 1 to 3 (RKM and RS: to 3); datasets: all; track-progress: off; snapshots: none; track-inner: off
