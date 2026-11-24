@@ -23,17 +23,19 @@
  * @brief Aggregate statistics across runs.
  *
  * - sseSum: Sum of per-run SSE values.
+ * - sseSumScaled: Sum of SSE values scaled by 2^-64, for an overflowing sseSum.
  * - ciSum: Sum of per-run CI values.
  * - timeSum: Sum of durations across runs in milliseconds.
  * - successRate: Count of runs meeting success criteria (e.g., CI==0).
  */
 typedef struct
 {
-    double sseSum;      /**< Sum of SSE values across runs. */
-    size_t ciSum;       /**< Sum of Centroid Index (CI) values across runs. */
-    double timeSum;     /**< Total time across runs in milliseconds. */
-    double successRate; /**< Success count across runs (used as count, averaged later). */
-    bool ciAvailable;   /**< False once a run had no CI (no ground truth); CI and success rate print as NA. */
+    double sseSum;       /**< Sum of SSE values across runs. */
+    double sseSumScaled; /**< Sum of SSE values scaled by 2^-64. */
+    size_t ciSum;        /**< Sum of Centroid Index (CI) values across runs. */
+    double timeSum;      /**< Total time across runs in milliseconds. */
+    double successRate;  /**< Success count across runs (used as count, averaged later). */
+    bool ciAvailable;    /**< False once a run had no CI (no ground truth); CI and success rate print as NA. */
 } Statistics;
 
 /**
@@ -44,6 +46,7 @@ static void initializeStatistics(Statistics* stats)
     assert(stats != NULL);
 
     stats->sseSum = 0.0;
+    stats->sseSumScaled = 0.0;
     stats->ciSum = 0;
     stats->timeSum = 0.0;
     stats->successRate = 0.0; /* used as count; averaged later */
@@ -56,6 +59,7 @@ static void initializeStatistics(Statistics* stats)
 static void addRunStatistics(Statistics* stats, double sse, size_t ci, double ms)
 {
     stats->sseSum += sse;
+    stats->sseSumScaled += ldexp(sse, -64);
     stats->timeSum += ms;
     if (ci == CI_NA)
     {
@@ -64,6 +68,22 @@ static void addRunStatistics(Statistics* stats, double sse, size_t ci, double ms
     }
     stats->ciSum += ci;
     if (ci == 0) stats->successRate++;
+}
+
+static double meanSse(const Statistics* stats, size_t count)
+{
+    assert(count > 0);
+    double mean = stats->sseSum / (double)count;
+    if (!isfinite(stats->sseSum))
+    {
+        mean = ldexp(stats->sseSumScaled / (double)count, 64);
+        if (!isfinite(mean))
+        {
+            fprintf(stderr, "Error: statistics exceed the numeric range\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+    return mean;
 }
 
 /**
@@ -88,6 +108,9 @@ static void writeResultsToFile(const char* filename, Statistics stats, size_t nu
         exit(EXIT_FAILURE);
     }
 
+    double sse = meanSse(&stats, loopCount);
+    sse /= (double)scaling;
+
     FILE* file;
     if (FOPEN(file, outputFilePath, "a+") != 0)
     {
@@ -101,8 +124,6 @@ static void writeResultsToFile(const char* filename, Statistics stats, size_t nu
     }
 
     double avgCI = (double)stats.ciSum / loopCount;
-    double sse = ((double)stats.sseSum / (double)loopCount);
-    sse /= (double)scaling;
     double relCI = avgCI / (double)numCentroids;
     double avgTime = stats.timeSum / (double)loopCount;
     double succRate = (stats.successRate / (double)loopCount);
@@ -214,17 +235,17 @@ void createDatasetDirectory(const char* baseDirectory, const char* datasetName, 
 static void printStatistics(const char* algorithmName, Statistics stats, size_t loopCount, size_t numCentroids,
                             size_t scaling)
 {
+    const double sse = meanSse(&stats, loopCount) / (double)scaling;
     if (!stats.ciAvailable)
     {
-        printf("(%s) Average CI: NA and SSE: %.0f\n", algorithmName, stats.sseSum / loopCount / scaling);
+        printf("(%s) Average CI: NA and SSE: %.0f\n", algorithmName, sse);
         printf("(%s) Relative CI: NA\n", algorithmName);
         printf("(%s) Average time taken: %.0f ms\n", algorithmName, stats.timeSum / loopCount);
         printf("(%s) Success rate: NA\n\n", algorithmName);
         return;
     }
 
-    printf("(%s) Average CI: %.2f and SSE: %.0f\n", algorithmName, (double)stats.ciSum / loopCount,
-           stats.sseSum / loopCount / scaling);
+    printf("(%s) Average CI: %.2f and SSE: %.0f\n", algorithmName, (double)stats.ciSum / loopCount, sse);
     printf("(%s) Relative CI: %.2f\n", algorithmName, (double)stats.ciSum / loopCount / numCentroids);
     printf("(%s) Average time taken: %.0f ms\n", algorithmName, stats.timeSum / loopCount);
     printf("(%s) Success rate: %.2f%%\n\n", algorithmName, stats.successRate / loopCount * 100);

@@ -13,6 +13,7 @@
 #include "split.h"
 #include "util.h"
 
+#include <float.h>
 #include <inttypes.h>
 #include <math.h>
 #include <stdbool.h>
@@ -100,6 +101,17 @@ static SplitScratch* unitSplitScratch(const Dataset* dataPoints, const ClusterIn
 static FILE* writeFixture(const char* path)
 {
     FILE* file = fopen(path, "w");
+    if (file == NULL)
+    {
+        perror(path);
+        exit(EXIT_FAILURE);
+    }
+    return file;
+}
+
+static FILE* readFixture(const char* path)
+{
+    FILE* file = fopen(path, "r");
     if (file == NULL)
     {
         perror(path);
@@ -2322,6 +2334,144 @@ static void expectText(const char* path, const char* expected)
     }
 }
 
+static void testSseCommand(const char* directory, const char* executable)
+{
+    char data[PATH_MAX], centroids[PATH_MAX], out[PATH_MAX], err[PATH_MAX];
+    char command[5 * PATH_MAX + 128], line[128];
+    joinPath(data, sizeof(data), directory, "sse-data.txt");
+    joinPath(centroids, sizeof(centroids), directory, "sse-centroids.txt");
+    joinPath(out, sizeof(out), directory, "sse-stdout.txt");
+    joinPath(err, sizeof(err), directory, "sse-stderr.txt");
+    FILE* file = writeFixture(data);
+    require(fputs("0\n2\n", file) >= 0, "could not write SSE fixture");
+    closeFixture(file);
+    file = writeFixture(centroids);
+    require(fputs("1\n", file) >= 0, "could not write SSE centroids");
+    closeFixture(file);
+    int length = snprintf(command, sizeof(command), "cd . && \"%s\" sse \"%s\" \"%s\" > \"%s\" 2> \"%s\"", executable,
+                          data, centroids, out, err);
+    require(length >= 0 && (size_t)length < sizeof(command), "SSE command too long");
+    require(system(command) == 0, "finite SSE command failed");
+    file = readFixture(out);
+    require(fgets(line, sizeof(line), file) != NULL && strcmp(line, "2\n") == 0 && fgetc(file) == EOF && !ferror(file),
+            "finite SSE output changed");
+    closeFixture(file);
+    file = readFixture(err);
+    require(fgetc(file) == EOF && !ferror(file), "finite SSE wrote an error");
+    closeFixture(file);
+
+    file = writeFixture(data);
+    require(fputs("1e308\n-1e308\n", file) >= 0, "could not write SSE overflow fixture");
+    closeFixture(file);
+    file = writeFixture(centroids);
+    require(fputs("0\n", file) >= 0, "could not write SSE overflow centroid");
+    closeFixture(file);
+    const int status = system(command);
+    require(status != -1 && status != 0, "non-finite SSE command succeeded");
+    file = readFixture(out);
+    require(fgetc(file) == EOF && !ferror(file), "non-finite SSE wrote a result");
+    closeFixture(file);
+    expectText(err, "Error:");
+    expectText(err, "non-finite SSE");
+    require(remove(data) == 0 && remove(centroids) == 0 && remove(out) == 0 && remove(err) == 0,
+            "could not remove SSE fixtures");
+}
+
+static void testFiniteRunAverages(const char* directory, const char* executable, const char* capture)
+{
+    const struct
+    {
+        const char* name;
+        const char* points;
+        bool groundTruth;
+        bool overflow;
+    } cases[] = {{"large-no-gt", "-7e153\n7e153\n", false, true},
+                 {"large-with-gt", "-7e153\n7e153\n", true, true},
+                 {"ordinary", "0\n2\n", false, false}};
+    char data[PATH_MAX], truth[PATH_MAX], output[PATH_MAX], dataset[PATH_MAX], path[PATH_MAX];
+    char arguments[4 * PATH_MAX + 128], line[1024];
+    joinPath(data, sizeof(data), directory, "mean-data.txt");
+    joinPath(truth, sizeof(truth), directory, "mean-truth.txt");
+    FILE* file = writeFixture(truth);
+    require(fputs("0\n", file) >= 0, "could not write mean ground truth");
+    closeFixture(file);
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i)
+    {
+        file = writeFixture(data);
+        require(fputs(cases[i].points, file) >= 0, "could not write mean fixture");
+        closeFixture(file);
+        joinPath(output, sizeof(output), directory, cases[i].name);
+        int length = snprintf(arguments, sizeof(arguments), "--algo km --seed 42 -r 2 --no-track -o \"%s\" -k 1 \"%s\"",
+                              output, data);
+        require(length >= 0 && (size_t)length < sizeof(arguments), "mean command too long");
+        if (cases[i].groundTruth)
+        {
+            int added = snprintf(arguments + length, sizeof(arguments) - (size_t)length, " \"%s\"", truth);
+            require(added >= 0 && (size_t)added < sizeof(arguments) - (size_t)length, "mean command too long");
+        }
+        expectCli(executable, arguments, capture, true);
+
+        joinPath(dataset, sizeof(dataset), output, "mean-data");
+        joinPath(path, sizeof(path), dataset, "KM_runs.csv");
+        file = readFixture(path);
+        require(fgets(line, sizeof(line), file) != NULL, "missing mean run header");
+        double score = 0.0;
+        for (size_t run = 1; run <= 2; ++run)
+        {
+            size_t actualRun = 0;
+            double value = 0.0;
+            require(fgets(line, sizeof(line), file) != NULL &&
+                        sscanf(line, "%zu;%*[^;];%lf;", &actualRun, &value) == 2 && actualRun == run && isfinite(value),
+                    "invalid mean run result");
+            if (run == 1)
+                score = value;
+            else
+                require(value == score, "mean fixture runs differ");
+        }
+        require(fgets(line, sizeof(line), file) == NULL && !ferror(file), "unexpected mean run result");
+        closeFixture(file);
+        if (cases[i].overflow)
+            require(score > DBL_MAX / 2.0, "mean fixture did not overflow the sum");
+        else
+            expectText(capture, "(K-means) Average CI: NA and SSE: 2\n");
+
+        file = readFixture(capture);
+        bool found = false;
+        double mean = 0.0;
+        while (fgets(line, sizeof(line), file) != NULL)
+        {
+            const char* field = strstr(line, "(K-means) Average CI:");
+            if (field != NULL)
+            {
+                field = strstr(field, "and SSE: ");
+                found = field != NULL && sscanf(field, "and SSE: %lf", &mean) == 1;
+                break;
+            }
+        }
+        if (!found || !isfinite(mean) || mean != score)
+        {
+            fprintf(stderr, "test_unit: %s: console SSE %.17g, run SSE %.17g (found=%d)\n", cases[i].name, mean, score,
+                    found);
+            exit(EXIT_FAILURE);
+        }
+        closeFixture(file);
+
+        joinPath(path, sizeof(path), dataset, "mean-data.csv");
+        file = readFixture(path);
+        require(fgets(line, sizeof(line), file) != NULL && fgets(line, sizeof(line), file) != NULL,
+                "missing mean CSV result");
+        char ci[32];
+        mean = 0.0;
+        require(sscanf(line, "KM;%31[^;];%lf;", ci, &mean) == 2 &&
+                    strcmp(ci, cases[i].groundTruth ? "0.00" : "NA") == 0 && isfinite(mean) && mean == score,
+                "CSV SSE mean does not match the finite runs");
+        require(fgets(line, sizeof(line), file) == NULL && !ferror(file), "unexpected mean CSV result");
+        closeFixture(file);
+    }
+    require(remove(data) == 0 && remove(truth) == 0, "could not remove mean fixtures");
+}
+
 static void testReportIoFailures(const char* directory, const char* executable, const char* capture)
 {
     const char* cases[] = {"bad-metadata", "bad-runs"};
@@ -3290,6 +3440,8 @@ static void testCliIterationLimit(const char* directory, const char* executable,
 
     testReportSummary(root, executable, capture);
     testReportIoFailures(root, executable, capture);
+    testSseCommand(root, executable);
+    testFiniteRunAverages(root, executable, capture);
 
     require(kmIterations(batch) == 1, "batch-mode KM did not respect its iteration limit");
     joinPath(path, sizeof(path), batch, "run_config.txt");
