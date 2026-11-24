@@ -1,0 +1,5 @@
+data: data\unbalance.txt
+ground-truth: gt\unbalance-gt.txt
+k: 8
+n: 6500
+d: 2

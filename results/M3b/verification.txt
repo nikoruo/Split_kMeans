@@ -1,0 +1,26 @@
+M3b verification, 2026-11-24
+
+- All 63 M3b-ref files and 4590 run/seed/SSE/CI rows match exactly across
+  inward/SSE, both/SSE and inward/size. All 63 progress logs match
+  excluding time; 148 example centroid and partition files match byte-for-
+  byte. All 63 report rows match on every non-time column.
+- All 64 benchmark identities match between MinGW and MSVC, across four
+  rounds, and against Phase 6b. Phase 5 before/after matches all 61
+  original-job identities. Phase 5/6b differ in 22 of 61, reflecting the
+  intervening algorithm changes.
+- 117 saved mode files and three benchmark files were checked byte-for-
+  byte against the raw outputs. The two benchmark tables match an
+  independent calculation and are reproducible with assemble-benchmarks.py.
+- MinGW gcc 16 release and debug, WERROR=1 check: passed.
+- Visual Studio 2026 Release /W4 and CHECK_BIN: passed. Direct MSVC /W4
+  /WX unit tests passed in release and debug.
+- Clang MinGW-target warnings-as-errors: all 19 C files passed.
+- Windows clang ASan and UBSan checks passed without sanitizer reports;
+  UBSan emitted 10 existing runtime-library LNK4217 warnings.
+- Each complete suite matched 108 golden run files, 3 x 63 tracking
+  variants, 3 repartition-mode files, 1 bisect-size file and 9 report
+  files, and passed the default invocation smoke tests. Goldens unchanged.
+- Cppcheck reported 18 existing source diagnostics, with no change from
+  the 7.3 scan.
+- Linux and LeakSanitizer were not run locally; Windows ASan has no leak
+  checker. Detailed logs remain in the local ROOT named in methods.txt.
