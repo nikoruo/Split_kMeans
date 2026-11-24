@@ -197,16 +197,15 @@ static inline struct tm* _mingw_localtime_r(const time_t* timep, struct tm* resu
 /**
  * @brief Lists the *.txt files (not folders) in `dir`, case-folded in the current C locale, then by byte order.
  *
- * Returns the count; `*out` receives a malloc'd array of malloc'd names, or NULL when there are none
- * or the folder cannot be opened. The caller frees each name and the array. Exits on allocation failure;
- * enumeration and stat failures can leave a partial list without an error.
+ * Returns the count; `*out` receives a malloc'd array of malloc'd names, or NULL when there are none.
+ * The caller frees each name and the array. Exits on allocation or enumeration failure.
  */
 size_t list_files(const char* dir, char*** out);
 
 /**
  * @brief Lists the subfolders of `dir` (without `.` and `..`), sorted like list_files.
  *
- * Returns the count with the same ownership, ordering and partial-error limitations as list_files.
+ * Returns the count with the same ownership, ordering and error handling as list_files.
  */
 size_t list_dirs(const char* dir, char*** out);
 

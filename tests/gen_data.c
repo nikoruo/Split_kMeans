@@ -111,6 +111,7 @@ static int writeScenario(const char* outdir, const Scenario* s)
     FILE* gt = openOutput(outdir, s->group, "gt", s->name);
     FILE* kFile = openOutput(outdir, s->group, "centroids", s->name);
     int ok = data != NULL && gt != NULL && kFile != NULL;
+    int writeError = 0;
 
     size_t n = 0;
     if (ok)
@@ -123,24 +124,34 @@ static int writeScenario(const char* outdir, const Scenario* s)
                 {
                     const long value = centers[c * s->dims + d] +
                         (d + 1 == s->constantDim ? 0 : noise(&rng, s->spread));
-                    fprintf(data, d == 0 ? "%ld" : " %ld", value);
+                    writeError |= fprintf(data, d == 0 ? "%ld" : " %ld", value) < 0;
                 }
-                fputc('\n', data);
+                writeError |= fputc('\n', data) == EOF;
                 ++n;
             }
 
             for (size_t d = 0; d < s->dims; ++d)
             {
-                fprintf(gt, d == 0 ? "%ld" : " %ld", centers[c * s->dims + d]);
+                writeError |= fprintf(gt, d == 0 ? "%ld" : " %ld", centers[c * s->dims + d]) < 0;
             }
-            fputc('\n', gt);
+            writeError |= fputc('\n', gt) == EOF;
         }
-        fprintf(kFile, "%zu\n", s->k);
+        writeError |= fprintf(kFile, "%zu\n", s->k) < 0;
     }
 
-    if (data) ok &= fclose(data) == 0;
-    if (gt) ok &= fclose(gt) == 0;
-    if (kFile) ok &= fclose(kFile) == 0;
+    FILE* files[] = {data, gt, kFile};
+    for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); ++i)
+    {
+        if (files[i] == NULL) continue;
+        writeError |= ferror(files[i]) != 0;
+        writeError |= fflush(files[i]) != 0;
+        writeError |= fclose(files[i]) != 0;
+    }
+    if (writeError)
+    {
+        fprintf(stderr, "gen_data: write or close failed for %s/%s\n", s->group, s->name);
+        ok = 0;
+    }
 
     if (ok)
     {

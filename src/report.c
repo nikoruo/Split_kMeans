@@ -208,7 +208,7 @@ static void reportReadCsv(const char* path, bool isLog, ReportRows* rows)
         }
         if (!ok)
         {
-            fclose(file);
+            closeInputFile(file, path);
             fprintf(stderr, "Error: %s line %zu is not a %s row\n", path, lineNumber, header);
             exit(EXIT_FAILURE);
         }
@@ -221,7 +221,7 @@ static void reportReadCsv(const char* path, bool isLog, ReportRows* rows)
             {
                 if (rows->rows[i].run == row.run)
                 {
-                    fclose(file);
+                    closeInputFile(file, path);
                     fprintf(stderr, "Error: run %zu appears twice (in %s, or in it and an earlier run folder)\n",
                             row.run, path);
                     exit(EXIT_FAILURE);
@@ -230,7 +230,7 @@ static void reportReadCsv(const char* path, bool isLog, ReportRows* rows)
         }
         reportPush(rows, &row);
     }
-    fclose(file);
+    closeInputFile(file, path);
 }
 
 /** @brief Reads the shared header of `<directory>/run_config.txt` (the lines up to "calls:") into `header`; exits when
@@ -247,7 +247,7 @@ static void reportReadHeader(const char* directory, char* header, size_t size)
     }
     const size_t length = fread(header, 1, size - 1, file);
     header[length] = '\0';
-    fclose(file);
+    closeInputFile(file, path);
 
     // A folder written on Windows and copied (not checked out) to Linux keeps its CRLF line ends
     size_t kept = 0;
@@ -277,7 +277,8 @@ static size_t reportReadK(const char* directory)
     FILE* file;
     if (FOPEN(file, path, "r") != 0)
     {
-        return 0;
+        if (errno == ENOENT || errno == ENOTDIR) return 0;
+        handleFileError(path);
     }
     char line[PATH_MAX + 32];
     size_t k = 0;
@@ -290,7 +291,7 @@ static size_t reportReadK(const char* directory)
             k = (size_t)value;
         }
     }
-    fclose(file);
+    closeInputFile(file, path);
     return k;
 }
 
@@ -591,17 +592,16 @@ static size_t reportCurve(const ReportAlgorithm* data, Algorithm algorithm, size
 }
 
 /** @brief Writes `text` to `file`, then `;`, or a line end when `last`. */
-static void reportCell(FILE* file, const char* text, bool last)
+static void reportCell(FILE* file, const char* path, const char* text, bool last)
 {
-    fputs(text, file);
-    fputc(last ? '\n' : ';', file);
+    checkFileWrite(file, path, fputs(text, file));
+    checkFileWrite(file, path, fputc(last ? '\n' : ';', file));
 }
 
 /** @brief Opens `<directory>/<name>` for writing; exits on failure. */
-static FILE* reportOpen(const char* directory, const char* name)
+static FILE* reportOpen(const char* directory, const char* name, char path[PATH_MAX])
 {
-    char path[PATH_MAX];
-    joinPath(path, sizeof(path), directory, name);
+    joinPath(path, PATH_MAX, directory, name);
     FILE* file;
     if (FOPEN(file, path, "w") != 0)
     {
@@ -660,7 +660,8 @@ static void reportWriteCurves(const char* outputDirectory, const ReportDataset* 
         fprintf(stderr, "Error: dataset name too long: %s\n", dataset->name);
         exit(EXIT_FAILURE);
     }
-    FILE* file = reportOpen(outputDirectory, name);
+    char path[PATH_MAX];
+    FILE* file = reportOpen(outputDirectory, name, path);
 
     char text[NUMBER_TEXT_SIZE + 64];
     for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
@@ -668,29 +669,29 @@ static void reportWriteCurves(const char* outputDirectory, const ReportDataset* 
         if (dataset->algorithms[a].runs.count == 0) continue;
         const char* display = reportAlgorithmName(algorithmOptions[a].id);
         snprintf(text, sizeof(text), "%s count", display);
-        reportCell(file, text, false);
+        reportCell(file, path, text, false);
         if (!options->noTime)
         {
             snprintf(text, sizeof(text), "%s time (ms)", display);
-            reportCell(file, text, false);
+            reportCell(file, path, text, false);
         }
         snprintf(text, sizeof(text), "%s SSE (10^%d)", display, exponent);
-        reportCell(file, text, false);
+        reportCell(file, path, text, false);
         snprintf(text, sizeof(text), "%s CI", display);
-        reportCell(file, text, a == lastAlgorithm);
+        reportCell(file, path, text, a == lastAlgorithm);
     }
 
     // The end point: the means from _runs.csv (RS at the last improvement), the same values as the tables
     for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
     {
         if (dataset->algorithms[a].runs.count == 0) continue;
-        reportCell(file, "end", false);
+        reportCell(file, path, "end", false);
         if (!options->noTime)
         {
-            reportCell(file, formatFixed(summaries[a].msMean, 3, text), false);
+            reportCell(file, path, formatFixed(summaries[a].msMean, 3, text), false);
         }
-        reportCell(file, formatFixed(summaries[a].sseMean / scale, 6, text), false);
-        reportCell(file, summaries[a].ciAvailable ? formatFixed(summaries[a].ciMean, 4, text) : "NA",
+        reportCell(file, path, formatFixed(summaries[a].sseMean / scale, 6, text), false);
+        reportCell(file, path, summaries[a].ciAvailable ? formatFixed(summaries[a].ciMean, 4, text) : "NA",
                    a == lastAlgorithm);
     }
 
@@ -702,24 +703,24 @@ static void reportWriteCurves(const char* outputDirectory, const ReportDataset* 
             const bool last = (a == lastAlgorithm);
             if (i >= lengths[a])
             {
-                reportCell(file, "", false);
-                if (!options->noTime) reportCell(file, "", false);
-                reportCell(file, "", false);
-                reportCell(file, "", last);
+                reportCell(file, path, "", false);
+                if (!options->noTime) reportCell(file, path, "", false);
+                reportCell(file, path, "", false);
+                reportCell(file, path, "", last);
                 continue;
             }
             const CurvePoint* point = &curves[a][i];
             snprintf(text, sizeof(text), "%zu", point->count);
-            reportCell(file, text, false);
+            reportCell(file, path, text, false);
             if (!options->noTime)
             {
-                reportCell(file, formatFixed(point->ms, 3, text), false);
+                reportCell(file, path, formatFixed(point->ms, 3, text), false);
             }
-            reportCell(file, formatFixed(point->sse / scale, 6, text), false);
-            reportCell(file, point->ciAvailable ? formatFixed(point->ci, 4, text) : "NA", last);
+            reportCell(file, path, formatFixed(point->sse / scale, 6, text), false);
+            reportCell(file, path, point->ciAvailable ? formatFixed(point->ci, 4, text) : "NA", last);
         }
     }
-    fclose(file);
+    closeOutputFile(file, path);
 
     for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
     {
@@ -732,11 +733,12 @@ static void reportWriteTable(const char* outputDirectory, const char* name, Repo
                              const ReportDataset* datasets, const size_t* order, size_t datasetCount,
                              const ReportSummary* summaries)
 {
-    FILE* file = reportOpen(outputDirectory, name);
-    reportCell(file, "Algorithm", datasetCount == 0);
+    char path[PATH_MAX];
+    FILE* file = reportOpen(outputDirectory, name, path);
+    reportCell(file, path, "Algorithm", datasetCount == 0);
     for (size_t d = 0; d < datasetCount; ++d)
     {
-        reportCell(file, datasets[order[d]].display, d + 1 == datasetCount);
+        reportCell(file, path, datasets[order[d]].display, d + 1 == datasetCount);
     }
 
     char text[NUMBER_TEXT_SIZE];
@@ -749,7 +751,7 @@ static void reportWriteTable(const char* outputDirectory, const char* name, Repo
         }
         if (!present) continue;
 
-        reportCell(file, reportAlgorithmName(algorithmOptions[a].id), datasetCount == 0);
+        reportCell(file, path, reportAlgorithmName(algorithmOptions[a].id), datasetCount == 0);
         for (size_t d = 0; d < datasetCount; ++d)
         {
             const ReportSummary* summary = &summaries[order[d] * ALGORITHM_COUNT + a];
@@ -772,35 +774,41 @@ static void reportWriteTable(const char* outputDirectory, const char* name, Repo
                         break;
                 }
             }
-            reportCell(file, cell, d + 1 == datasetCount);
+            reportCell(file, path, cell, d + 1 == datasetCount);
         }
     }
-    fclose(file);
+    closeOutputFile(file, path);
 }
 
 /**
  * @brief Writes the summary.csv row of one algorithm on one dataset; `fullMs` (RS only, else NULL) is the mean time of
  * the whole runs, every swap included. The standard deviations are NA with fewer than 2 runs.
  */
-static void reportWriteSummaryRow(FILE* file, const ReportDataset* dataset, Algorithm algorithm,
+static void reportWriteSummaryRow(FILE* file, const char* path, const ReportDataset* dataset, Algorithm algorithm,
                                   const ReportSummary* summary, const double* fullMs, bool noTime)
 {
     char text[NUMBER_TEXT_SIZE];
     const bool sd = summary->runs >= 2;
-    fprintf(file, "%s;%s;%zu", dataset->display, reportAlgorithmName(algorithm), summary->runs);
-    fprintf(file, ";%s", formatFixed(summary->sseMean, 6, text));
-    fprintf(file, ";%s", sd ? formatFixed(summary->sseSd, 6, text) : "NA");
-    fprintf(file, ";%s", summary->ciAvailable ? formatFixed(summary->ciMean, 4, text) : "NA");
-    fprintf(file, ";%s",
-            summary->ciAvailable && dataset->k > 0 ? formatFixed(summary->ciMean / (double)dataset->k, 4, text) : "NA");
-    fprintf(file, ";%s", summary->ciAvailable ? formatFixed(summary->successPct, 1, text) : "NA");
+    checkFileWrite(file, path,
+                   fprintf(file, "%s;%s;%zu", dataset->display, reportAlgorithmName(algorithm), summary->runs));
+    checkFileWrite(file, path, fprintf(file, ";%s", formatFixed(summary->sseMean, 6, text)));
+    checkFileWrite(file, path, fprintf(file, ";%s", sd ? formatFixed(summary->sseSd, 6, text) : "NA"));
+    checkFileWrite(file, path,
+                   fprintf(file, ";%s", summary->ciAvailable ? formatFixed(summary->ciMean, 4, text) : "NA"));
+    checkFileWrite(file, path,
+                   fprintf(file, ";%s",
+                           summary->ciAvailable && dataset->k > 0
+                               ? formatFixed(summary->ciMean / (double)dataset->k, 4, text)
+                               : "NA"));
+    checkFileWrite(file, path,
+                   fprintf(file, ";%s", summary->ciAvailable ? formatFixed(summary->successPct, 1, text) : "NA"));
     if (!noTime)
     {
-        fprintf(file, ";%s", formatFixed(summary->msMean, 3, text));
-        fprintf(file, ";%s", sd ? formatFixed(summary->msSd, 3, text) : "NA");
-        fprintf(file, ";%s", fullMs != NULL ? formatFixed(*fullMs, 3, text) : "");
+        checkFileWrite(file, path, fprintf(file, ";%s", formatFixed(summary->msMean, 3, text)));
+        checkFileWrite(file, path, fprintf(file, ";%s", sd ? formatFixed(summary->msSd, 3, text) : "NA"));
+        checkFileWrite(file, path, fprintf(file, ";%s", fullMs != NULL ? formatFixed(*fullMs, 3, text) : ""));
     }
-    fputc('\n', file);
+    checkFileWrite(file, path, fputc('\n', file));
 }
 
 /** @brief Reads run folders into `*datasets` and returns their count; the caller owns the array and its row arrays. */
@@ -915,6 +923,7 @@ static void reportOrder(const char* namesFile, ReportDataset* datasets, size_t d
                 if (strlen(rest) >= sizeof(datasets[d].display))
                 {
                     fprintf(stderr, "Error: --names: the display name of %s is too long\n", name);
+                    closeInputFile(file, namesFile);
                     exit(EXIT_FAILURE);
                 }
                 STRCPY(datasets[d].display, sizeof(datasets[d].display), rest);
@@ -922,7 +931,7 @@ static void reportOrder(const char* namesFile, ReportDataset* datasets, size_t d
             placed[d] = true;
             order[ordered++] = d;
         }
-        fclose(file);
+        closeInputFile(file, namesFile);
     }
     while (ordered < datasetCount)
     {
@@ -1066,11 +1075,13 @@ int commandReport(int argc, char* argv[])
     // summary.csv, and the summaries behind the tables and the curve end points
     ReportSummary* summaries = calloc(datasetCount * ALGORITHM_COUNT, sizeof(ReportSummary));
     handleMemoryError(summaries);
-    FILE* summaryFile = reportOpen(outputDirectory, "summary.csv");
-    fputs(options.noTime ? "dataset;algorithm;runs;sse_mean;sse_sd;ci_mean;relative_ci;success_pct\n"
-                         : "dataset;algorithm;runs;sse_mean;sse_sd;ci_mean;relative_ci;success_pct;time_ms_mean;time_"
-                           "ms_sd;full_time_ms_mean\n",
-          summaryFile);
+    char summaryPath[PATH_MAX];
+    FILE* summaryFile = reportOpen(outputDirectory, "summary.csv", summaryPath);
+    checkFileWrite(summaryFile, summaryPath,
+                   fputs(options.noTime ? "dataset;algorithm;runs;sse_mean;sse_sd;ci_mean;relative_ci;success_pct\n"
+                                        : "dataset;algorithm;runs;sse_mean;sse_sd;ci_mean;relative_ci;success_pct;"
+                                          "time_ms_mean;time_ms_sd;full_time_ms_mean\n",
+                         summaryFile));
     for (size_t o = 0; o < datasetCount; ++o)
     {
         const size_t d = order[o];
@@ -1090,16 +1101,17 @@ int commandReport(int argc, char* argv[])
                 ReportRows cut = reportRsAtLastImprovement(data);
                 *summary = reportSummarize(cut.rows, cut.count);
                 free(cut.rows);
-                reportWriteSummaryRow(summaryFile, &datasets[d], algorithm, summary, &fullMs, options.noTime);
+                reportWriteSummaryRow(summaryFile, summaryPath, &datasets[d], algorithm, summary, &fullMs,
+                                      options.noTime);
             }
             else
             {
-                reportWriteSummaryRow(summaryFile, &datasets[d], algorithm, summary, NULL, options.noTime);
+                reportWriteSummaryRow(summaryFile, summaryPath, &datasets[d], algorithm, summary, NULL, options.noTime);
             }
         }
         reportWriteCurves(outputDirectory, &datasets[d], &summaries[d * ALGORITHM_COUNT], &options);
     }
-    fclose(summaryFile);
+    closeOutputFile(summaryFile, summaryPath);
 
     reportWriteTable(outputDirectory, "table_ci.csv", TABLE_CI, datasets, order, datasetCount, summaries);
     reportWriteTable(outputDirectory, "table_success.csv", TABLE_SUCCESS, datasets, order, datasetCount, summaries);

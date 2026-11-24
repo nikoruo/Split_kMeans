@@ -110,7 +110,9 @@ static FILE* writeFixture(const char* path)
 
 static void closeFixture(FILE* file)
 {
-    require(fclose(file) == 0, "could not close fixture");
+    const bool ioError = ferror(file) != 0;
+    const int closeError = fclose(file);
+    require(!ioError && closeError == 0, "fixture I/O or close failed");
 }
 
 static void testNumbers(void)
@@ -2116,6 +2118,27 @@ static void expectReadFailure(const char* executable, const char* mode, const ch
     }
 }
 
+static void testFileIoFailures(const char* executable, const char* directory)
+{
+    char path[PATH_MAX], errorPath[PATH_MAX], emptyDirectory[PATH_MAX];
+    joinPath(path, sizeof(path), directory, "io-stream.txt");
+    joinPath(errorPath, sizeof(errorPath), directory, "io-error.txt");
+    joinPath(emptyDirectory, sizeof(emptyDirectory), directory, "empty-enumeration");
+    FILE* file = writeFixture(path);
+    require(fputs("fixture\n", file) >= 0, "could not write I/O fixture");
+    closeFixture(file);
+
+    expectReadFailure(executable, "--io-write", path, errorPath, "Unable to write");
+    expectReadFailure(executable, "--io-list-files", path, errorPath, "enumerate directory");
+    expectReadFailure(executable, "--io-list-dirs", path, errorPath, "enumerate directory");
+
+    require(platform_make_directories(emptyDirectory), "could not create empty enumeration fixture");
+    char** names = NULL;
+    require(list_files(emptyDirectory, &names) == 0 && names == NULL, "empty file list was not empty");
+    require(list_dirs(emptyDirectory, &names) == 0 && names == NULL, "empty directory list was not empty");
+    require(remove(path) == 0 && remove(errorPath) == 0, "could not remove I/O fixtures");
+}
+
 static void testInvalidInternalInputs(const char* executable, const char* directory)
 {
     char errorPath[PATH_MAX];
@@ -2275,7 +2298,9 @@ static void expectCli(const char* executable, const char* arguments, const char*
         {
             char line[1024];
             while (fgets(line, sizeof(line), file) != NULL) fputs(line, stderr);
-            fclose(file);
+            const bool readError = ferror(file) != 0;
+            const int closeError = fclose(file);
+            if (readError || closeError != 0) fprintf(stderr, "test_unit: could not read or close CLI output\n");
         }
         exit(EXIT_FAILURE);
     }
@@ -2294,6 +2319,38 @@ static void expectText(const char* path, const char* expected)
     {
         fprintf(stderr, "test_unit: expected '%s' in %s:\n%s\n", expected, path, text);
         exit(EXIT_FAILURE);
+    }
+}
+
+static void testReportIoFailures(const char* directory, const char* executable, const char* capture)
+{
+    const char* cases[] = {"bad-metadata", "bad-runs"};
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i)
+    {
+        char input[PATH_MAX], output[PATH_MAX], dataset[PATH_MAX], metadata[PATH_MAX], runs[PATH_MAX];
+        char path[PATH_MAX], arguments[3 * PATH_MAX + 64];
+        joinPath(input, sizeof(input), directory, cases[i]);
+        joinPath(output, sizeof(output), input, "report-output");
+        joinPath(dataset, sizeof(dataset), input, "sample");
+        joinPath(metadata, sizeof(metadata), dataset, "dataset.txt");
+        joinPath(runs, sizeof(runs), dataset, "KM_runs.csv");
+        require(platform_make_directories(dataset), "could not create report I/O fixture");
+        joinPath(path, sizeof(path), input, "run_config.txt");
+        FILE* file = writeFixture(path);
+        require(fputs("fixture: report I/O\ncalls:\n", file) >= 0, "could not write report I/O configuration");
+        closeFixture(file);
+
+        require(platform_make_directories(i == 0 ? metadata : runs), "could not create unreadable file fixture");
+        file = writeFixture(i == 0 ? runs : metadata);
+        require(fputs(i == 0 ? "run;seed;sse;ci;ms\n1;0;1;0;1\n" : "k: 1\n", file) >= 0,
+                "could not write report I/O input");
+        closeFixture(file);
+        const int length = snprintf(arguments, sizeof(arguments), "report -o \"%s\" \"%s\"", output, input);
+        require(length >= 0 && (size_t)length < sizeof(arguments), "report I/O command too long");
+        expectCli(executable, arguments, capture, false);
+        expectText(capture, "Error:");
+        expectText(capture, i == 0 ? "dataset.txt" : "KM_runs.csv");
+        require(!fileExists(output), "report created output after a read failure");
     }
 }
 
@@ -3232,6 +3289,7 @@ static void testCliIterationLimit(const char* directory, const char* executable,
     expectText(capture, "<run-folder>...");
 
     testReportSummary(root, executable, capture);
+    testReportIoFailures(root, executable, capture);
 
     require(kmIterations(batch) == 1, "batch-mode KM did not respect its iteration limit");
     joinPath(path, sizeof(path), batch, "run_config.txt");
@@ -3577,10 +3635,31 @@ int main(int argc, char* argv[])
         freeCentroids(&centroids);
         return EXIT_SUCCESS;
     }
+    if (argc == 3 && (strcmp(argv[1], "--io-write") == 0 || strcmp(argv[1], "--io-buffered-write") == 0))
+    {
+        const bool buffered = strcmp(argv[1], "--io-buffered-write") == 0;
+        FILE* file = fopen(argv[2], "w");
+        require(file != NULL, "could not open I/O failure fixture");
+        char buffer[4096];
+        if (buffered) require(setvbuf(file, buffer, _IOFBF, sizeof(buffer)) == 0, "could not buffer I/O fixture");
+        const int result = buffered ? fputs("I/O failure fixture\n", file) : EOF;
+        checkFileWrite(file, argv[2], result);
+        closeOutputFile(file, argv[2]);
+        return EXIT_SUCCESS;
+    }
+    if (argc == 3 && (strcmp(argv[1], "--io-list-files") == 0 || strcmp(argv[1], "--io-list-dirs") == 0))
+    {
+        char** names = NULL;
+        const size_t count =
+            strcmp(argv[1], "--io-list-files") == 0 ? list_files(argv[2], &names) : list_dirs(argv[2], &names);
+        freeStringList(names, count);
+        return EXIT_SUCCESS;
+    }
     require(argc == 2 || argc == 6,
             "expected a fixture directory and optional CLI executable, dataset, ground truth and batch output");
     testNumbers();
     testDatasetParser(argv[0], argv[1]);
+    testFileIoFailures(argv[0], argv[1]);
     testInvalidInternalInputs(argv[0], argv[1]);
     testZeroIterationRunners(argv[0], argv[1]);
     testNonfiniteRandomSwap(argv[0], argv[1]);

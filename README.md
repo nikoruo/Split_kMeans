@@ -149,6 +149,8 @@ The report command accepts single-dataset output folders as well as batch output
 
 Each output root has a `run_config.txt` with build, machine, seed and parameter information plus a record of each call. Recorded arguments can contain local paths, so review them before sharing. If `run_config.txt` exists, reusing `-o` requires a matching configuration header; if it is missing, other existing files are not checked before a new one is written. For an existing dataset folder, only K, N and D are checked, not input paths or contents. Start with a new folder and ensure appended calls use the same inputs and distinct run numbers. Different repartition modes or bisecting selection modes cannot be mixed when the configuration headers are present.
 
+Input-file read, result-file write, flush or close, and directory-enumeration failures exit nonzero. A failed call can leave incomplete output files; do not treat them as finished results.
+
 ## Tracking and snapshots
 
 `--snapshots` accepts `none` or `RUNS[:COUNTS][:split]`. Runs are 1-based; counts are the progress counts and may include 0. Each selection is `all` or a comma-separated list and ranges such as `1,3-5`. Counts default to `all`; `split` additionally requests the state immediately after a two-way split where available. Examples:

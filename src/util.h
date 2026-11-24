@@ -19,13 +19,19 @@ extern bool decimalComma;
 
 void handleMemoryError(void* ptr);
 void handleFileError(const char* filename);
+/* Checks a stdio write result; closes the stream and exits on failure. */
+void checkFileWrite(FILE* file, const char* filename, int result);
+/* Close the stream, checking its read/write state and, for output, the flush. */
+void closeInputFile(FILE* file, const char* filename);
+void closeOutputFile(FILE* file, const char* filename);
+/* Seeks an output stream to the end and checks its position. */
+bool fileIsEmpty(FILE* file, const char* filename);
 
 /* The caller owns the list and its strings; release them with freeStringList. */
 char** createStringList(size_t size);
 void freeStringList(char** list, size_t size);
 
-/* Requires 2 <= size <= INT_MAX; closes and exits on detected fgets errors or overlong lines.
- * A read error during the one-character look-ahead is not checked there. */
+/* Requires 2 <= size <= INT_MAX; closes and exits on read errors or overlong lines. */
 char* readDataLine(char* buffer, size_t size, FILE* file, const char* filename, size_t lineNumber);
 bool parseFiniteDouble(const char* token, double* value);
 bool parseUint64(const char* text, uint64_t* out);
