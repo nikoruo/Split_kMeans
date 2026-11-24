@@ -2378,6 +2378,9 @@ static void testRepartitionOptions(const char* directory, const char* executable
     joinPath(invalidOutput, sizeof(invalidOutput), directory, "local-invalid");
     joinPath(reportOutput, sizeof(reportOutput), directory, "local-report");
 
+    expectCli(executable, "--help", capture, true);
+    expectText(capture, "SKM-Local: both (default)");
+
     const char* invalid[] = {"--repartition", "--repartition unknown",
                              "--repartition both --repartition inward"};
     for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i)
@@ -2395,16 +2398,18 @@ static void testRepartitionOptions(const char* directory, const char* executable
                "--max-iterations 1 --repartition inward", 4);
     runCapCase(executable, data, bothOutput, capture, "skm-local",
                "--max-iterations 1 --repartition both", 4);
-    requireSameCaseRun(defaultOutput, explicitOutput, "SKM_Local",
-                       "default repartition differs from explicit inward");
+    requireSameCaseRun(defaultOutput, bothOutput, "SKM_Local",
+                       "default repartition differs from explicit both");
     joinPath(path, sizeof(path), defaultOutput, "run_config.txt");
-    expectText(path, "repartition: inward\n");
+    expectText(path, "repartition: both\n");
     joinPath(path, sizeof(path), explicitOutput, "run_config.txt");
     expectText(path, "repartition: inward\n");
+    joinPath(path, sizeof(path), bothOutput, "run_config.txt");
+    expectText(path, "repartition: both\n");
 
     int length = snprintf(arguments, sizeof(arguments),
                           "--seed 42 -r 1 --max-swaps 1 --repeats 1 --bisect-tries 2 --max-iterations 1 "
-                          "--algo skm-local --repartition both -o \"%s\" -k 4 \"%s\"",
+                          "--algo skm-local --repartition inward -o \"%s\" -k 4 \"%s\"",
                           defaultOutput, data);
     require(length >= 0 && (size_t)length < sizeof(arguments), "mismatched repartition case too long");
     expectCli(executable, arguments, capture, false);
@@ -2413,7 +2418,7 @@ static void testRepartitionOptions(const char* directory, const char* executable
     expectText(capture, "repartition: both");
 
     length = snprintf(arguments, sizeof(arguments), "report -o \"%s\" \"%s\" \"%s\"",
-                      reportOutput, defaultOutput, bothOutput);
+                      reportOutput, defaultOutput, explicitOutput);
     require(length >= 0 && (size_t)length < sizeof(arguments), "repartition report case too long");
     expectCli(executable, arguments, capture, false);
     expectText(capture, "different configurations");

@@ -1,0 +1,60 @@
+Step 8.0a: SKM-Local default repartition, 2026-11-24
+
+The only clustering-source change selects the existing "both" mode by default.
+The remapping and split implementations are unchanged. The clean baseline is
+commit e5cd22cb5a3dac05e3646e5b4033ad8216365e68. The after build records
+e5cd22c-dirty and includes the step's CLI, test and documentation changes.
+Both MinGW builds use gcc 16.2.0, -O3, -ffp-contract=off and -Werror.
+
+SHA-256:
+  baseline MinGW binary  F953DA3320C569D21D61118571DD2479C9A07AF109082F63094D2A7A7ACD707D
+  after MinGW binary     4BDAE542E3268CF98D59BE3AD14AC5463864D2EF21297741202B8923AB260B8A
+  after src/cli.c        50205BFF98AFEF0A401EF9D76C21B9D69EE02FD849081442E56ED09114AA6ED3
+  after MSVC binary      7BD3BDE994CAE3D3AFA1F59EC15307E6C74144307A9B862E76A0277DC3CF2717
+
+All real-data runs use the 23 triples listed in ../6.7/input-hashes.csv.
+All 69 input files matched those SHA-256 values before and after the runs.
+From the repository root, each binary ran the batch mode with:
+
+  --seed 20261119 --runs 5 --algo skm-local --track-progress
+  --snapshots none --log-level 1 -o <separate output folder>
+
+The clean baseline ran once without --repartition (inward) and once with
+--repartition both. The after MinGW binary ran without that option and with
+--repartition both; the MSVC binary ran without it. The saved after binary was
+replayed once more without the option. Each folder was reported separately.
+Run folders and logs remain outside OneDrive in the local session folder:
+  %USERPROFILE%\.copilot\session-state\e80ac79c-88b1-4bd0-a9d8-226cf9450850\files\d9-default
+
+paired-runs.csv retains all 115 paired seeds and scores from both builds and
+modes. The first five baseline runs in each mode also match the 6.7 records.
+compare_runs matched all 23 after-default run files with baseline explicit
+both and after explicit both, and matched MSVC against MinGW. The saved after
+binary also matched baseline both on 3325 progress rows excluding time and 48
+example centroid/partition snapshots byte-for-byte. The three summary CSVs
+give the actual five-run SSE, CI, success and elapsed-time statistics.
+
+The five-run sessions were not alternated and are not a performance benchmark.
+For the larger statistical comparison, ../6.7/paired-local.csv and the two
+local-mode report/summary.csv files retain 100 paired runs per dataset from
+clean commit b26c7f8, in alternating 25-run blocks. They compare the same
+existing modes, not new 100-run measurements of the after build. For example,
+inward versus both mean CI was 12.38 versus 12.56 on birch3, 8.54 versus 8.50
+on worms_2d, and 0.21 versus 0.19 on worms_64d (success 80% versus 82%).
+
+On generated data, the old binary with explicit both and the new default
+matched all 45 main-group run files and all nine report files. The unchanged
+108 run goldens and the eight changed intermediate curve rows are described
+in golden-changes.txt. The three explicit-mode goldens remain unchanged.
+
+Verification:
+  MinGW gcc release and debug, WERROR=1 check: passed.
+  Visual Studio 2026 Release x64 /W4 rebuild and CHECK_BIN check: passed.
+  MSVC /W4 /WX compiled unit tests against the MSVC CLI: passed.
+  Clang MinGW-target -Werror syntax check on changed C files: passed.
+  Visual Studio clang 22 ASan and UBSan checks: passed, no sanitizer reports.
+  Each full check covers 108 run files, 3 x 63 tracking variants, three
+  repartition modes, bisect-size, nine reports and default invocation smoke
+  tests. ASan and UBSan each emitted four existing deprecated-CRT warnings in
+  the test helpers; UBSan also emitted 20 existing runtime LNK4217 warnings.
+  Windows ASan has no leak checker. Linux real-data parity remains step 8.3b.
