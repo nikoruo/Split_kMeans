@@ -104,8 +104,8 @@ static bool is_dot_entry(const char* name)
     return strcmp(name, ".") == 0 || strcmp(name, "..") == 0;
 }
 
-/* The *.txt files of `dir` (wantDirs false) or its subfolders (wantDirs true), sorted with compare_file_names. */
-static size_t list_entries(const char* dir, char*** out, bool wantDirs)
+/* Lists subfolders, all files or *.txt files, sorted with compare_file_names. */
+static size_t list_entries(const char* dir, char*** out, bool wantDirs, bool allFiles)
 {
     char** list = NULL;
     size_t count = 0;
@@ -134,7 +134,8 @@ static size_t list_entries(const char* dir, char*** out, bool wantDirs)
     do
     {
         const bool isDir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-        if (wantDirs ? (isDir && !is_dot_entry(fd.cFileName)) : (!isDir && has_txt_extension(fd.cFileName)))
+        if (wantDirs ? (isDir && !is_dot_entry(fd.cFileName))
+                     : (!isDir && (allFiles || has_txt_extension(fd.cFileName))))
         {
             append_name(&list, &count, &capacity, fd.cFileName);
         }
@@ -175,7 +176,7 @@ static size_t list_entries(const char* dir, char*** out, bool wantDirs)
             error = errno;
             break;
         }
-        if (wantDirs ? is_dot_entry(e->d_name) : !has_txt_extension(e->d_name))
+        if (wantDirs ? is_dot_entry(e->d_name) : (!allFiles && !has_txt_extension(e->d_name)))
         {
             continue;
         }
@@ -225,12 +226,26 @@ static size_t list_entries(const char* dir, char*** out, bool wantDirs)
 
 size_t list_files(const char* dir, char*** out)
 {
-    return list_entries(dir, out, false);
+    return list_entries(dir, out, false, false);
+}
+
+size_t list_all_files(const char* dir, char*** out)
+{
+    return list_entries(dir, out, false, true);
 }
 
 size_t list_dirs(const char* dir, char*** out)
 {
-    return list_entries(dir, out, true);
+    return list_entries(dir, out, true, false);
+}
+
+bool platform_text_input_translates(void)
+{
+#ifdef _WIN32
+    return true;
+#else
+    return false;
+#endif
 }
 
 const char* platform_basename(const char* path)

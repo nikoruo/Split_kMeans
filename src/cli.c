@@ -28,7 +28,7 @@
  * OUTPUT (outputs/<timestamp>/ or -o <dir>):
  *    run_config.txt                      # build, machine, seed, parameters; one entry per call
  *    <dataset>/
- *       ├─ dataset.txt                   # data and ground-truth files, K, N, D (read by report)
+ *       ├─ dataset.txt                   # input paths and SHA-256, K, N, D (read by report)
  *       ├─ <dataset>.csv                 # summary row per algorithm (Excel, --decimal-comma)
  *       ├─ <Algorithm>_runs.csv          # one row per run: run;seed;sse;ci;ms (%.17g)
  *       ├─ <Algorithm>_log.csv           # tracked states: run;count;sse;ci;ms
@@ -49,6 +49,7 @@
 #include "algorithms.h"
 #include "dataset.h"
 #include "experiment.h"
+#include "input_identity.h"
 #include "kmeans.h"
 #include "metrics.h"
 #include "report.h"
@@ -1064,11 +1065,12 @@ int cliMain(int argc, char* argv[])
         createUniqueDirectory(outputDirectory, sizeof(outputDirectory));
     }
 
-    writeRunConfig(outputDirectory, &opt, &track, snapshotsText, datasetsOption != NULL ? datasetsOption : "all",
-                   cliMode, argc, argv);
+    checkOutputRoot(outputDirectory);
+    checkRunConfig(outputDirectory, &opt);
 
     const size_t firstRun = opt.firstRun - 1;
     int status = EXIT_SUCCESS;
+    bool configWritten = false;
 
     for (size_t i = 0; i < dataCount; ++i)
     {
@@ -1124,7 +1126,11 @@ int cliMain(int argc, char* argv[])
         }
 
         // Read data and ground truth
-        Dataset dataPoints = readDataset(currentDataFile);
+        InputSnapshot dataSnapshot = readInputSnapshot(currentDataFile);
+        Dataset dataPoints = readDatasetSnapshot(&dataSnapshot, currentDataFile);
+        char dataSha256[SHA256_HEX_SIZE];
+        STRCPY(dataSha256, sizeof(dataSha256), dataSnapshot.sha256);
+        freeInputSnapshot(&dataSnapshot);
         if (dataPoints.size == 0)
         {
             fprintf(stderr, "--> Skipping %s (no data points)\n", baseName);
@@ -1149,9 +1155,13 @@ int cliMain(int argc, char* argv[])
         }
 
         Centroids groundTruth = {0};
+        char groundTruthSha256[SHA256_HEX_SIZE] = "none";
         if (currentGtFile[0] != '\0')
         {
-            groundTruth = readCentroids(currentGtFile);
+            InputSnapshot groundTruthSnapshot = readInputSnapshot(currentGtFile);
+            groundTruth = readCentroidsSnapshot(&groundTruthSnapshot, currentGtFile);
+            STRCPY(groundTruthSha256, sizeof(groundTruthSha256), groundTruthSnapshot.sha256);
+            freeInputSnapshot(&groundTruthSnapshot);
             if (groundTruth.size > 0 && groundTruth.dimensions != dataPoints.dimensions)
             {
                 fprintf(stderr, "Error: Ground truth %s has %zu dimensions, data %s has %zu\n", currentGtFile,
@@ -1161,8 +1171,19 @@ int cliMain(int argc, char* argv[])
         }
 
         char datasetDirectory[PATH_MAX];
+        DatasetInfo info;
+        makeDatasetInfo(&info, currentDataFile, currentGtFile, dataSha256, groundTruthSha256, currentK,
+                        dataPoints.size, numDimensions);
+        joinPath(datasetDirectory, sizeof(datasetDirectory), outputDirectory, baseName);
+        checkDatasetInfo(datasetDirectory, &info);
+        if (!configWritten)
+        {
+            writeRunConfig(outputDirectory, &opt, &track, snapshotsText, datasetsOption != NULL ? datasetsOption : "all",
+                           cliMode, argc, argv);
+            configWritten = true;
+        }
         createDatasetDirectory(outputDirectory, baseName, datasetDirectory, sizeof(datasetDirectory));
-        writeDatasetInfo(datasetDirectory, currentDataFile, currentGtFile, currentK, dataPoints.size, numDimensions);
+        writeDatasetInfo(datasetDirectory, &info);
 
         // Batch pairing is by sorted position: show which files went together
         if (logLevel >= 2) printf("Starting process\n");
@@ -1189,6 +1210,10 @@ int cliMain(int argc, char* argv[])
             {
                 continue;
             }
+
+            if (!configWritten)
+                writeRunConfig(outputDirectory, &opt, &track, snapshotsText, datasetsOption != NULL ? datasetsOption : "all",
+                               cliMode, argc, argv);
 
             const Algorithm algorithmId = algorithmOptions[a].id;
             switch (algorithmId)

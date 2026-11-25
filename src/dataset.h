@@ -10,6 +10,16 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "sha256.h"
+
+/* Owns an immutable raw-byte snapshot; release it with freeInputSnapshot. */
+typedef struct
+{
+    unsigned char* bytes;
+    size_t length;
+    char sha256[SHA256_HEX_SIZE];
+} InputSnapshot;
+
 /* Owns N * D row-major coordinates and N labels; free with freeDataset. */
 typedef struct
 {
@@ -80,6 +90,11 @@ size_t countDistinctRowsUpTo(const Dataset* dataset, size_t limit);
 /* Returned datasets and centroids are owned by the caller. */
 Dataset readDataset(const char* filename);
 Centroids readCentroids(const char* filename);
+InputSnapshot readInputSnapshot(const char* filename);
+void freeInputSnapshot(InputSnapshot* snapshot);
+/* Parse a live snapshot; filename is used only in diagnostics. */
+Dataset readDatasetSnapshot(const InputSnapshot* snapshot, const char* filename);
+Centroids readCentroidsSnapshot(const InputSnapshot* snapshot, const char* filename);
 size_t readKFromFile(const char* path);
 
 #endif /* DATASET_H */

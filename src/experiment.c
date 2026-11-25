@@ -804,15 +804,7 @@ void textLine(const char* text, size_t index, char* line, size_t size)
     snprintf(line, size, "%.*s", (int)(length < size ? length : size - 1), text);
 }
 
-/**
- * @brief Creates or extends `<outputDirectory>/run_config.txt`; checks the configuration only when that file exists.
- *
- * The shared header (runConfigHeader) must equal the one in the file; then one entry per call is appended:
- * the time, the command line (the program by file name, without its folder) and the resolved options
- * (mode, algorithms, runs, tracking).
- */
-void writeRunConfig(const char* outputDirectory, const Options* opt, const TrackOptions* track,
-                    const char* snapshotsText, const char* datasetsText, bool cliMode, int argc, char* argv[])
+void checkRunConfig(const char* outputDirectory, const Options* opt)
 {
     char header[RUN_CONFIG_SIZE];
     runConfigHeader(header, sizeof(header), opt);
@@ -820,8 +812,7 @@ void writeRunConfig(const char* outputDirectory, const Options* opt, const Track
     char path[PATH_MAX];
     joinPath(path, sizeof(path), outputDirectory, "run_config.txt");
 
-    const bool exists = fileExists(path);
-    if (exists)
+    if (fileExists(path))
     {
         FILE* file;
         if (FOPEN(file, path, "r") != 0)
@@ -850,6 +841,22 @@ void writeRunConfig(const char* outputDirectory, const Options* opt, const Track
             exit(EXIT_FAILURE);
         }
     }
+}
+
+/**
+ * @brief Creates or extends `<outputDirectory>/run_config.txt` after checking its shared header.
+ *
+ * One entry per call records the time, command line and resolved options.
+ */
+void writeRunConfig(const char* outputDirectory, const Options* opt, const TrackOptions* track,
+                    const char* snapshotsText, const char* datasetsText, bool cliMode, int argc, char* argv[])
+{
+    checkRunConfig(outputDirectory, opt);
+    char header[RUN_CONFIG_SIZE];
+    runConfigHeader(header, sizeof(header), opt);
+    char path[PATH_MAX];
+    joinPath(path, sizeof(path), outputDirectory, "run_config.txt");
+    const bool exists = fileExists(path);
 
     FILE* file;
     if (FOPEN(file, path, exists ? "a" : "w") != 0)
@@ -903,52 +910,5 @@ void writeRunConfig(const char* outputDirectory, const Options* opt, const Track
                            "track-inner: %s\n",
                            opt->firstRun, opt->runs, opt->runsGiven ? opt->runs : (size_t)1, datasetsText,
                            track->rows ? "on" : "off", snapshotsText, track->inner ? "on" : "off"));
-    closeOutputFile(file, path);
-}
-
-/**
- * @brief Writes `<datasetDirectory>/dataset.txt` (data and ground-truth files, K, N, D; `report` reads K from it).
- *
- * Existing metadata must contain the expected K, N and D block; input paths and file contents are not compared.
- */
-void writeDatasetInfo(const char* datasetDirectory, const char* dataFile, const char* gtFile, size_t k, size_t n,
-                      size_t d)
-{
-    char path[PATH_MAX];
-    joinPath(path, sizeof(path), datasetDirectory, "dataset.txt");
-
-    char shape[128];
-    snprintf(shape, sizeof(shape), "k: %zu\nn: %zu\nd: %zu\n", k, n, d);
-
-    if (fileExists(path))
-    {
-        FILE* file;
-        if (FOPEN(file, path, "r") != 0)
-        {
-            handleFileError(path);
-        }
-        char existing[2 * PATH_MAX + 256];
-        const size_t length = fread(existing, 1, sizeof(existing) - 1, file);
-        existing[length] = '\0';
-        closeInputFile(file, path);
-        if (strstr(existing, shape) == NULL)
-        {
-            fprintf(
-                stderr,
-                "Error: %s describes another dataset or K (this call: k %zu, n %zu, d %zu); write to a new -o folder\n",
-                path, k, n, d);
-            exit(EXIT_FAILURE);
-        }
-        return;
-    }
-
-    FILE* file;
-    if (FOPEN(file, path, "w") != 0)
-    {
-        handleFileError(path);
-    }
-    checkFileWrite(
-        file, path,
-        fprintf(file, "data: %s\nground-truth: %s\n%s", dataFile, gtFile[0] != '\0' ? gtFile : "none", shape));
     closeOutputFile(file, path);
 }
