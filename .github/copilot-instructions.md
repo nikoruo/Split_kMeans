@@ -63,3 +63,6 @@
 - Never delete unused functions, macros, files or commented-out code without the user's confirmation, except temporary run outputs as described above. List them instead (see the Unused code review section in docs/refactor-plan.md).
 - Functions marked keep in that table are ported, not dropped, when their surroundings are refactored.
 - Do not create markdown documentation unless requested.
+
+## Learnings
+- Docker is unavailable in the user's environment. Do not run Docker commands, check its availability, or attempt to start it unless the user explicitly requests it.
