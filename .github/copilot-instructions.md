@@ -58,11 +58,13 @@
 - Ask for the user's explicit approval before running newly downloaded scripts or executables.
 - Ask for the user's explicit approval before deleting datasets or results, or rewriting Git history. Temporary run outputs created for the current task may be deleted without approval if neither the plan nor the user requires keeping them.
 - Never disclose secrets. Ask for the user's explicit approval before uploading files or logs to external services.
-- Make one plan step at a time, verify it, then stop.
-- From plan step 6.7 onward, commit each completed and verified plan step with a descriptive message; for other work, commit only when asked. Never push unless explicitly asked.
+- Follow the plan execution workflow below. For other work, commit only when asked; push only when explicitly requested or authorized by a request to work on multiple phases.
 - Never delete unused functions, macros, files or commented-out code without the user's confirmation, except temporary run outputs as described above. List them instead (see the Unused code review section in docs/refactor-plan.md).
 - Functions marked keep in that table are ported, not dropped, when their surroundings are refactored.
 - Do not create markdown documentation unless requested.
 
 ## Learnings
 - Docker is unavailable in the user's environment. Do not run Docker commands, check its availability, or attempt to start it unless the user explicitly requests it.
+- By default, implement and verify one plan step, commit it with a descriptive message, then stop without pushing unless the user asks to push.
+- If the user requests a full phase, complete it one verified step at a time and commit each step. Do not push unless the user asks.
+- If the user requests multiple phases, complete and commit each verified step. After each phase, including the final one, push its commits, review all changes in that phase, implement and verify applicable review fixes, then commit and push those fixes separately before proceeding or finishing. If there are no fixes, do not create an empty commit or push again. Stop and report if verification, review fixes or a required push is blocked; honor an explicit no-push instruction.
