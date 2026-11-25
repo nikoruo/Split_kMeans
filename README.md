@@ -148,7 +148,9 @@ $env:SKM_RUN = $run
 
 The report command accepts single-dataset output folders as well as batch output folders. For a batch subset, omit `-k` and the input files and use, for example, `--datasets s1,s4 --algo skm-local --seed 42 -r 10`. Batch mode still requires all three input directories to have matching file counts. The default timestamp uses local time; clock or conversion errors terminate the call.
 
-Each output root has a `run_config.txt` with build, machine, seed and parameter information plus a record of each call. Recorded arguments can contain local paths, so review them before sharing. If `run_config.txt` exists, reusing `-o` requires a matching configuration header; if it is missing, other existing files are not checked before a new one is written. For an existing dataset folder, only K, N and D are checked, not input paths or contents. Start with a new folder and ensure appended calls use the same inputs and distinct run numbers. Different repartition modes or bisecting selection modes cannot be mixed when the configuration headers are present.
+Each output root has a `run_config.txt` with build, machine, seed and parameter information plus a record of each call. Recorded arguments can contain local paths, so review them before sharing. Reusing `-o` requires a matching configuration header and, for each existing dataset, matching K, N, D and SHA-256 fingerprints of the raw data and ground-truth bytes. Identical bytes at different paths match; LF and CRLF files have different fingerprints, even when they parse identically. No ground-truth file is recorded as `none`, distinct from an empty file. Existing results without the required metadata or fingerprints cannot be appended to; use a new folder. Use distinct run numbers. Different repartition or bisecting selection modes cannot share a run folder.
+
+During experiment loading, the data file and any ground-truth file are each read once in binary mode into a snapshot, hashed and parsed from that same snapshot before timing begins. This temporarily needs additional memory for the raw file. K is recorded as a value, not as a hash of the K file. SHA-256 identifies the recorded bytes; it does not authenticate results or detect changes to the parser, so the build configuration still matters. Paths in `dataset.txt` escape backslashes, single quotes and control characters.
 
 Input-file read, result-file write, flush or close, and directory-enumeration failures exit nonzero. A failed call can leave incomplete output files; do not treat them as finished results.
 
@@ -170,7 +172,7 @@ The output root contains `run_config.txt` and one subfolder per dataset. Algorit
 
 | File in a dataset folder | Contents |
 |---|---|
-| `dataset.txt` | Input paths, K, number of points and dimensions. |
+| `dataset.txt` | Escaped input paths, raw-byte SHA-256 fingerprints (or `none` for absent ground truth), K, number of points and dimensions. |
 | `<Algo>_runs.csv` | `run;seed;sse;ci;ms`, one row per run. `seed` is the derived run seed; reproduce via the master seed and run number. |
 | `<Algo>_log.csv` | `run;count;sse;ci;ms`, buffered progress rows written after each run. |
 | `<Algo>_inner.csv` | With `--track-inner`: `run;count;stage;iteration;k;sse;ci;ms`. Stages include `split`, `try`, `global` and `final`. |
@@ -203,9 +205,10 @@ split_kmeans gt-from-partition <data.txt> <partition.txt> <out.txt>
 split_kmeans report [-o dir] [--names file] [--curve-run i] [--decimal-comma] [--no-time] <run-folder>...
 ```
 
-`report` merges finished folders into `summary.csv`, `table_ci.csv`, `table_success.csv`, `table_sse.csv`, `table_time.csv` and `curves_<dataset>.csv`. The default output is `<first run-folder>/report`; use a new `-o` folder to keep reports separate.
+`report` merges finished folders into `summary.csv`, `table_ci.csv`, `table_success.csv`, `table_sse.csv`, `table_time.csv` and `curves_<dataset>.csv`. `report_info.txt` records whether input identities were recorded. The default output is `<first run-folder>/report`; use a new `-o` folder to keep reports separate.
 
-- Configuration headers must match, and a run number may occur only once per dataset and algorithm. Dataset folders are matched by name; K is checked when available, but input contents and hashes are **not** compared. Ensure merged jobs use the same data and ground truth.
+- Configuration headers must match, and a run number may occur only once per dataset and algorithm. Dataset folders are matched by name; matching datasets must have the same K, N, D and data and ground-truth fingerprints. Every dataset in a multi-folder report must have fingerprints, even if it appears in only one folder.
+- A single historical run folder with valid `dataset.txt` files but no fingerprints can still be reported: a warning goes to stderr and `report_info.txt` says `input identity: not recorded`. Missing or malformed metadata is an error. This exception does not authenticate historical results or permit appending to them.
 - For each algorithm, either every run has `_log.csv` rows or none does. RS requires them. Use the same master seed and non-overlapping `--first-run`/`--runs` ranges to split a job.
 - `summary.csv` reports mean SSE, sample SSE deviation, mean CI, relative CI, success percentage, mean time and sample time deviation. Deviations are `NA` for one run.
 - RS tables and curves end at each run's **last SSE improvement**, determined afterwards from its last progress row; if there was no improvement, that is the count-0 initial row. `full_time_ms_mean` retains the time for the full run, including all performed swaps. This is a retrospective reporting rule, not an online stopping rule.

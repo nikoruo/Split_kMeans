@@ -7,6 +7,7 @@
 #include "report.h"
 #include "algorithms.h"
 #include "experiment.h"
+#include "input_identity.h"
 #include "metrics.h"
 #include "tracking.h"
 #include "util.h"
@@ -50,7 +51,9 @@ typedef struct
 {
     char name[256];                              /**< Folder name. */
     char display[256];                           /**< Name in the tables (--names). */
-    size_t k;                                    /**< From dataset.txt; 0 when unknown. */
+    size_t k;                                    /**< From dataset.txt. */
+    DatasetInfo identity;
+    char identitySource[PATH_MAX];
     ReportAlgorithm algorithms[ALGORITHM_COUNT]; /**< Indexed like algorithmOptions. */
 } ReportDataset;
 
@@ -283,30 +286,9 @@ static bool reportReadHeader(const char* directory, char* header, size_t size)
     return true;
 }
 
-/** @brief K from `<directory>/dataset.txt`, or 0 when the file or a valid K is missing. */
-static size_t reportReadK(const char* directory)
+static bool reportReadIdentity(const char* directory, DatasetInfo* info)
 {
-    char path[PATH_MAX];
-    joinPath(path, sizeof(path), directory, "dataset.txt");
-    FILE* file;
-    if (FOPEN(file, path, "r") != 0)
-    {
-        if (errno == ENOENT || errno == ENOTDIR) return 0;
-        handleFileError(path);
-    }
-    char line[PATH_MAX + 32];
-    size_t k = 0;
-    while (fgets(line, sizeof(line), file) != NULL)
-    {
-        uint64_t value = 0;
-        line[strcspn(line, "\r\n")] = '\0';
-        if (strncmp(line, "k: ", 3) == 0 && parseUint64(line + 3, &value))
-        {
-            k = (size_t)value;
-        }
-    }
-    closeInputFile(file, path);
-    return k;
+    return readDatasetInfo(directory, info);
 }
 
 /** @brief Means and sample standard deviations of SSE and time, mean CI and success rate of `rows`. */
@@ -863,7 +845,7 @@ static void reportFreeDatasets(ReportDataset* datasets, size_t count)
 
 /** @brief Reads run folders into `*datasets`; the caller owns the array and its row arrays. */
 static bool reportCollect(const char* const* directories, size_t directoryCount, ReportDataset** datasets,
-                          size_t* count)
+                          size_t* count, bool* identityMissing)
 {
     size_t datasetCount = 0;
     *count = 0;
@@ -881,6 +863,7 @@ static bool reportCollect(const char* const* directories, size_t directoryCount,
             {
                 ++d;
             }
+            bool identityRead = false;
             for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
             {
                 char path[PATH_MAX];
@@ -889,27 +872,60 @@ static bool reportCollect(const char* const* directories, size_t directoryCount,
                 {
                     continue;
                 }
-                if (!validateCsvName(names[n], "dataset name"))
+                if (!identityRead)
                 {
-                    freeStringList(names, nameCount);
-                    reportFreeDatasets(*datasets, datasetCount);
-                    *datasets = NULL;
-                    return false;
-                }
-                if (d == datasetCount)
-                {
-                    if (strlen(names[n]) >= sizeof((*datasets)[0].name))
+                    DatasetInfo identity;
+                    if (!validateCsvName(names[n], "dataset name") || !reportReadIdentity(folder, &identity))
                     {
-                        fprintf(stderr, "Error: dataset name too long: %s\n", names[n]);
-                        exit(EXIT_FAILURE);
+                        freeStringList(names, nameCount);
+                        reportFreeDatasets(*datasets, datasetCount);
+                        *datasets = NULL;
+                        return false;
                     }
-                    ReportDataset* grown = realloc(*datasets, (datasetCount + 1) * sizeof(ReportDataset));
-                    handleMemoryError(grown);
-                    *datasets = grown;
-                    memset(&grown[d], 0, sizeof(ReportDataset));
-                    STRCPY(grown[d].name, sizeof(grown[d].name), names[n]);
-                    STRCPY(grown[d].display, sizeof(grown[d].display), names[n]);
-                    ++datasetCount;
+                    if (!identity.hasFingerprints)
+                    {
+                        if (directoryCount != 1)
+                        {
+                            fprintf(stderr, "Error: %s has no input fingerprints; multi-folder reports require them\n",
+                                    folder);
+                            freeStringList(names, nameCount);
+                            reportFreeDatasets(*datasets, datasetCount);
+                            *datasets = NULL;
+                            return false;
+                        }
+                        if (!*identityMissing)
+                            fprintf(stderr,
+                                    "Warning: %s has no input fingerprints; historical identity is not recorded\n",
+                                    folder);
+                        *identityMissing = true;
+                    }
+                    if (d == datasetCount)
+                    {
+                        if (strlen(names[n]) >= sizeof((*datasets)[0].name))
+                        {
+                            fprintf(stderr, "Error: dataset name too long: %s\n", names[n]);
+                            exit(EXIT_FAILURE);
+                        }
+                        ReportDataset* grown = realloc(*datasets, (datasetCount + 1) * sizeof(ReportDataset));
+                        handleMemoryError(grown);
+                        *datasets = grown;
+                        memset(&grown[d], 0, sizeof(ReportDataset));
+                        STRCPY(grown[d].name, sizeof(grown[d].name), names[n]);
+                        STRCPY(grown[d].display, sizeof(grown[d].display), names[n]);
+                        grown[d].k = identity.k;
+                        grown[d].identity = identity;
+                        STRCPY(grown[d].identitySource, sizeof(grown[d].identitySource), folder);
+                        ++datasetCount;
+                    }
+                    else if (!compareDatasetInfo(&(*datasets)[d].identity, &identity,
+                                                 (*datasets)[d].identitySource, folder))
+                    {
+                        freeStringList(names, nameCount);
+                        reportFreeDatasets(*datasets, datasetCount);
+                        *datasets = NULL;
+                        return false;
+                    }
+                    identityRead = true;
                 }
                 ReportDataset* dataset = &(*datasets)[d];
                 if (!reportReadCsv(path, false, false, &dataset->algorithms[a].runs))
@@ -929,16 +945,6 @@ static bool reportCollect(const char* const* directories, size_t directoryCount,
                         *datasets = NULL;
                         return false;
                     }
-                }
-                const size_t k = reportReadK(folder);
-                if (dataset->k == 0)
-                {
-                    dataset->k = k;
-                }
-                else if (k != 0 && k != dataset->k)
-                {
-                    fprintf(stderr, "Error: %s has K = %zu, another run folder K = %zu\n", folder, k, dataset->k);
-                    exit(EXIT_FAILURE);
                 }
             }
         }
@@ -1171,9 +1177,19 @@ int commandReport(int argc, char* argv[])
         }
     }
 
+    bool identityMissing = false;
+    for (size_t f = 0; f < directoryCount; ++f)
+    {
+        if (!checkReportDatasets(directories[f], directoryCount == 1, &identityMissing))
+        {
+            reportFreeNames(names);
+            return EXIT_FAILURE;
+        }
+    }
+
     ReportDataset* datasets = NULL;
     size_t datasetCount = 0;
-    if (!reportCollect(directories, directoryCount, &datasets, &datasetCount))
+    if (!reportCollect(directories, directoryCount, &datasets, &datasetCount, &identityMissing))
     {
         reportFreeNames(names);
         return EXIT_FAILURE;
@@ -1277,6 +1293,12 @@ int commandReport(int argc, char* argv[])
     {
         reportWriteTable(outputDirectory, "table_time.csv", TABLE_TIME, datasets, order, datasetCount, summaries);
     }
+
+    char identityPath[PATH_MAX];
+    FILE* identityFile = reportOpen(outputDirectory, "report_info.txt", identityPath);
+    checkFileWrite(identityFile, identityPath,
+                   fprintf(identityFile, "input identity: %s\n", identityMissing ? "not recorded" : "recorded"));
+    closeOutputFile(identityFile, identityPath);
 
     printf("Report: %zu dataset%s from %zu folder%s -> %s\n", datasetCount, datasetCount == 1 ? "" : "s",
            directoryCount, directoryCount == 1 ? "" : "s", outputDirectory);

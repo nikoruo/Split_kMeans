@@ -7,6 +7,7 @@
 #include "baselines.h"
 #include "dataset.h"
 #include "experiment.h"
+#include "input_identity.h"
 #include "kmeans.h"
 #include "metrics.h"
 #include "rng.h"
@@ -143,6 +144,38 @@ static void testNumbers(void)
             exit(EXIT_FAILURE);
         }
     }
+}
+
+static void testSha256(void)
+{
+    const struct
+    {
+        const char* text;
+        const char* digest;
+    } vectors[] = {
+        {"", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+        {"abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"},
+        {"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
+         "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"}};
+    for (size_t i = 0; i < sizeof(vectors) / sizeof(vectors[0]); ++i)
+    {
+        Sha256 hash;
+        char digest[SHA256_HEX_SIZE];
+        sha256Init(&hash);
+        for (const char* p = vectors[i].text; *p != '\0'; ++p) sha256Update(&hash, p, 1);
+        sha256Final(&hash, digest);
+        require(strcmp(digest, vectors[i].digest) == 0, "SHA-256 FIPS vector mismatch");
+    }
+
+    char block[1000];
+    memset(block, 'a', sizeof(block));
+    Sha256 hash;
+    char digest[SHA256_HEX_SIZE];
+    sha256Init(&hash);
+    for (size_t i = 0; i < 1000; ++i) sha256Update(&hash, block, sizeof(block));
+    sha256Final(&hash, digest);
+    require(strcmp(digest, "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0") == 0,
+            "SHA-256 million-byte FIPS vector mismatch");
 }
 
 static void testFlatStorage(void)
@@ -2323,12 +2356,14 @@ static void testDatasetParser(const char* executable, const char* directory)
         closeFixture(file);
         expectReadFailure(executable, "--data", path, errorPath, "line 2, column 2");
         expectReadFailure(executable, "--centroids", path, errorPath, "line 2, column 2");
+        expectReadFailure(executable, "--snapshot-data", path, errorPath, "line 2, column 2");
     }
 
     file = writeFixture(path);
     require(fputs("1 2\n3\n", file) >= 0, "could not write fixture");
     closeFixture(file);
     expectReadFailure(executable, "--data", path, errorPath, "line 2 (expected 2, got 1)");
+    expectReadFailure(executable, "--snapshot-data", path, errorPath, "line 2 (expected 2, got 1)");
 
     file = writeFixture(path);
     for (size_t i = 0; i < LINE_BUFSZ - 2; ++i)
@@ -2340,6 +2375,11 @@ static void testDatasetParser(const char* executable, const char* directory)
     points = readDataset(path);
     require(points.size == 1 && datasetRow(&points, 0)[0] == 1.0, "maximum-length line rejected");
     freeDataset(&points);
+    InputSnapshot snapshot = readInputSnapshot(path);
+    points = readDatasetSnapshot(&snapshot, path);
+    require(points.size == 1 && datasetRow(&points, 0)[0] == 1.0, "snapshot rejected maximum-length line");
+    freeDataset(&points);
+    freeInputSnapshot(&snapshot);
 
     file = writeFixture(path);
     for (size_t i = 0; i < LINE_BUFSZ - 1; ++i)
@@ -2350,6 +2390,7 @@ static void testDatasetParser(const char* executable, const char* directory)
     closeFixture(file);
     expectReadFailure(executable, "--data", path, errorPath, "longer than 16383 characters");
     expectReadFailure(executable, "--centroids", path, errorPath, "longer than 16383 characters");
+    expectReadFailure(executable, "--snapshot-data", path, errorPath, "longer than 16383 characters");
 
     require(remove(path) == 0 && remove(errorPath) == 0, "could not remove test fixtures");
 }
@@ -2414,6 +2455,69 @@ static void writeBinaryFixture(const char* path, const char* text)
     }
     require(fputs(text, file) >= 0, "could not write binary fixture");
     closeFixture(file);
+}
+
+static void testInputSnapshots(const char* directory)
+{
+    char lfPath[PATH_MAX], crlfPath[PATH_MAX], binaryPath[PATH_MAX], metadataDir[PATH_MAX];
+    joinPath(lfPath, sizeof(lfPath), directory, "identity-lf.txt");
+    joinPath(crlfPath, sizeof(crlfPath), directory, "identity-crlf.txt");
+    joinPath(binaryPath, sizeof(binaryPath), directory, "identity-binary.txt");
+    writeBinaryFixture(lfPath, "0 1\n2 3\n");
+    writeBinaryFixture(crlfPath, "0 1\r\n2 3\r\n");
+
+    InputSnapshot lf = readInputSnapshot(lfPath);
+    InputSnapshot crlf = readInputSnapshot(crlfPath);
+    require(strcmp(lf.sha256, "95042aecd776dc472f0303e647ba8edb1c9659d7503247a8414a280d7c63516b") == 0 &&
+                strcmp(crlf.sha256, "1867fa07b08d4cf4752d613dbf57a823a3563a4207e5f450e8910a09eda7478b") == 0,
+            "snapshot fingerprints do not describe the original line-ending bytes");
+    Dataset first = readDatasetSnapshot(&lf, lfPath);
+    Dataset second = readDatasetSnapshot(&crlf, crlfPath);
+    Dataset live = readDataset(crlfPath);
+    require(first.size == 2 && first.dimensions == 2 && second.size == first.size &&
+                second.dimensions == first.dimensions && live.size == first.size &&
+                memcmp(first.coordinates, second.coordinates, 4 * sizeof(double)) == 0 &&
+                memcmp(first.coordinates, live.coordinates, 4 * sizeof(double)) == 0,
+            "LF and CRLF snapshots did not parse identically");
+    freeDataset(&first);
+    freeDataset(&second);
+    freeDataset(&live);
+
+    writeBinaryFixture(lfPath, "9 9\n10 10\n");
+    writeBinaryFixture(crlfPath, "11 11\n12 12\n");
+    first = readDatasetSnapshot(&lf, lfPath);
+    Centroids truth = readCentroidsSnapshot(&crlf, crlfPath);
+    require(datasetRow(&first, 0)[0] == 0.0 && datasetRow(&first, 1)[1] == 3.0 &&
+                centroidRow(&truth, 0)[0] == 0.0 && centroidRow(&truth, 1)[1] == 3.0,
+            "snapshot parsing used bytes changed after hashing");
+    freeDataset(&first);
+    freeCentroids(&truth);
+    freeInputSnapshot(&lf);
+    freeInputSnapshot(&crlf);
+
+    FILE* binary = fopen(binaryPath, "wb");
+    require(binary != NULL, "could not open binary hash fixture");
+    const unsigned char bytes[] = {0, 13, 10, 255};
+    require(fwrite(bytes, 1, sizeof(bytes), binary) == sizeof(bytes), "could not write binary hash fixture");
+    closeFixture(binary);
+    InputSnapshot raw = readInputSnapshot(binaryPath);
+    require(strcmp(raw.sha256, "d0585d080e1306012af277c93878dfdff7c00b3e8602893d8361bbcc6e8a791c") == 0,
+            "snapshot hash omitted or translated binary bytes");
+    freeInputSnapshot(&raw);
+
+    joinPath(metadataDir, sizeof(metadataDir), directory, "identity-path-metadata");
+    require(platform_make_directories(metadataDir), "could not create path metadata fixture");
+    DatasetInfo written, read;
+    makeDatasetInfo(&written, "parent;\"'\\line\r\nname\1", "gt;\"\\line\r\nname",
+                    "95042aecd776dc472f0303e647ba8edb1c9659d7503247a8414a280d7c63516b",
+                    "1867fa07b08d4cf4752d613dbf57a823a3563a4207e5f450e8910a09eda7478b", 1, 2, 2);
+    writeDatasetInfo(metadataDir, &written);
+    require(readDatasetInfo(metadataDir, &read) && strcmp(read.dataFile, written.dataFile) == 0 &&
+                strcmp(read.groundTruthFile, written.groundTruthFile) == 0 &&
+                strstr(read.dataFile, ";\"\\x27\\\\line\\r\\nname\\x01") != NULL,
+            "escaped input paths did not round-trip through metadata");
+    require(remove(lfPath) == 0 && remove(crlfPath) == 0 && remove(binaryPath) == 0,
+            "could not remove snapshot fixtures");
 }
 
 static void expectCsvFailure(const char* executable, const char* arguments, const char* out, const char* err,
@@ -2496,7 +2600,7 @@ static void testCsvNames(const char* directory, const char* executable, const ch
     joinPath(path, sizeof(path), parent, "a-good");
     require(platform_make_directories(path), "could not create valid legacy report fixture");
     joinPath(data, sizeof(data), path, "dataset.txt");
-    writeTextFixture(data, "k: 1\n");
+    writeTextFixture(data, "data: fixture\nground-truth: none\nk: 1\nn: 1\nd: 1\n");
     joinPath(data, sizeof(data), path, "KM_runs.csv");
     writeTextFixture(data, "run;seed;sse;ci;ms\n1;0;1;0;1\n");
     joinPath(path, sizeof(path), parent, "bad;dataset");
@@ -2504,7 +2608,7 @@ static void testCsvNames(const char* directory, const char* executable, const ch
     joinPath(data, sizeof(data), parent, "run_config.txt");
     writeTextFixture(data, "fixture: CSV names\ncalls:\n");
     joinPath(data, sizeof(data), path, "dataset.txt");
-    writeTextFixture(data, "k: 1\n");
+    writeTextFixture(data, "data: fixture\nground-truth: none\nk: 1\nn: 1\nd: 1\n");
     joinPath(data, sizeof(data), path, "KM_runs.csv");
     writeTextFixture(data, "run;seed;sse;ci;ms\n1;0;1;0;1\n");
     joinPath(output, sizeof(output), directory, "legacy-name-report");
@@ -2965,7 +3069,8 @@ static void testReportIoFailures(const char* directory, const char* executable, 
 
         require(platform_make_directories(i == 0 ? metadata : runs), "could not create unreadable file fixture");
         file = writeFixture(i == 0 ? runs : metadata);
-        require(fputs(i == 0 ? "run;seed;sse;ci;ms\n1;0;1;0;1\n" : "k: 1\n", file) >= 0,
+        require(fputs(i == 0 ? "run;seed;sse;ci;ms\n1;0;1;0;1\n"
+                             : "data: fixture\nground-truth: none\nk: 1\nn: 1\nd: 1\n", file) >= 0,
                 "could not write report I/O input");
         closeFixture(file);
         const int length = snprintf(arguments, sizeof(arguments), "report -o \"%s\" \"%s\"", output, input);
@@ -2995,7 +3100,8 @@ static void testReportSummary(const char* directory, const char* executable, con
         require(platform_make_directories(folder), "could not create report-stat dataset");
         joinPath(path, sizeof(path), folder, "dataset.txt");
         file = writeFixture(path);
-        require(fputs("k: 3\n", file) >= 0, "could not write report-stat dataset metadata");
+        require(fputs("data: fixture\nground-truth: none\nk: 3\nn: 3\nd: 1\n", file) >= 0,
+                "could not write report-stat dataset metadata");
         closeFixture(file);
         joinPath(path, sizeof(path), folder, "KM_runs.csv");
         file = writeFixture(path);
@@ -3553,7 +3659,7 @@ static void testRkmReportUnavailable(const char* directory, const char* executab
         joinPath(path, sizeof(path), input, "run_config.txt");
         writeTextFixture(path, "fixture: RKM unavailable SSE\ncalls:\n");
         joinPath(path, sizeof(path), folder, "dataset.txt");
-        writeTextFixture(path, "k: 2\n");
+        writeTextFixture(path, "data: fixture\nground-truth: none\nk: 2\nn: 2\nd: 1\n");
         int length = snprintf(name, sizeof(name), "%s_runs.csv", cases[i].algorithm);
         require(length >= 0 && (size_t)length < sizeof(name), "RKM report run name too long");
         joinPath(path, sizeof(path), folder, name);
@@ -4200,6 +4306,319 @@ static void checkRunNumbers(const char* output, const char* algorithm, size_t ru
     closeFixture(file);
 }
 
+static void runIdentityCase(const char* executable, const char* capture, const char* output, const char* data,
+                            const char* truth, size_t k, size_t run, bool success)
+{
+    char arguments[5 * PATH_MAX + 256];
+    const int length = snprintf(arguments, sizeof(arguments),
+                                "--algo km --seed 42 --no-track -r %zu --first-run %zu -o \"%s\" -k %zu \"%s\"%s%s%s",
+                                run, run, output, k, data, truth != NULL ? " \"" : "", truth != NULL ? truth : "",
+                                truth != NULL ? "\"" : "");
+    require(length >= 0 && (size_t)length < sizeof(arguments), "input identity run command too long");
+    expectCli(executable, arguments, capture, success);
+}
+
+static void reportIdentityCase(const char* executable, const char* capture, const char* output, const char* first,
+                               const char* second, bool success)
+{
+    char arguments[4 * PATH_MAX + 128];
+    const int length = snprintf(arguments, sizeof(arguments), "report --no-time -o \"%s\" \"%s\"%s%s%s",
+                                output, first, second != NULL ? " \"" : "", second != NULL ? second : "",
+                                second != NULL ? "\"" : "");
+    require(length >= 0 && (size_t)length < sizeof(arguments), "input identity report command too long");
+    expectCli(executable, arguments, capture, success);
+}
+
+static void testInputIdentityAppendAndMerge(const char* directory, const char* executable, const char* capture)
+{
+    const char* dataText = "0 0\n2 2\n8 8\n10 10\n";
+    const char* truthText = "1 1\n9 9\n";
+    char firstDir[PATH_MAX], secondDir[PATH_MAX], firstData[PATH_MAX], secondData[PATH_MAX];
+    char firstTruth[PATH_MAX], secondTruth[PATH_MAX], firstOutput[PATH_MAX], secondOutput[PATH_MAX];
+    char differentOutput[PATH_MAX], report[PATH_MAX], folder[PATH_MAX], path[PATH_MAX];
+    joinPath(firstDir, sizeof(firstDir), directory, "identity-a;source");
+    joinPath(secondDir, sizeof(secondDir), directory, "identity-b");
+    require(platform_make_directories(firstDir) && platform_make_directories(secondDir),
+            "could not create input identity sources");
+    joinPath(firstData, sizeof(firstData), firstDir, "s01_blobs2d.txt");
+    joinPath(secondData, sizeof(secondData), secondDir, "s01_blobs2d.txt");
+    joinPath(firstTruth, sizeof(firstTruth), firstDir, "truth.txt");
+    joinPath(secondTruth, sizeof(secondTruth), secondDir, "truth.txt");
+    writeBinaryFixture(firstData, dataText);
+    writeBinaryFixture(secondData, dataText);
+    writeBinaryFixture(firstTruth, truthText);
+    writeBinaryFixture(secondTruth, truthText);
+    joinPath(firstOutput, sizeof(firstOutput), directory, "identity-output-a");
+    joinPath(secondOutput, sizeof(secondOutput), directory, "identity-output-b");
+    joinPath(report, sizeof(report), directory, "identity-report");
+    runIdentityCase(executable, capture, firstOutput, firstData, firstTruth, 2, 1, true);
+    runIdentityCase(executable, capture, secondOutput, secondData, secondTruth, 2, 2, true);
+
+    joinPath(folder, sizeof(folder), firstOutput, "s01_blobs2d");
+    DatasetInfo original;
+    require(readDatasetInfo(folder, &original) && original.hasFingerprints && original.k == 2 && original.n == 4 &&
+                original.d == 2 && strstr(original.dataFile, "identity-a;source") != NULL,
+            "run did not record its input identity");
+    reportIdentityCase(executable, capture, report, firstOutput, secondOutput, true);
+    joinPath(path, sizeof(path), report, "summary.csv");
+    expectText(path, "s01_blobs2d;KM;2;");
+    joinPath(path, sizeof(path), report, "report_info.txt");
+    expectText(path, "input identity: recorded\n");
+
+    joinPath(folder, sizeof(folder), secondOutput, "orphan");
+    require(platform_make_directories(folder), "could not create orphan report fixture");
+    joinPath(path, sizeof(path), folder, "km_LOG.CSV");
+    writeTextFixture(path, "run;count;sse;ci;ms\n");
+    joinPath(report, sizeof(report), directory, "identity-orphan-report-rejected");
+    reportIdentityCase(executable, capture, report, secondOutput, NULL, false);
+    expectText(capture, "dataset.txt");
+    require(!fileExists(report), "report ignored result files without dataset metadata");
+
+    runIdentityCase(executable, capture, firstOutput, secondData, secondTruth, 2, 2, true);
+    checkRunNumbers(firstOutput, "KM", 2);
+    char configPath[PATH_MAX];
+    joinPath(configPath, sizeof(configPath), firstOutput, "run_config.txt");
+    InputSnapshot before = readInputSnapshot(configPath);
+
+    writeBinaryFixture(secondData, "0 0\n2 2\n8 8\n11 11\n");
+    InputSnapshot changedData = readInputSnapshot(secondData);
+    runIdentityCase(executable, capture, firstOutput, secondData, secondTruth, 2, 3, false);
+    expectText(capture, "Input identity mismatch");
+    expectText(capture, "identity-a;source");
+    expectText(capture, "identity-b");
+    expectText(capture, original.dataSha256);
+    expectText(capture, changedData.sha256);
+    joinPath(differentOutput, sizeof(differentOutput), directory, "identity-data-different");
+    runIdentityCase(executable, capture, differentOutput, secondData, secondTruth, 2, 3, true);
+    joinPath(report, sizeof(report), directory, "identity-data-rejected");
+    reportIdentityCase(executable, capture, report, firstOutput, differentOutput, false);
+    expectText(capture, original.dataSha256);
+    expectText(capture, changedData.sha256);
+    require(!fileExists(report), "mismatched data created a report");
+    freeInputSnapshot(&changedData);
+
+    writeBinaryFixture(secondData, dataText);
+    writeBinaryFixture(secondTruth, "1 1\n8 8\n");
+    InputSnapshot changedTruth = readInputSnapshot(secondTruth);
+    runIdentityCase(executable, capture, firstOutput, secondData, secondTruth, 2, 3, false);
+    expectText(capture, original.groundTruthSha256);
+    expectText(capture, changedTruth.sha256);
+    joinPath(differentOutput, sizeof(differentOutput), directory, "identity-truth-different");
+    runIdentityCase(executable, capture, differentOutput, secondData, secondTruth, 2, 3, true);
+    joinPath(report, sizeof(report), directory, "identity-truth-rejected");
+    reportIdentityCase(executable, capture, report, firstOutput, differentOutput, false);
+    expectText(capture, original.groundTruthSha256);
+    expectText(capture, changedTruth.sha256);
+    freeInputSnapshot(&changedTruth);
+
+    writeBinaryFixture(secondTruth, truthText);
+    runIdentityCase(executable, capture, firstOutput, secondData, secondTruth, 1, 3, false);
+    expectText(capture, "K: 2");
+    expectText(capture, "K: 1");
+    joinPath(differentOutput, sizeof(differentOutput), directory, "identity-k-different");
+    runIdentityCase(executable, capture, differentOutput, secondData, secondTruth, 1, 3, true);
+    joinPath(report, sizeof(report), directory, "identity-k-rejected");
+    reportIdentityCase(executable, capture, report, firstOutput, differentOutput, false);
+    expectText(capture, "K: 2");
+    expectText(capture, "K: 1");
+
+    runIdentityCase(executable, capture, firstOutput, secondData, NULL, 2, 3, false);
+    expectText(capture, "ground truth: 'none'; SHA-256: none");
+    joinPath(differentOutput, sizeof(differentOutput), directory, "identity-no-truth");
+    runIdentityCase(executable, capture, differentOutput, secondData, NULL, 2, 3, true);
+    joinPath(folder, sizeof(folder), differentOutput, "s01_blobs2d");
+    DatasetInfo noTruth;
+    require(readDatasetInfo(folder, &noTruth) && strcmp(noTruth.groundTruthSha256, "none") == 0,
+            "missing ground truth did not record none");
+    joinPath(report, sizeof(report), directory, "identity-truth-absence-rejected");
+    reportIdentityCase(executable, capture, report, firstOutput, differentOutput, false);
+    expectText(capture, "ground truth: 'none'; SHA-256: none");
+
+    writeBinaryFixture(secondTruth, "");
+    runIdentityCase(executable, capture, firstOutput, secondData, secondTruth, 2, 3, false);
+    expectText(capture, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    char emptyTruthOutput[PATH_MAX];
+    joinPath(emptyTruthOutput, sizeof(emptyTruthOutput), directory, "identity-empty-truth");
+    runIdentityCase(executable, capture, emptyTruthOutput, secondData, secondTruth, 2, 4, true);
+    joinPath(folder, sizeof(folder), emptyTruthOutput, "s01_blobs2d");
+    DatasetInfo emptyTruth;
+    require(readDatasetInfo(folder, &emptyTruth) &&
+                strcmp(emptyTruth.groundTruthSha256,
+                       "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855") == 0,
+            "empty ground truth was confused with an absent file");
+    joinPath(report, sizeof(report), directory, "identity-empty-truth-rejected");
+    reportIdentityCase(executable, capture, report, differentOutput, emptyTruthOutput, false);
+    expectText(capture, "ground truth: 'none'; SHA-256: none");
+    expectText(capture, emptyTruth.groundTruthSha256);
+
+    writeBinaryFixture(secondTruth, truthText);
+    char shapeOutput[PATH_MAX];
+    joinPath(shapeOutput, sizeof(shapeOutput), directory, "identity-shape");
+    runIdentityCase(executable, capture, shapeOutput, secondData, secondTruth, 2, 1, true);
+    joinPath(folder, sizeof(folder), shapeOutput, "s01_blobs2d");
+    DatasetInfo shape;
+    require(readDatasetInfo(folder, &shape), "could not read shape fixture metadata");
+    joinPath(path, sizeof(path), folder, "dataset.txt");
+    for (size_t i = 0; i < 2; ++i)
+    {
+        shape.n = i == 0 ? 5 : 4;
+        shape.d = i == 0 ? 2 : 3;
+        FILE* file = writeFixture(path);
+        require(fprintf(file, "data: %s\nground-truth: %s\nk: %zu\nn: %zu\nd: %zu\n"
+                              "data-sha256: %s\nground-truth-sha256: %s\n",
+                        shape.dataFile, shape.groundTruthFile, shape.k, shape.n, shape.d, shape.dataSha256,
+                        shape.groundTruthSha256) > 0, "could not write shape fixture metadata");
+        closeFixture(file);
+        runIdentityCase(executable, capture, shapeOutput, secondData, secondTruth, 2, 2, false);
+        expectText(capture, i == 0 ? "N: 5" : "D: 3");
+        expectText(capture, i == 0 ? "N: 4" : "D: 2");
+        joinPath(report, sizeof(report), directory,
+                 i == 0 ? "identity-n-rejected" : "identity-d-rejected");
+        reportIdentityCase(executable, capture, report, firstOutput, shapeOutput, false);
+        expectText(capture, i == 0 ? "N: 5" : "D: 3");
+        require(!fileExists(report), "report accepted inconsistent dataset shape");
+    }
+
+    writeBinaryFixture(secondData, "0 0\r\n2 2\r\n8 8\r\n10 10\r\n");
+    runIdentityCase(executable, capture, firstOutput, secondData, secondTruth, 2, 3, false);
+    expectText(capture, "Input identity mismatch");
+    InputSnapshot after = readInputSnapshot(configPath);
+    require(strcmp(before.sha256, after.sha256) == 0, "rejected append modified run_config.txt");
+    freeInputSnapshot(&before);
+    freeInputSnapshot(&after);
+    checkRunNumbers(firstOutput, "KM", 2);
+}
+
+static void makeLegacyReportFixture(const char* root, const char* datasetName, const char* metadata)
+{
+    char folder[PATH_MAX], path[PATH_MAX];
+    joinPath(folder, sizeof(folder), root, datasetName);
+    require(platform_make_directories(folder), "could not create legacy report fixture");
+    joinPath(path, sizeof(path), root, "run_config.txt");
+    writeTextFixture(path, "fixture: input identity\ncalls:\n");
+    if (metadata != NULL)
+    {
+        joinPath(path, sizeof(path), folder, "dataset.txt");
+        writeTextFixture(path, metadata);
+    }
+    joinPath(path, sizeof(path), folder, "KM_runs.csv");
+    writeTextFixture(path, "run;seed;sse;ci;ms\n1;0;1;0;1\n");
+}
+
+static void testInputIdentityLegacy(const char* directory, const char* executable, const char* capture)
+{
+    const char* metadata = "data: historical.txt\nground-truth: none\nk: 2\nn: 4\nd: 2\n";
+    char legacy[PATH_MAX], other[PATH_MAX], missing[PATH_MAX], malformed[PATH_MAX], report[PATH_MAX];
+    char data[PATH_MAX], truth[PATH_MAX], path[PATH_MAX], folder[PATH_MAX], errors[PATH_MAX];
+    char command[7 * PATH_MAX + 256];
+    joinPath(legacy, sizeof(legacy), directory, "identity-legacy");
+    joinPath(other, sizeof(other), directory, "identity-legacy-other");
+    joinPath(missing, sizeof(missing), directory, "identity-missing-metadata");
+    joinPath(malformed, sizeof(malformed), directory, "identity-malformed-metadata");
+    joinPath(report, sizeof(report), directory, "identity-legacy-report");
+    joinPath(errors, sizeof(errors), directory, "identity-legacy-stderr.txt");
+    makeLegacyReportFixture(legacy, "s01_blobs2d", metadata);
+    makeLegacyReportFixture(other, "another", metadata);
+    makeLegacyReportFixture(missing, "s01_blobs2d", NULL);
+    makeLegacyReportFixture(malformed, "s01_blobs2d", "k: 2\n");
+
+    const int length = snprintf(command, sizeof(command),
+                                "cd . && \"%s\" report --no-time -o \"%s\" \"%s\" > \"%s\" 2> \"%s\"",
+                                executable, report, legacy, capture, errors);
+    require(length >= 0 && (size_t)length < sizeof(command), "legacy report command too long");
+    require(system(command) == 0, "single legacy report failed");
+    expectText(errors, "Warning:");
+    expectText(errors, "historical identity is not recorded");
+    joinPath(path, sizeof(path), report, "report_info.txt");
+    expectText(path, "input identity: not recorded\n");
+
+    char modern[PATH_MAX];
+    joinPath(modern, sizeof(modern), directory, "identity-output-a");
+    reportIdentityCase(executable, capture, report, modern, NULL, true);
+    FILE* info = readFixture(path);
+    char marker[128];
+    require(fgets(marker, sizeof(marker), info) != NULL && strcmp(marker, "input identity: recorded\n") == 0 &&
+                fgets(marker, sizeof(marker), info) == NULL, "a verified report retained a stale legacy marker");
+    closeFixture(info);
+
+    joinPath(report, sizeof(report), directory, "identity-legacy-merge-rejected");
+    reportIdentityCase(executable, capture, report, legacy, other, false);
+    expectText(capture, "multi-folder reports require");
+    require(!fileExists(report), "legacy multi-folder report was created");
+    joinPath(report, sizeof(report), directory, "identity-missing-report-rejected");
+    reportIdentityCase(executable, capture, report, missing, NULL, false);
+    expectText(capture, "dataset.txt");
+    require(!fileExists(report), "report accepted missing dataset metadata");
+    joinPath(report, sizeof(report), directory, "identity-malformed-report-rejected");
+    reportIdentityCase(executable, capture, report, malformed, NULL, false);
+    expectText(capture, "Invalid dataset metadata");
+    require(!fileExists(report), "report accepted malformed dataset metadata");
+
+    joinPath(folder, sizeof(folder), malformed, "s01_blobs2d");
+    joinPath(path, sizeof(path), folder, "dataset.txt");
+    writeTextFixture(path, "data: sample\nground-truth: none\nk: 2\nn: 4\nd: 2\n"
+                           "data-sha256: 95042aecd776dc472f0303e647ba8edb1c9659d7503247a8414a280d7c63516b\n");
+    reportIdentityCase(executable, capture, report, malformed, NULL, false);
+    expectText(capture, "Invalid dataset metadata");
+
+    FILE* binary = fopen(path, "wb");
+    require(binary != NULL, "could not create malformed metadata fixture");
+    const char withNul[] = "data: sample\0hidden\nground-truth: none\nk: 2\nn: 4\nd: 2\n";
+    require(fwrite(withNul, 1, sizeof(withNul) - 1, binary) == sizeof(withNul) - 1,
+            "could not write malformed metadata fixture");
+    closeFixture(binary);
+    reportIdentityCase(executable, capture, report, malformed, NULL, false);
+    expectText(capture, "Invalid dataset metadata");
+
+    writeBinaryFixture(path, "data: unescaped\tpath\nground-truth: none\nk: 2\nn: 4\nd: 2\n"
+                             "data-sha256: 95042aecd776dc472f0303e647ba8edb1c9659d7503247a8414a280d7c63516b\n"
+                             "ground-truth-sha256: none\n");
+    reportIdentityCase(executable, capture, report, malformed, NULL, false);
+    expectText(capture, "Invalid dataset metadata");
+
+    char firstDir[PATH_MAX];
+    joinPath(firstDir, sizeof(firstDir), directory, "identity-a;source");
+    joinPath(data, sizeof(data), firstDir, "s01_blobs2d.txt");
+    joinPath(truth, sizeof(truth), firstDir, "truth.txt");
+    runIdentityCase(executable, capture, legacy, data, truth, 2, 2, false);
+    expectText(capture, "no input fingerprints");
+
+    runIdentityCase(executable, capture, missing, data, truth, 2, 2, false);
+    expectText(capture, "dataset.txt");
+    runIdentityCase(executable, capture, malformed, data, truth, 2, 2, false);
+    expectText(capture, "Invalid dataset metadata");
+
+    char noConfig[PATH_MAX];
+    joinPath(noConfig, sizeof(noConfig), directory, "identity-missing-config");
+    joinPath(folder, sizeof(folder), noConfig, "s01_blobs2d");
+    require(platform_make_directories(folder), "could not create missing-config fixture");
+    joinPath(path, sizeof(path), folder, "KM_run001_iter0001_step_centroids.txt");
+    writeTextFixture(path, "0 0\n");
+    runIdentityCase(executable, capture, noConfig, data, truth, 2, 2, false);
+    expectText(capture, "run_config.txt");
+    joinPath(path, sizeof(path), noConfig, "run_config.txt");
+    require(!fileExists(path), "missing run configuration was silently created");
+
+    joinPath(noConfig, sizeof(noConfig), directory, "identity-uppercase-results");
+    joinPath(folder, sizeof(folder), noConfig, "s01_blobs2d");
+    require(platform_make_directories(folder), "could not create uppercase-result fixture");
+    joinPath(path, sizeof(path), folder, "S01_BLOBS2D.CSV");
+    writeTextFixture(path, "existing results\n");
+    runIdentityCase(executable, capture, noConfig, data, truth, 2, 2, false);
+    expectText(capture, "run_config.txt");
+    joinPath(path, sizeof(path), noConfig, "run_config.txt");
+    require(!fileExists(path), "uppercase result file was ignored during output preflight");
+
+    joinPath(noConfig, sizeof(noConfig), directory, "identity-report-files-no-config");
+    require(platform_make_directories(noConfig), "could not create report-result fixture");
+    joinPath(path, sizeof(path), noConfig, "summary.csv");
+    writeTextFixture(path, "existing report\n");
+    runIdentityCase(executable, capture, noConfig, data, truth, 2, 2, false);
+    expectText(capture, "run_config.txt");
+    joinPath(path, sizeof(path), noConfig, "run_config.txt");
+    require(!fileExists(path), "a report-only folder was silently converted to a run folder");
+}
+
 /* Number of KM iterations of run 1; the log must hold only run 1 with consecutive iterations. */
 static size_t kmIterations(const char* output)
 {
@@ -4456,6 +4875,8 @@ static void testCliIterationLimit(const char* directory, const char* executable,
 
     testReportSummary(root, executable, capture);
     testReportIoFailures(root, executable, capture);
+    testInputIdentityAppendAndMerge(root, executable, capture);
+    testInputIdentityLegacy(root, executable, capture);
     testOutputPathFailures(root, executable, data, batch, capture);
     testCsvNames(root, executable, batch, capture);
     testCsvBatchNames(root, executable);
@@ -4805,6 +5226,14 @@ int main(int argc, char* argv[])
         freeDataset(&points);
         return EXIT_SUCCESS;
     }
+    if (argc == 3 && strcmp(argv[1], "--snapshot-data") == 0)
+    {
+        InputSnapshot snapshot = readInputSnapshot(argv[2]);
+        Dataset points = readDatasetSnapshot(&snapshot, argv[2]);
+        freeDataset(&points);
+        freeInputSnapshot(&snapshot);
+        return EXIT_SUCCESS;
+    }
     if (argc == 3 && strcmp(argv[1], "--centroids") == 0)
     {
         Centroids centroids = readCentroids(argv[2]);
@@ -4834,7 +5263,9 @@ int main(int argc, char* argv[])
     require(argc == 2 || argc == 6,
             "expected a fixture directory and optional CLI executable, dataset, ground truth and batch output");
     testNumbers();
+    testSha256();
     testDatasetParser(argv[0], argv[1]);
+    testInputSnapshots(argv[1]);
     testFileIoFailures(argv[0], argv[1]);
     testPathsAndTime(argv[1]);
     testInvalidInternalInputs(argv[0], argv[1]);

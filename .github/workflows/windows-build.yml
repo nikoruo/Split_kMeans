@@ -91,8 +91,8 @@ jobs:
           # Keep this list aligned with UNIT_OBJECTS in the Makefile.
           $sources = @(
             'tests\test_unit.c',
-            'src\algorithms.c', 'src\baselines.c', 'src\dataset.c', 'src\experiment.c',
-            'src\kmeans.c', 'src\metrics.c', 'src\platform.c', 'src\rng.c',
+            'src\algorithms.c', 'src\baselines.c', 'src\dataset.c', 'src\experiment.c', 'src\input_identity.c',
+            'src\kmeans.c', 'src\metrics.c', 'src\platform.c', 'src\rng.c', 'src\sha256.c',
             'src\split.c', 'src\tracking.c', 'src\util.c'
           ) -join ' '
           $testExe = Join-Path $unitDir 'test_unit.exe'

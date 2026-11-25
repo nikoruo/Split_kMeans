@@ -38,6 +38,7 @@
 - 8.2g: `gt-from-partition` sends empty-data errors and missing-label warnings to stderr. Informational stdout and generated centroids are unchanged; goldens are unchanged.
 - 8.2h: selected dataset names and report dataset/display names reject semicolons, double quotes, CR and LF before runs or report output. Commas remain valid. `--names` is read once in binary mode to preserve CRLF handling and non-seekable input; goldens are unchanged.
 - 8.2i (D15): RKM skips non-finite repeats with one post-timing warning per affected run, accepts a finite `DBL_MAX` winner, and fails without a result or orphan progress rows if no repeat is finite. Progress and report curves use `NA` before the first finite repeat. Goldens are unchanged.
+- 8.2j (D16): record raw-byte SHA-256 fingerprints from the same input snapshots used for parsing. Appends and multi-folder reports require matching input identities and K; missing or malformed metadata is rejected. A single valid historical folder without fingerprints remains reportable with a warning and an unrecorded-identity marker. Goldens are unchanged.
 
 ## v1.0.0 - 26-10-2025
 

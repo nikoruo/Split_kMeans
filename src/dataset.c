@@ -130,6 +130,141 @@ Centroids allocateCentroids(size_t size, size_t dimensions)
     return centroids;
 }
 
+InputSnapshot readInputSnapshot(const char* filename)
+{
+    FILE* file;
+    if (FOPEN(file, filename, "rb") != 0) handleFileError(filename);
+
+    InputSnapshot snapshot = {0};
+    Sha256 hash;
+    sha256Init(&hash);
+    size_t capacity = 0;
+    unsigned char buffer[16384];
+    size_t count;
+    while ((count = fread(buffer, 1, sizeof(buffer), file)) != 0)
+    {
+        if (count > SIZE_MAX - snapshot.length)
+        {
+            fprintf(stderr, "Error: Input file '%s' exceeds addressable memory\n", filename);
+            closeInputFile(file, filename);
+            free(snapshot.bytes);
+            exit(EXIT_FAILURE);
+        }
+        const size_t needed = snapshot.length + count;
+        if (needed > capacity)
+        {
+            size_t grown = capacity != 0 ? capacity : sizeof(buffer);
+            while (grown < needed)
+            {
+                if (grown > SIZE_MAX / 2)
+                {
+                    grown = needed;
+                    break;
+                }
+                grown *= 2;
+            }
+            unsigned char* resized = realloc(snapshot.bytes, grown);
+            handleMemoryError(resized);
+            snapshot.bytes = resized;
+            capacity = grown;
+        }
+        memcpy(snapshot.bytes + snapshot.length, buffer, count);
+        snapshot.length = needed;
+        sha256Update(&hash, buffer, count);
+    }
+    closeInputFile(file, filename);
+    sha256Final(&hash, snapshot.sha256);
+    return snapshot;
+}
+
+void freeInputSnapshot(InputSnapshot* snapshot)
+{
+    if (snapshot == NULL) return;
+    free(snapshot->bytes);
+    *snapshot = (InputSnapshot){0};
+}
+
+typedef struct
+{
+    FILE* file;
+    const InputSnapshot* snapshot;
+    size_t position;
+    bool translate;
+} DatasetReader;
+
+static int snapshotCharacter(DatasetReader* reader)
+{
+    if (reader->position == reader->snapshot->length) return EOF;
+    unsigned char value = reader->snapshot->bytes[reader->position++];
+    if (reader->translate)
+    {
+        if (value == 0x1a)
+        {
+            reader->position = reader->snapshot->length;
+            return EOF;
+        }
+        if (value == '\r' && reader->position < reader->snapshot->length &&
+            reader->snapshot->bytes[reader->position] == '\n')
+        {
+            ++reader->position;
+            value = '\n';
+        }
+    }
+    return value;
+}
+
+static char* readDatasetLine(char* buffer, size_t size, DatasetReader* reader, const char* filename,
+                             size_t lineNumber)
+{
+    if (reader->file != NULL) return readDataLine(buffer, size, reader->file, filename, lineNumber);
+
+    size_t used = 0;
+    bool atEnd = false;
+    while (used < size - 1)
+    {
+        const int value = snapshotCharacter(reader);
+        if (value == EOF)
+        {
+            atEnd = true;
+            break;
+        }
+        buffer[used++] = (char)value;
+        if (value == '\n') break;
+    }
+    if (used == 0) return NULL;
+    buffer[used] = '\0';
+    if (strchr(buffer, '\n') == NULL && !atEnd)
+    {
+        const int next = snapshotCharacter(reader);
+        if (next != '\n' && next != EOF)
+        {
+            fprintf(stderr, "Error: Line %zu in '%s' is longer than %zu characters\n", lineNumber, filename, size - 1);
+            exit(EXIT_FAILURE);
+        }
+    }
+    return buffer;
+}
+
+static void closeDatasetReader(DatasetReader* reader, const char* filename)
+{
+    if (reader->file != NULL) closeInputFile(reader->file, filename);
+}
+
+static void rewindDatasetReader(DatasetReader* reader, const char* filename)
+{
+    if (reader->file == NULL)
+    {
+        reader->position = 0;
+        return;
+    }
+    if (fseek(reader->file, 0, SEEK_SET) != 0)
+    {
+        fprintf(stderr, "Error: Unable to seek file '%s'\n", filename);
+        closeDatasetReader(reader, filename);
+        exit(EXIT_FAILURE);
+    }
+}
+
 /**
  * @brief Load space/tab-separated double vectors, enforcing a consistent dimensionality per row.
  *
@@ -143,21 +278,15 @@ Centroids allocateCentroids(size_t size, size_t dimensions)
  *         values that are not finite numbers, and lines longer than LINE_BUFSZ - 1 characters.
  * @note Parsing uses strtod and the current locale (the program never changes it, so dot decimals).
  */
-Dataset readDataset(const char* filename)
+static Dataset readDatasetFromReader(DatasetReader* reader, const char* filename)
 {
-    FILE* file;
-    if (FOPEN(file, filename, "r") != 0)
-    {
-        handleFileError(filename);
-    }
-
     // First pass: count data rows and establish expected dimensionality
     size_t lineCount = 0;
     size_t expectedDims = SIZE_MAX;
     size_t lineNumber = 0;
     char countBuffer[LINE_BUFSZ];
 
-    while (readDataLine(countBuffer, sizeof(countBuffer), file, filename, ++lineNumber) != NULL)
+    while (readDatasetLine(countBuffer, sizeof(countBuffer), reader, filename, ++lineNumber) != NULL)
     {
         // Determine if the line contains any non-whitespace characters
         bool hasTokenChar = false;
@@ -197,7 +326,7 @@ Dataset readDataset(const char* filename)
         }
         else if (tokenCount != expectedDims)
         {
-            closeInputFile(file, filename);
+            closeDatasetReader(reader, filename);
             fprintf(stderr, "Error: Inconsistent column count in '%s' line %zu (expected %zu, got %zu)\n", filename,
                     lineNumber, expectedDims, tokenCount);
             exit(EXIT_FAILURE);
@@ -209,18 +338,13 @@ Dataset readDataset(const char* filename)
     // No data rows -> return empty container
     if (lineCount == 0)
     {
-        closeInputFile(file, filename);
+        closeDatasetReader(reader, filename);
         Dataset empty = {0};
         return empty;
     }
 
     // Second pass: parse into the flat dataset
-    if (fseek(file, 0, SEEK_SET) != 0)
-    {
-        fprintf(stderr, "Error: Unable to seek file '%s'\n", filename);
-        closeInputFile(file, filename);
-        exit(EXIT_FAILURE);
-    }
+    rewindDatasetReader(reader, filename);
 
     Dataset dataPoints = allocateDataset(lineCount, expectedDims);
 
@@ -228,7 +352,7 @@ Dataset readDataset(const char* filename)
     size_t currentPoint = 0;
     lineNumber = 0;
 
-    while (currentPoint < lineCount && readDataLine(line, sizeof(line), file, filename, ++lineNumber) != NULL)
+    while (currentPoint < lineCount && readDatasetLine(line, sizeof(line), reader, filename, ++lineNumber) != NULL)
     {
         // Skip whitespace-only lines
         bool hasTokenChar = false;
@@ -262,7 +386,7 @@ Dataset readDataset(const char* filename)
         }
         if (expectedDims != SIZE_MAX && tokenCount != expectedDims)
         {
-            closeInputFile(file, filename);
+            closeDatasetReader(reader, filename);
             freeDataset(&dataPoints);
             fprintf(stderr, "Error: Inconsistent column count in '%s' line %zu (expected %zu, got %zu)\n", filename,
                     lineNumber, expectedDims, tokenCount);
@@ -277,7 +401,7 @@ Dataset readDataset(const char* filename)
         {
             if (!parseFiniteDouble(token, &datasetRow(&dataPoints, currentPoint)[dim]))
             {
-                closeInputFile(file, filename);
+                closeDatasetReader(reader, filename);
                 fprintf(stderr, "Error: '%s' in '%s' line %zu, column %zu is not a finite number\n", token, filename,
                         lineNumber, dim + 1);
                 freeDataset(&dataPoints);
@@ -290,7 +414,7 @@ Dataset readDataset(const char* filename)
         // Final sanity check
         if (dim != expectedDims)
         {
-            closeInputFile(file, filename);
+            closeDatasetReader(reader, filename);
             freeDataset(&dataPoints);
             fprintf(stderr, "Error: Row truncated in '%s' (expected %zu values, got %zu)\n", filename, expectedDims,
                     dim);
@@ -300,7 +424,7 @@ Dataset readDataset(const char* filename)
         ++currentPoint;
     }
 
-    closeInputFile(file, filename);
+    closeDatasetReader(reader, filename);
 
     if (currentPoint != lineCount)
     {
@@ -310,6 +434,20 @@ Dataset readDataset(const char* filename)
     }
 
     return dataPoints;
+}
+
+Dataset readDataset(const char* filename)
+{
+    FILE* file;
+    if (FOPEN(file, filename, "r") != 0) handleFileError(filename);
+    DatasetReader reader = {file, NULL, 0, false};
+    return readDatasetFromReader(&reader, filename);
+}
+
+Dataset readDatasetSnapshot(const InputSnapshot* snapshot, const char* filename)
+{
+    DatasetReader reader = {NULL, snapshot, 0, platform_text_input_translates()};
+    return readDatasetFromReader(&reader, filename);
 }
 
 /**
@@ -325,9 +463,8 @@ Dataset readDataset(const char* filename)
  *         finite numbers, overlong lines). Prints the size at log level 2 and every centroid at level 3.
  * @note Skips whitespace-only lines; parsing uses the current C locale for `strtod`.
  */
-Centroids readCentroids(const char* filename)
+static Centroids centroidsFromDataset(Dataset points, const char* filename)
 {
-    Dataset points = readDataset(filename);
     Centroids centroids = {points.coordinates, points.size, points.size, points.dimensions};
     free(points.partitions);
 
@@ -351,6 +488,16 @@ Centroids readCentroids(const char* filename)
     }
 
     return centroids;
+}
+
+Centroids readCentroids(const char* filename)
+{
+    return centroidsFromDataset(readDataset(filename), filename);
+}
+
+Centroids readCentroidsSnapshot(const InputSnapshot* snapshot, const char* filename)
+{
+    return centroidsFromDataset(readDatasetSnapshot(snapshot, filename), filename);
 }
 
 static void pushBackKChar(FILE* file, int ch, const char* path)

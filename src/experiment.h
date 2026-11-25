@@ -34,11 +34,9 @@ typedef struct
 void createUniqueDirectory(char* outputDirectory, size_t size);
 /* Existing paths must be directories. */
 void createDatasetDirectory(const char* baseDirectory, const char* datasetName, char* datasetDirectory, size_t size);
-/* Only an existing configuration header is checked; dataset metadata checks K/N/D, not input identity. */
+void checkRunConfig(const char* outputDirectory, const Options* opt);
 void writeRunConfig(const char* outputDirectory, const Options* opt, const TrackOptions* track,
                     const char* snapshotsText, const char* datasetsText, bool cliMode, int argc, char* argv[]);
-void writeDatasetInfo(const char* datasetDirectory, const char* dataFile, const char* gtFile, size_t k, size_t n,
-                      size_t d);
 void textLine(const char* text, size_t index, char* line, size_t size);
 
 /* Wrappers use the zero-based range [firstRun, loopCount), with firstRun < loopCount and scaling > 0.

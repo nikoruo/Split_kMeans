@@ -202,12 +202,18 @@ static inline struct tm* _mingw_localtime_r(const time_t* timep, struct tm* resu
  */
 size_t list_files(const char* dir, char*** out);
 
+/* Lists all non-directory files, with the same ownership and ordering as list_files. */
+size_t list_all_files(const char* dir, char*** out);
+
 /**
  * @brief Lists the subfolders of `dir` (without `.` and `..`), sorted like list_files.
  *
  * Returns the count with the same ownership, ordering and error handling as list_files.
  */
 size_t list_dirs(const char* dir, char*** out);
+
+/* Whether native text input translates CRLF and treats Ctrl-Z as end-of-file. */
+bool platform_text_input_translates(void);
 
 /* Returns the final path component as a pointer into path. */
 const char* platform_basename(const char* path);
