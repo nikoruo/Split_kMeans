@@ -15,8 +15,8 @@ Rules for every mode:
 - `-r N` also applies to RKM and RS; without it they run once. Run them in a separate call without `-r` unless the user asks for more runs.
 - Start each experiment/configuration in a new folder outside OneDrive, given with `-o`. Compatible calls may append to that folder for different datasets, algorithms or non-overlapping run ranges; never repeat a run for the same dataset and algorithm. Run folders stay local.
 - Review `run_config.txt` before sharing or tracking it: recorded arguments can contain local paths. Preserve the seed, configuration, commands and build provenance when replacing sensitive paths with documented placeholders.
-- Timings: nothing else running, laptop plugged in. If a time looks off, repeat in alternating rounds and compare per-run minimums; background load (for example right after a build) can slow runs 2 to 5 times.
-- Datasets come from the root `data/`, `gt/` and `centroids/` folders (paired by sorted position; K from the `centroids/` file) unless the user names files.
+- Timings: only on the reference machine (plan D3: your personal desktop from step 8.3), nothing else running, plugged in. If a time looks off, repeat in alternating rounds and compare per-run minimums; background load (for example right after a build) can slow runs 2 to 5 times.
+- Datasets come from the root `data/`, `gt/` and `centroids/` folders (paired by sorted position; K from the `centroids/` file) unless the user names files. On a new machine or a fresh copy, check them first with `sha256sum -c tests/realdata-sha256.txt` from the repo root.
 
 Milestone mode (M0 to M4; plan section "Milestones"):
 - Seed 20261119 for every milestone. M1 to M3b are exact comparisons: keep the seed, datasets, algorithms and run counts identical within each reference comparison.
