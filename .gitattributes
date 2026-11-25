@@ -7,6 +7,8 @@
 *.ps1 text eol=crlf
 
 *.sh text eol=lf
+# Checked with `sha256sum -c`, which needs LF line endings
+tests/realdata-sha256.txt text eol=lf
 
 *.png binary
 *.jpg binary
