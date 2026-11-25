@@ -47,7 +47,8 @@ void textLine(const char* text, size_t index, char* line, size_t size);
 void runKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations,
                         size_t firstRun, size_t loopCount, size_t scaling, const char* fileName,
                         const char* outputDirectory, const TrackOptions* track, InitMethod init, uint64_t seed);
-void runRepeatedKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
+/* Returns false if a run has no finite repeat; earlier runs remain on disk and current labels are not a result. */
+bool runRepeatedKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
                                 size_t maxIterations, size_t maxRepeats, size_t firstRun, size_t loopCount,
                                 size_t scaling, const char* fileName, const char* outputDirectory,
                                 const TrackOptions* track, InitMethod init, uint64_t seed);

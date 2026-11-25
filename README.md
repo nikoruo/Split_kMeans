@@ -9,7 +9,7 @@ Split_kMeans is a C11 program for reproducible clustering experiments. It compar
 | `--algo` name | Algorithm |
 |---|---|
 | `km` | K-means from random or k-means++ initial centroids. |
-| `rkm` | Repeated k-means; keep the repeat with the lowest SSE. |
+| `rkm` | Repeated k-means; keep the repeat with the lowest finite SSE. |
 | `rs` | Random Swap; accept a swap only if SSE improves, after local repartition and up to two k-means iterations. |
 | `skm-random` | Random Split: repeatedly split a randomly selected eligible cluster, then refine globally. |
 | `skm-intra` | Select a cluster by its tentative SSE decrease and apply its evaluated local split; refine globally at the end. |
@@ -24,7 +24,8 @@ SSE is the sum of squared distances to the **assigned** centroids. CI is the lar
 
 Each k-means call returns the SSE and solution of its **last** iteration, including a non-improving final iteration. Floating-point rounding can make that SSE higher than an earlier one, and labels need not be nearest to the newly updated centroids. For a finite selected solution, reported SSE, labels, centroids, CI and final snapshots describe the same returned state. RKM selects the best repeat, and bisecting selects the best try.
 
-An exceptional RKM fallback remains: if no repeat produces an SSE below `DBL_MAX`, it reports `DBL_MAX` and reassigns labels to zero-initialized centroids rather than returning a scored winning repeat. Do not treat this fallback as a valid solution.
+RKM accepts finite SSEs including `DBL_MAX`. It skips repeats with non-finite SSE and warns once per affected run after the stopwatch stops; skipped repeats reduce the effective repeat count. If no repeat is finite, the call exits with an error without writing a result, progress rows or snapshots for that run; earlier completed runs remain.
+Older run folders may contain the former `DBL_MAX` fallback, which cannot be distinguished from a valid `DBL_MAX` winner by score alone; regenerate or separately verify those results.
 
 ## Build and test
 
@@ -85,7 +86,7 @@ Options apply to batch and single-dataset mode unless noted. Each option can be 
 | `-k <K>` | Required in single mode | Cluster count for the supplied data file. Batch mode reads K files. |
 | `--max-iterations <N>` | Until SSE stops strictly improving | Positive per-call k-means cap for diagnostics, not a wall-clock timeout. Capped runs may not converge. RS retains its separate two-iteration limit. |
 | `--max-swaps <N>` | 5000 | Maximum Random Swap trials per run; if K equals the distinct-point count, there are no swaps. |
-| `--repeats <N>` | 1000 | RKM repeats per run. |
+| `--repeats <N>` | 1000 | RKM repeat attempts per run. |
 | `--bisect-tries <N>` | 5 | Local tries at every bisecting split, including the first. |
 | `--bisect-select sse\|size` | `sse` | Select the eligible cluster by SSE or assigned row count; ties use the lowest index. |
 | `--init random\|kmeans++` | `random` | Initial centroids for KM, RKM and RS. |
@@ -161,7 +162,7 @@ Input-file read, result-file write, flush or close, and directory-enumeration fa
 --snapshots 2-3:5-10
 ```
 
-Batch mode defaults to progress rows for every run and snapshots for run 1; single-dataset mode defaults to neither. Snapshot selection is separate from progress rows. KM records iterations; RKM records the best solution after each repeat and snapshots improvements; RS records its initial solution and improvements; split and bisecting algorithms record split steps and their final refinement where applicable.
+Batch mode defaults to progress rows for every run and snapshots for run 1; single-dataset mode defaults to neither. Snapshot selection is separate from progress rows. KM records iterations; RKM records the best finite solution after each repeat and snapshots improvements, with `NA` for SSE and CI until its first finite repeat; RS records its initial solution and improvements; split and bisecting algorithms record split steps and their final refinement where applicable.
 
 Tracking work and snapshot I/O pause the monotonic stopwatch. Use `--track-progress --snapshots none --log-level 1` for timed runs that will be reported. In particular, RS **must** have progress rows for `report`; `--no-track` is unsuitable for those runs. Levels 2 and 3 may print inside timed code, so do not use their timings for the thesis.
 
@@ -208,7 +209,7 @@ split_kmeans report [-o dir] [--names file] [--curve-run i] [--decimal-comma] [-
 - For each algorithm, either every run has `_log.csv` rows or none does. RS requires them. Use the same master seed and non-overlapping `--first-run`/`--runs` ranges to split a job.
 - `summary.csv` reports mean SSE, sample SSE deviation, mean CI, relative CI, success percentage, mean time and sample time deviation. Deviations are `NA` for one run.
 - RS tables and curves end at each run's **last SSE improvement**, determined afterwards from its last progress row; if there was no improvement, that is the count-0 initial row. `full_time_ms_mean` retains the time for the full run, including all performed swaps. This is a retrospective reporting rule, not an online stopping rule.
-- RKM and RS curves use `--curve-run` (default 1) when progress rows exist. Other curves average the runs at each count, retaining a finished run's last state. Without rows, an algorithm has only its end point. Curve SSE is scaled by the power of ten shown in its header, chosen from the smallest positive SSE in that dataset's means and curves.
+- RKM and RS curves use `--curve-run` (default 1) when progress rows exist. RKM curve points before the first finite repeat have `NA` SSE and CI. Other curves average the runs at each count, retaining a finished run's last state. Without rows, an algorithm has only its end point. Curve SSE is scaled by the power of ten shown in its header, chosen from the smallest positive SSE in that dataset's means and curves.
 - `--names <file>` lists `<dataset-folder> [display name]` per line; listed datasets come first in that order. Dataset folder and display names may contain commas but not `;`, `"`, CR or LF; invalid names are rejected before reports are written. Line endings delimit entries. `--decimal-comma` formats the report for a decimal-comma spreadsheet. `--no-time` omits time columns and `table_time.csv`.
 
 The standard `summary.csv` header is:

@@ -54,7 +54,7 @@ static double stopwatchElapsedMs(const Stopwatch* stopwatch)
 }
 
 /**
- * @brief Appends the buffered rows of one run to `filePath`: run;count;sse;ci;ms (ci is NA when not available).
+ * @brief Appends buffered rows: run;count;sse;ci;ms (SSE and CI are NA when not available).
  *
  * Writes the header first when the file does not exist yet. Call outside timed code.
  */
@@ -78,7 +78,8 @@ static void appendLogCsv(const char* filePath, size_t run, const TrackRow* rows,
     for (size_t i = 0; i < rowCount; ++i)
     {
         checkFileWrite(file, filePath,
-                       fprintf(file, "%zu;%zu;%s;%s;%s\n", run + 1, rows[i].count, formatFixed(rows[i].sse, 6, sseText),
+                       fprintf(file, "%zu;%zu;%s;%s;%s\n", run + 1, rows[i].count,
+                               rows[i].sseAvailable ? formatFixed(rows[i].sse, 6, sseText) : "NA",
                                formatCi(rows[i].ci, ciText), formatFixed(rows[i].ms, 3, msText)));
     }
     closeOutputFile(file, filePath);
@@ -480,7 +481,7 @@ double trackerEndRun(Tracker* tracker)
 }
 
 /** @brief Buffers one row; the caller has paused the stopwatch. */
-static void trackerPushRow(Tracker* tracker, size_t count, double sse, size_t ci, double ms)
+static void trackerPushRow(Tracker* tracker, size_t count, double sse, bool sseAvailable, size_t ci, double ms)
 {
     if (tracker->rowCount == tracker->rowCapacity)
     {
@@ -494,19 +495,21 @@ static void trackerPushRow(Tracker* tracker, size_t count, double sse, size_t ci
     TrackRow* row = &tracker->rows[tracker->rowCount++];
     row->count = count;
     row->sse = sse;
+    row->sseAvailable = sseAvailable;
     row->ci = ci;
     row->ms = ms;
 }
 
-/** @brief Buffers a `_log.csv` row with known SSE and CI at the current run time; no-op without row logging. */
-void trackerAddRow(Tracker* tracker, size_t count, double sse, size_t ci)
+/** @brief Buffers a `_log.csv` row at the current run time; no-op without row logging. */
+void trackerAddRow(Tracker* tracker, size_t count, double sse, size_t ci, bool sseAvailable)
 {
     if (!tracker->logRows)
     {
         return;
     }
     stopwatchPause(&tracker->stopwatch);
-    trackerPushRow(tracker, count, sse, ci, stopwatchElapsedMs(&tracker->stopwatch));
+    assert(sseAvailable || ci == CI_NA);
+    trackerPushRow(tracker, count, sse, sseAvailable, ci, stopwatchElapsedMs(&tracker->stopwatch));
     stopwatchResume(&tracker->stopwatch);
 }
 
@@ -567,7 +570,7 @@ size_t trackerRecord(Tracker* tracker, size_t count, const char* phase, const Da
 
     if (tracker->logRows)
     {
-        trackerPushRow(tracker, count, sse, ci, ms);
+        trackerPushRow(tracker, count, sse, true, ci, ms);
     }
     if (snapshot)
     {

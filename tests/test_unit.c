@@ -763,8 +763,9 @@ static void testKmAndRkmLastState(const char* directory)
     joinPath(output, sizeof(output), testDirectory, "rkm");
     require(platform_make_directories(output), "could not create last-state RKM directory");
     Dataset rkm = roundingDataset();
-    runRepeatedKMeansAlgorithm(&rkm, &first, 3, SIZE_MAX, 2, 0, 1, 1, "last-state", output,
-                               &options, INIT_RANDOM, 4);
+    require(runRepeatedKMeansAlgorithm(&rkm, &first, 3, SIZE_MAX, 2, 0, 1, 1, "last-state", output, &options,
+                                       INIT_RANDOM, 4),
+            "finite RKM run failed");
     checkDirectSnapshot(output, "RKM", &rkm, &first, winningLabels, firstSse);
 
     freeDataset(&rkm);
@@ -775,7 +776,7 @@ static void testKmAndRkmLastState(const char* directory)
     freeDataset(&reference);
 }
 
-static void testRkmNoFiniteFallback(const char* directory)
+static void testRkmNoFinite(const char* directory)
 {
     const double values[] = {1e308, -1e308, 0};
     Dataset reference = allocateDataset(3, 1);
@@ -792,17 +793,35 @@ static void testRkmNoFiniteFallback(const char* directory)
     double trialSse = runKMeans(&reference, 1, &centroids, NULL, KM_STAGE_NONE, unitKMeansScratch(&centroids));
     require(!isfinite(trialSse) &&
                 (reference.partitions[0] != 0 || reference.partitions[1] != 0 || reference.partitions[2] != 0),
-            "RKM fallback fixture did not produce a non-finite trial with distinct labels");
+            "RKM fixture did not produce a non-finite trial with distinct labels");
 
     char name[64], output[PATH_MAX];
-    int length = snprintf(name, sizeof(name), "rkm-fallback-%" PRIu64, platform_ticks());
-    require(length >= 0 && (size_t)length < sizeof(name), "RKM fallback directory name too long");
+    int length = snprintf(name, sizeof(name), "rkm-invalid-%" PRIu64, platform_ticks());
+    require(length >= 0 && (size_t)length < sizeof(name), "RKM invalid directory name too long");
     joinPath(output, sizeof(output), directory, name);
-    require(MAKE_DIR(output) == 0, "could not create unique RKM fallback directory");
+    require(MAKE_DIR(output) == 0, "could not create unique RKM invalid directory");
     TrackOptions options = {0};
-    runRepeatedKMeansAlgorithm(&actual, NULL, 2, 1, 1, 0, 1, 1, "fallback", output, &options, INIT_RANDOM, 0);
-    for (size_t i = 0; i < actual.size; ++i)
-        require(actual.partitions[i] == 0, "RKM did not use its no-finite-SSE partition fallback");
+    options.rows = true;
+    options.inner = true;
+    options.snapshots.enabled = true;
+    options.snapshots.runs.all = true;
+    options.snapshots.counts.all = true;
+    require(!runRepeatedKMeansAlgorithm(&actual, NULL, 2, 1, 3, 0, 1, 1, "invalid", output, &options, INIT_RANDOM, 0),
+            "RKM accepted a run with no finite repeat");
+    const char* forbidden[] = {"RKM_runs.csv",
+                               "RKM_log.csv",
+                               "RKM_inner.csv",
+                               "RKM_iteration_stats.txt",
+                               "RKM_run001_iter0001_step_centroids.txt",
+                               "RKM_run001_iter0001_step_partitions.txt",
+                               "RKM_centroids_failed.txt",
+                               "RKM_partitions_failed.txt"};
+    char path[PATH_MAX];
+    for (size_t i = 0; i < sizeof(forbidden) / sizeof(forbidden[0]); ++i)
+    {
+        joinPath(path, sizeof(path), output, forbidden[i]);
+        require(!fileExists(path), "invalid RKM run wrote a result or snapshot");
+    }
 
     freeCentroids(&centroids);
     freeDataset(&actual);
@@ -3027,6 +3046,549 @@ static void testReportSummary(const char* directory, const char* executable, con
     expectText(path, "single;KM;1;100.000000;NA;0.0000;0.0000;100.0;200.000;NA;");
 }
 
+static int runCliSeparate(const char* executable, const char* arguments, const char* out, const char* err)
+{
+    char command[7 * PATH_MAX + 2048];
+    const int length =
+        snprintf(command, sizeof(command), "cd . && \"%s\" %s > \"%s\" 2> \"%s\"", executable, arguments, out, err);
+    require(length >= 0 && (size_t)length < sizeof(command), "separate-stream command too long");
+    return system(command);
+}
+
+static size_t readFixtureBytes(const char* path, char* buffer, size_t capacity)
+{
+    FILE* file = readFixture(path);
+    const size_t size = fread(buffer, 1, capacity, file);
+    require(!ferror(file) && fgetc(file) == EOF, "could not read complete fixture");
+    closeFixture(file);
+    return size;
+}
+
+static void checkRkmDiagnostics(const char* out, const char* err, const char* warning, const char* next)
+{
+    char line[1024];
+    FILE* file = readFixture(out);
+    while (fgets(line, sizeof(line), file) != NULL)
+        require(strstr(line, "Warning:") == NULL && strstr(line, "Error:") == NULL,
+                "RKM diagnostic was written to stdout");
+    require(!ferror(file), "could not read RKM stdout");
+    closeFixture(file);
+
+    file = readFixture(err);
+    if (warning != NULL)
+        require(fgets(line, sizeof(line), file) != NULL && strcmp(line, warning) == 0,
+                "RKM warning count or text is wrong");
+    if (next != NULL)
+        require(fgets(line, sizeof(line), file) != NULL && strcmp(line, next) == 0, "second RKM diagnostic is wrong");
+    require(fgets(line, sizeof(line), file) == NULL && !ferror(file), "unexpected RKM diagnostics");
+    closeFixture(file);
+}
+
+static void checkRkmProgress(const char* path, double expectedSse, const char* expectedCi)
+{
+    FILE* file = readFixture(path);
+    char line[1024], sseText[NUMBER_TEXT_SIZE], ciText[CI_TEXT_SIZE];
+    require(fgets(line, sizeof(line), file) != NULL && strcmp(line, "run;count;sse;ci;ms\n") == 0,
+            "invalid RKM progress header");
+    for (size_t repeat = 1; repeat <= 8; ++repeat)
+    {
+        size_t run = 0, count = 0;
+        require(fgets(line, sizeof(line), file) != NULL &&
+                    sscanf(line, "%zu;%zu;%329[^;];%20[^;];", &run, &count, sseText, ciText) == 4 && run == 1 &&
+                    count == repeat,
+                "invalid RKM progress row");
+        if (repeat < 3)
+        {
+            require(strcmp(sseText, "NA") == 0 && strcmp(ciText, "NA") == 0,
+                    "RKM reported a candidate before its first finite repeat");
+        }
+        else
+        {
+            char* comma = strchr(sseText, ',');
+            if (comma != NULL) *comma = '.';
+            double sse = 0.0;
+            require(parseFiniteDouble(sseText, &sse) && sse == expectedSse && strcmp(ciText, expectedCi) == 0,
+                    "RKM did not retain the best finite SSE and CI");
+        }
+    }
+    require(fgets(line, sizeof(line), file) == NULL && !ferror(file), "unexpected RKM progress row");
+    closeFixture(file);
+}
+
+static void testRkmMixedRepeats(const char* directory, const char* executable, const char* capture)
+{
+    const double expectedSse = 1.0800000000000001e308;
+    const size_t labels[] = {0, 0, 0, 1, 1, 1, 0};
+    char data[PATH_MAX], truthPath[PATH_MAX], output[PATH_MAX], dataset[PATH_MAX], path[PATH_MAX], report[PATH_MAX];
+    char out[PATH_MAX], err[PATH_MAX], arguments[5 * PATH_MAX + 512], name[128];
+    joinPath(data, sizeof(data), directory, "rkm-mixed.txt");
+    joinPath(truthPath, sizeof(truthPath), directory, "rkm-mixed-truth.txt");
+    joinPath(out, sizeof(out), directory, "rkm-stdout.txt");
+    joinPath(err, sizeof(err), directory, "rkm-stderr.txt");
+    writeTextFixture(data, "0\n0\n0\n1.2e154\n1.2e154\n1.2e154\n-1.2e154\n");
+    writeTextFixture(truthPath, "-3.0000000000000002e153\n1.2000000000000001e154\n");
+
+    for (size_t withTruth = 0; withTruth < 2; ++withTruth)
+    {
+        joinPath(output, sizeof(output), directory, withTruth ? "rkm-mixed-gt" : "rkm-mixed-no-gt");
+        int length = snprintf(arguments, sizeof(arguments),
+                              "--algo rkm --seed 4 --runs 1 --repeats 8 --max-iterations 1 --track-progress "
+                              "--snapshots %s %s -o \"%s\" -k 2 \"%s\"",
+                              withTruth ? "1:all" : "none", withTruth ? "" : "--decimal-comma", output, data);
+        require(length >= 0 && (size_t)length < sizeof(arguments), "mixed RKM command too long");
+        if (withTruth)
+        {
+            const int added = snprintf(arguments + length, sizeof(arguments) - (size_t)length, " \"%s\"", truthPath);
+            require(added >= 0 && (size_t)added < sizeof(arguments) - (size_t)length, "mixed RKM command too long");
+        }
+        require(runCliSeparate(executable, arguments, out, err) == 0, "RKM rejected a run with finite repeats");
+        checkRkmDiagnostics(out, err, "Warning: run 1: 4 of 8 repeats had non-finite SSE and were skipped\n", NULL);
+
+        joinPath(dataset, sizeof(dataset), output, "rkm-mixed");
+        joinPath(path, sizeof(path), dataset, "RKM_log.csv");
+        checkRkmProgress(path, expectedSse, withTruth ? "0" : "NA");
+        joinPath(path, sizeof(path), dataset, "RKM_runs.csv");
+        FILE* file = readFixture(path);
+        char line[1024], ci[CI_TEXT_SIZE];
+        size_t run = 0;
+        double sse = 0.0;
+        require(fgets(line, sizeof(line), file) != NULL && fgets(line, sizeof(line), file) != NULL &&
+                    sscanf(line, "%zu;%*[^;];%lf;%20[^;];", &run, &sse, ci) == 3 && run == 1 && sse == expectedSse &&
+                    strcmp(ci, withTruth ? "0" : "NA") == 0,
+                "RKM did not write the winning repeat");
+        require(fgets(line, sizeof(line), file) == NULL && !ferror(file), "unexpected RKM run row");
+        closeFixture(file);
+
+        if (withTruth)
+        {
+            Dataset points = readDataset(data);
+            Centroids truth = readCentroids(truthPath);
+            for (size_t i = 0; i < points.size; ++i)
+                points.partitions[i] = labels[i];
+            checkDirectSnapshot(dataset, "RKM", &points, &truth, labels, expectedSse);
+            freeCentroids(&truth);
+            freeDataset(&points);
+            for (size_t repeat = 1; repeat <= 8; ++repeat)
+            {
+                length = snprintf(name, sizeof(name), "RKM_run001_iter%04zu_step_centroids.txt", repeat);
+                require(length >= 0 && (size_t)length < sizeof(name), "RKM snapshot name too long");
+                joinPath(path, sizeof(path), dataset, name);
+                require(fileExists(path) == (repeat == 3), "RKM saved an invalid or non-improving snapshot");
+                length = snprintf(name, sizeof(name), "RKM_run001_iter%04zu_step_partitions.txt", repeat);
+                require(length >= 0 && (size_t)length < sizeof(name), "RKM snapshot name too long");
+                joinPath(path, sizeof(path), dataset, name);
+                require(fileExists(path) == (repeat == 3), "RKM saved invalid snapshot labels");
+            }
+        }
+        else
+        {
+            joinPath(path, sizeof(path), dataset, "RKM_run001_iter0003_step_centroids.txt");
+            require(!fileExists(path), "RKM ignored --snapshots none");
+        }
+
+        joinPath(report, sizeof(report), directory, withTruth ? "rkm-mixed-report" : "rkm-mixed-comma-report");
+        length = snprintf(arguments, sizeof(arguments), "report --no-time %s -o \"%s\" \"%s\"",
+                          withTruth ? "" : "--decimal-comma", report, output);
+        require(length >= 0 && (size_t)length < sizeof(arguments), "mixed RKM report command too long");
+        expectCli(executable, arguments, capture, true);
+        joinPath(path, sizeof(path), report, "curves_rkm-mixed.csv");
+        expectText(path, withTruth ? "1;NA;NA\n2;NA;NA\n3;1.080000;0.0000\n" : "1;NA;NA\n2;NA;NA\n3;1,080000;NA\n");
+        expectText(path, withTruth ? "8;1.080000;0.0000" : "8;1,080000;NA");
+    }
+
+    joinPath(output, sizeof(output), directory, "rkm-mixed-untracked");
+    const int length = snprintf(arguments, sizeof(arguments),
+                                "--algo rkm --seed 4 --runs 1 --repeats 8 --max-iterations 1 --no-track "
+                                "-o \"%s\" -k 2 \"%s\"",
+                                output, data);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "untracked mixed RKM command too long");
+    require(runCliSeparate(executable, arguments, out, err) == 0, "untracked RKM rejected finite repeats");
+    checkRkmDiagnostics(out, err, "Warning: run 1: 4 of 8 repeats had non-finite SSE and were skipped\n", NULL);
+    joinPath(dataset, sizeof(dataset), output, "rkm-mixed");
+    joinPath(path, sizeof(path), dataset, "RKM_runs.csv");
+    FILE* file = readFixture(path);
+    char line[1024];
+    size_t run = 0;
+    double sse = 0.0;
+    require(fgets(line, sizeof(line), file) != NULL && fgets(line, sizeof(line), file) != NULL &&
+                sscanf(line, "%zu;%*[^;];%lf;", &run, &sse) == 2 && run == 1 && sse == expectedSse,
+            "untracked RKM lost its finite winner");
+    require(fgets(line, sizeof(line), file) == NULL && !ferror(file), "unexpected untracked RKM run row");
+    closeFixture(file);
+    joinPath(path, sizeof(path), dataset, "RKM_log.csv");
+    require(!fileExists(path), "untracked RKM wrote a progress log");
+
+    joinPath(output, sizeof(output), directory, "rkm-mixed-two-runs");
+    const int twoLength = snprintf(arguments, sizeof(arguments),
+                                   "--algo rkm --seed 4 --runs 2 --repeats 8 --max-iterations 1 --track-progress "
+                                   "--snapshots none -o \"%s\" -k 2 \"%s\"",
+                                   output, data);
+    require(twoLength >= 0 && (size_t)twoLength < sizeof(arguments), "two-run mixed RKM command too long");
+    require(runCliSeparate(executable, arguments, out, err) == 0, "RKM rejected finite repeats in two runs");
+    checkRkmDiagnostics(out, err, "Warning: run 1: 4 of 8 repeats had non-finite SSE and were skipped\n",
+                        "Warning: run 2: 5 of 8 repeats had non-finite SSE and were skipped\n");
+    joinPath(dataset, sizeof(dataset), output, "rkm-mixed");
+    joinPath(path, sizeof(path), dataset, "RKM_runs.csv");
+    file = readFixture(path);
+    require(fgets(line, sizeof(line), file) != NULL, "missing two-run RKM header");
+    for (size_t expectedRun = 1; expectedRun <= 2; ++expectedRun)
+    {
+        require(fgets(line, sizeof(line), file) != NULL && sscanf(line, "%zu;%*[^;];%lf;", &run, &sse) == 2 &&
+                    run == expectedRun && sse == expectedSse,
+                "RKM did not retain both finite runs");
+    }
+    require(fgets(line, sizeof(line), file) == NULL && !ferror(file), "unexpected two-run RKM result");
+    closeFixture(file);
+    joinPath(report, sizeof(report), directory, "rkm-mixed-second-report");
+    const int reportLength =
+        snprintf(arguments, sizeof(arguments), "report --no-time --curve-run 2 -o \"%s\" \"%s\"", report, output);
+    require(reportLength >= 0 && (size_t)reportLength < sizeof(arguments), "second RKM report command too long");
+    expectCli(executable, arguments, capture, true);
+    joinPath(path, sizeof(path), report, "curves_rkm-mixed.csv");
+    expectText(path, "1;NA;NA\n2;1.080000;NA\n");
+
+    joinPath(output, sizeof(output), directory, "rkm-mixed-snapshot-only");
+    const int snapshotLength = snprintf(arguments, sizeof(arguments),
+                                        "--algo rkm --seed 4 --runs 1 --repeats 8 --max-iterations 1 "
+                                        "--snapshots 1:all -o \"%s\" -k 2 \"%s\" \"%s\"",
+                                        output, data, truthPath);
+    require(snapshotLength >= 0 && (size_t)snapshotLength < sizeof(arguments), "snapshot-only RKM command too long");
+    require(runCliSeparate(executable, arguments, out, err) == 0, "snapshot-only RKM rejected finite repeats");
+    checkRkmDiagnostics(out, err, "Warning: run 1: 4 of 8 repeats had non-finite SSE and were skipped\n", NULL);
+    joinPath(dataset, sizeof(dataset), output, "rkm-mixed");
+    joinPath(path, sizeof(path), dataset, "RKM_log.csv");
+    require(!fileExists(path), "snapshot-only RKM wrote a progress log");
+    joinPath(path, sizeof(path), dataset, "RKM_run001_iter0001_step_centroids.txt");
+    require(!fileExists(path), "snapshot-only RKM saved an invalid repeat");
+    joinPath(path, sizeof(path), dataset, "RKM_run001_iter0003_step_centroids.txt");
+    require(fileExists(path), "snapshot-only RKM missed its first finite repeat");
+    joinPath(path, sizeof(path), dataset, "RKM_centroids_perfect.txt");
+    require(fileExists(path), "snapshot-only RKM missed the winning example");
+    joinPath(report, sizeof(report), directory, "rkm-mixed-snapshot-report");
+    const int snapshotReportLength =
+        snprintf(arguments, sizeof(arguments), "report --no-time -o \"%s\" \"%s\"", report, output);
+    require(snapshotReportLength >= 0 && (size_t)snapshotReportLength < sizeof(arguments),
+            "snapshot-only RKM report command too long");
+    expectCli(executable, arguments, capture, true);
+    joinPath(path, sizeof(path), report, "curves_rkm-mixed.csv");
+    expectText(path, "end;1.080000;0.0000\n");
+}
+
+static void testRkmFailedRuns(const char* directory, const char* executable, const char* capture)
+{
+    char data[PATH_MAX], truth[PATH_MAX], output[PATH_MAX], dataset[PATH_MAX], path[PATH_MAX], report[PATH_MAX];
+    char out[PATH_MAX], err[PATH_MAX], arguments[5 * PATH_MAX + 512], line[1024], name[128];
+    joinPath(out, sizeof(out), directory, "rkm-failure-stdout.txt");
+    joinPath(err, sizeof(err), directory, "rkm-failure-stderr.txt");
+    joinPath(data, sizeof(data), directory, "rkm-all-invalid.txt");
+    joinPath(truth, sizeof(truth), directory, "rkm-all-truth.txt");
+    joinPath(output, sizeof(output), directory, "rkm-all-invalid-output");
+    writeTextFixture(data, "1e308\n-1e308\n0\n");
+    writeTextFixture(truth, "0\n1e308\n");
+    int length = snprintf(arguments, sizeof(arguments),
+                          "--algo rkm,rs --seed 0 --runs 1 --repeats 3 --max-iterations 1 --track-progress "
+                          "--track-inner --snapshots 1:all -o \"%s\" -k 2 \"%s\" \"%s\"",
+                          output, data, truth);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "all-invalid RKM command too long");
+    int status = runCliSeparate(executable, arguments, out, err);
+    require(status != -1 && status != 0, "RKM accepted an all-invalid run");
+    checkRkmDiagnostics(out, err, "Warning: run 1: 3 of 3 repeats had non-finite SSE and were skipped\n",
+                        "Error: run 1: Repeated k-means produced no finite SSE\n");
+    joinPath(dataset, sizeof(dataset), output, "rkm-all-invalid");
+    const char* forbidden[] = {"RKM_runs.csv",
+                               "RKM_log.csv",
+                               "RKM_inner.csv",
+                               "RKM_iteration_stats.txt",
+                               "RKM_run001_iter0001_step_centroids.txt",
+                               "RKM_run001_iter0001_step_partitions.txt",
+                               "RKM_centroids_perfect.txt",
+                               "RKM_partitions_perfect.txt",
+                               "RS_runs.csv"};
+    for (size_t i = 0; i < sizeof(forbidden) / sizeof(forbidden[0]); ++i)
+    {
+        joinPath(path, sizeof(path), dataset, forbidden[i]);
+        require(!fileExists(path), "all-invalid RKM run wrote a result or continued to another algorithm");
+    }
+    for (size_t count = 2; count <= 3; ++count)
+    {
+        length = snprintf(name, sizeof(name), "RKM_run001_iter%04zu_step_centroids.txt", count);
+        require(length >= 0 && (size_t)length < sizeof(name), "invalid RKM snapshot name too long");
+        joinPath(path, sizeof(path), dataset, name);
+        require(!fileExists(path), "all-invalid RKM run wrote a later snapshot");
+        length = snprintf(name, sizeof(name), "RKM_run001_iter%04zu_step_partitions.txt", count);
+        require(length >= 0 && (size_t)length < sizeof(name), "invalid RKM snapshot name too long");
+        joinPath(path, sizeof(path), dataset, name);
+        require(!fileExists(path), "all-invalid RKM run wrote later snapshot labels");
+    }
+
+    joinPath(output, sizeof(output), directory, "rkm-all-invalid-untracked");
+    length = snprintf(arguments, sizeof(arguments),
+                      "--algo rkm --seed 0 --runs 1 --repeats 3 --max-iterations 1 --no-track "
+                      "-o \"%s\" -k 2 \"%s\" \"%s\"",
+                      output, data, truth);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "untracked invalid RKM command too long");
+    status = runCliSeparate(executable, arguments, out, err);
+    require(status != -1 && status != 0, "untracked RKM accepted an all-invalid run");
+    checkRkmDiagnostics(out, err, "Warning: run 1: 3 of 3 repeats had non-finite SSE and were skipped\n",
+                        "Error: run 1: Repeated k-means produced no finite SSE\n");
+    joinPath(dataset, sizeof(dataset), output, "rkm-all-invalid");
+    joinPath(path, sizeof(path), dataset, "RKM_runs.csv");
+    require(!fileExists(path), "untracked all-invalid RKM wrote a run");
+    joinPath(path, sizeof(path), dataset, "RKM_centroids_perfect.txt");
+    require(!fileExists(path), "untracked all-invalid RKM wrote an example snapshot");
+
+    joinPath(data, sizeof(data), directory, "rkm-plus-invalid.txt");
+    joinPath(output, sizeof(output), directory, "rkm-plus-invalid-output");
+    writeTextFixture(data, "1e308\n1e308\n");
+    length = snprintf(arguments, sizeof(arguments),
+                      "--algo rkm --init kmeans++ --seed 0 --runs 1 --repeats 3 --max-iterations 1 --no-track "
+                      "-o \"%s\" -k 1 \"%s\"",
+                      output, data);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "k-means++ invalid RKM command too long");
+    status = runCliSeparate(executable, arguments, out, err);
+    require(status != -1 && status != 0, "k-means++ RKM accepted an all-invalid run");
+    checkRkmDiagnostics(out, err, "Warning: run 1: 3 of 3 repeats had non-finite SSE and were skipped\n",
+                        "Error: run 1: Repeated k-means produced no finite SSE\n");
+    joinPath(dataset, sizeof(dataset), output, "rkm-plus-invalid");
+    joinPath(path, sizeof(path), dataset, "RKM_runs.csv");
+    require(!fileExists(path), "all-invalid k-means++ RKM wrote a run");
+
+    joinPath(data, sizeof(data), directory, "rkm-mixed.txt");
+    joinPath(truth, sizeof(truth), directory, "rkm-mixed-truth.txt");
+    joinPath(output, sizeof(output), directory, "rkm-prior-run");
+    length = snprintf(arguments, sizeof(arguments),
+                      "--algo rkm --seed 1 --runs 2 --repeats 2 --max-iterations 1 --track-progress "
+                      "--snapshots all -o \"%s\" -k 2 \"%s\" \"%s\"",
+                      output, data, truth);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "partially completed RKM command too long");
+    status = runCliSeparate(executable, arguments, out, err);
+    require(status != -1 && status != 0, "RKM accepted a later all-invalid run");
+    checkRkmDiagnostics(out, err, "Warning: run 2: 2 of 2 repeats had non-finite SSE and were skipped\n",
+                        "Error: run 2: Repeated k-means produced no finite SSE\n");
+    joinPath(dataset, sizeof(dataset), output, "rkm-mixed");
+    joinPath(path, sizeof(path), dataset, "RKM_runs.csv");
+    FILE* file = readFixture(path);
+    size_t run = 0;
+    require(fgets(line, sizeof(line), file) != NULL && fgets(line, sizeof(line), file) != NULL &&
+                sscanf(line, "%zu;", &run) == 1 && run == 1 && fgets(line, sizeof(line), file) == NULL && !ferror(file),
+            "RKM did not retain only the earlier completed run");
+    closeFixture(file);
+    joinPath(path, sizeof(path), dataset, "RKM_log.csv");
+    file = readFixture(path);
+    require(fgets(line, sizeof(line), file) != NULL, "missing earlier RKM log header");
+    for (size_t count = 1; count <= 2; ++count)
+    {
+        size_t actualCount = 0;
+        require(fgets(line, sizeof(line), file) != NULL && sscanf(line, "%zu;%zu;", &run, &actualCount) == 2 &&
+                    run == 1 && actualCount == count,
+                "failed RKM run left an orphan progress row");
+    }
+    require(fgets(line, sizeof(line), file) == NULL && !ferror(file), "failed RKM run left extra progress rows");
+    closeFixture(file);
+    joinPath(path, sizeof(path), dataset, "RKM_run001_iter0001_step_centroids.txt");
+    require(fileExists(path), "earlier valid RKM snapshot was lost");
+    for (size_t count = 1; count <= 2; ++count)
+    {
+        length = snprintf(name, sizeof(name), "RKM_run002_iter%04zu_step_centroids.txt", count);
+        require(length >= 0 && (size_t)length < sizeof(name), "failed RKM snapshot name too long");
+        joinPath(path, sizeof(path), dataset, name);
+        require(!fileExists(path), "failed RKM run wrote a snapshot");
+        length = snprintf(name, sizeof(name), "RKM_run002_iter%04zu_step_partitions.txt", count);
+        require(length >= 0 && (size_t)length < sizeof(name), "failed RKM snapshot name too long");
+        joinPath(path, sizeof(path), dataset, name);
+        require(!fileExists(path), "failed RKM run wrote snapshot labels");
+    }
+    joinPath(path, sizeof(path), dataset, "RKM_iteration_stats.txt");
+    file = readFixture(path);
+    require(fgets(line, sizeof(line), file) != NULL, "missing earlier RKM snapshot statistics");
+    while (fgets(line, sizeof(line), file) != NULL)
+        require(sscanf(line, "%zu;", &run) == 1 && run == 1, "failed RKM run wrote snapshot statistics");
+    require(!ferror(file), "could not read RKM snapshot statistics");
+    closeFixture(file);
+    joinPath(report, sizeof(report), directory, "rkm-prior-report");
+    length = snprintf(arguments, sizeof(arguments), "report --no-time -o \"%s\" \"%s\"", report, output);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "prior RKM report command too long");
+    expectCli(executable, arguments, capture, true);
+    joinPath(path, sizeof(path), report, "summary.csv");
+    expectText(path, "rkm-mixed;RKM;1;");
+
+    joinPath(output, sizeof(output), directory, "rkm-resume-run");
+    length = snprintf(arguments, sizeof(arguments),
+                      "--algo rkm --seed 1 --runs 1 --repeats 2 --max-iterations 1 --track-progress "
+                      "--snapshots all -o \"%s\" -k 2 \"%s\" \"%s\"",
+                      output, data, truth);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "first RKM resume command too long");
+    require(runCliSeparate(executable, arguments, out, err) == 0, "first RKM resume run failed");
+    checkRkmDiagnostics(out, err, NULL, NULL);
+    joinPath(dataset, sizeof(dataset), output, "rkm-mixed");
+    char runsPath[PATH_MAX], logPath[PATH_MAX], summaryPath[PATH_MAX];
+    char beforeRuns[2048], beforeLog[4096], beforeSummary[2048], after[4096];
+    joinPath(runsPath, sizeof(runsPath), dataset, "RKM_runs.csv");
+    joinPath(logPath, sizeof(logPath), dataset, "RKM_log.csv");
+    joinPath(summaryPath, sizeof(summaryPath), dataset, "rkm-mixed.csv");
+    const size_t runsSize = readFixtureBytes(runsPath, beforeRuns, sizeof(beforeRuns));
+    const size_t logSize = readFixtureBytes(logPath, beforeLog, sizeof(beforeLog));
+    const size_t summarySize = readFixtureBytes(summaryPath, beforeSummary, sizeof(beforeSummary));
+    length = snprintf(arguments, sizeof(arguments),
+                      "--algo rkm --seed 1 --runs 2 --first-run 2 --repeats 2 --max-iterations 1 --track-progress "
+                      "--snapshots all -o \"%s\" -k 2 \"%s\" \"%s\"",
+                      output, data, truth);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "second RKM resume command too long");
+    status = runCliSeparate(executable, arguments, out, err);
+    require(status != -1 && status != 0, "RKM accepted an all-invalid resumed run");
+    checkRkmDiagnostics(out, err, "Warning: run 2: 2 of 2 repeats had non-finite SSE and were skipped\n",
+                        "Error: run 2: Repeated k-means produced no finite SSE\n");
+    size_t afterSize = readFixtureBytes(runsPath, after, sizeof(after));
+    require(afterSize == runsSize && memcmp(after, beforeRuns, runsSize) == 0,
+            "failed resumed RKM run changed earlier result rows");
+    afterSize = readFixtureBytes(logPath, after, sizeof(after));
+    require(afterSize == logSize && memcmp(after, beforeLog, logSize) == 0,
+            "failed resumed RKM run changed earlier progress rows");
+    afterSize = readFixtureBytes(summaryPath, after, sizeof(after));
+    require(afterSize == summarySize && memcmp(after, beforeSummary, summarySize) == 0,
+            "failed resumed RKM run changed an earlier summary");
+    for (size_t count = 1; count <= 2; ++count)
+    {
+        length = snprintf(name, sizeof(name), "RKM_run002_iter%04zu_step_centroids.txt", count);
+        require(length >= 0 && (size_t)length < sizeof(name), "resumed RKM snapshot name too long");
+        joinPath(path, sizeof(path), dataset, name);
+        require(!fileExists(path), "failed resumed RKM run wrote a snapshot");
+        length = snprintf(name, sizeof(name), "RKM_run002_iter%04zu_step_partitions.txt", count);
+        require(length >= 0 && (size_t)length < sizeof(name), "resumed RKM snapshot name too long");
+        joinPath(path, sizeof(path), dataset, name);
+        require(!fileExists(path), "failed resumed RKM run wrote snapshot labels");
+    }
+    joinPath(report, sizeof(report), directory, "rkm-resume-report");
+    length = snprintf(arguments, sizeof(arguments), "report --no-time -o \"%s\" \"%s\"", report, output);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "resumed RKM report command too long");
+    expectCli(executable, arguments, capture, true);
+}
+
+static void testRkmMaxFinite(const char* directory, const char* executable, const char* capture)
+{
+    char data[PATH_MAX], truth[PATH_MAX], output[PATH_MAX], dataset[PATH_MAX], path[PATH_MAX], report[PATH_MAX];
+    char out[PATH_MAX], err[PATH_MAX], arguments[5 * PATH_MAX + 512], line[1024], sseText[NUMBER_TEXT_SIZE];
+    joinPath(data, sizeof(data), directory, "rkm-max.txt");
+    joinPath(truth, sizeof(truth), directory, "rkm-max-truth.txt");
+    joinPath(output, sizeof(output), directory, "rkm-max-output");
+    joinPath(out, sizeof(out), directory, "rkm-max-stdout.txt");
+    joinPath(err, sizeof(err), directory, "rkm-max-stderr.txt");
+    writeTextFixture(data, "1.4920097671016617e153 9.362615211466774e153\n"
+                           "-1.4920097671016617e153 -9.362615211466774e153\n");
+    writeTextFixture(truth, "0 0\n");
+    int length = snprintf(arguments, sizeof(arguments),
+                          "--algo rkm --seed 4 --runs 1 --repeats 2 --max-iterations 1 --track-progress "
+                          "--snapshots 1:all -o \"%s\" -k 1 \"%s\" \"%s\"",
+                          output, data, truth);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "DBL_MAX RKM command too long");
+    require(runCliSeparate(executable, arguments, out, err) == 0, "RKM rejected a finite DBL_MAX repeat");
+    checkRkmDiagnostics(out, err, NULL, NULL);
+    joinPath(dataset, sizeof(dataset), output, "rkm-max");
+    joinPath(path, sizeof(path), dataset, "RKM_runs.csv");
+    FILE* file = readFixture(path);
+    size_t run = 0, ci = CI_NA;
+    double sse = 0.0;
+    require(fgets(line, sizeof(line), file) != NULL && fgets(line, sizeof(line), file) != NULL &&
+                sscanf(line, "%zu;%*[^;];%lf;%zu;", &run, &sse, &ci) == 3 && run == 1 && sse == DBL_MAX && ci == 0,
+            "RKM did not retain the finite DBL_MAX winner");
+    require(fgets(line, sizeof(line), file) == NULL && !ferror(file), "unexpected DBL_MAX RKM run row");
+    closeFixture(file);
+    joinPath(path, sizeof(path), dataset, "RKM_log.csv");
+    file = readFixture(path);
+    require(fgets(line, sizeof(line), file) != NULL, "missing DBL_MAX progress header");
+    for (size_t count = 1; count <= 2; ++count)
+    {
+        size_t actualCount = 0;
+        require(fgets(line, sizeof(line), file) != NULL &&
+                    sscanf(line, "%zu;%zu;%329[^;];%zu;", &run, &actualCount, sseText, &ci) == 4 &&
+                    parseFiniteDouble(sseText, &sse) && sse == DBL_MAX && ci == 0 && run == 1 && actualCount == count,
+                "finite DBL_MAX progress was reported as unavailable");
+    }
+    require(fgets(line, sizeof(line), file) == NULL && !ferror(file), "unexpected DBL_MAX progress row");
+    closeFixture(file);
+    joinPath(path, sizeof(path), dataset, "RKM_run001_iter0001_step_centroids.txt");
+    require(fileExists(path), "finite DBL_MAX candidate did not produce its winning snapshot");
+    joinPath(path, sizeof(path), dataset, "RKM_run001_iter0002_step_centroids.txt");
+    require(!fileExists(path), "equal DBL_MAX candidate incorrectly replaced the winner");
+    joinPath(path, sizeof(path), dataset, "RKM_centroids_perfect.txt");
+    require(fileExists(path), "finite DBL_MAX candidate did not produce its example snapshot");
+    joinPath(report, sizeof(report), directory, "rkm-max-report");
+    length = snprintf(arguments, sizeof(arguments), "report --no-time -o \"%s\" \"%s\"", report, output);
+    require(length >= 0 && (size_t)length < sizeof(arguments), "DBL_MAX report command too long");
+    expectCli(executable, arguments, capture, true);
+    joinPath(path, sizeof(path), report, "curves_rkm-max.csv");
+    file = readFixture(path);
+    require(fgets(line, sizeof(line), file) != NULL && fgets(line, sizeof(line), file) != NULL &&
+                fgets(line, sizeof(line), file) != NULL && sscanf(line, "1;%329[^;];%zu", sseText, &ci) == 2 &&
+                parseFiniteDouble(sseText, &sse) && sse == DBL_MAX && ci == 0,
+            "report did not preserve the finite DBL_MAX curve point");
+    closeFixture(file);
+}
+
+static void testRkmReportUnavailable(const char* directory, const char* executable, const char* capture)
+{
+    const struct
+    {
+        const char* name;
+        const char* algorithm;
+        const char* runs;
+        const char* log;
+        const char* error;
+    } cases[] = {
+        {"valid", "RKM", "1;0;5;0;2\n2;0;5;1;3\n", "2;2;5;1;2\n1;1;NA;NA;0.5\n2;1;NA;NA;1\n1;2;5;0;1\n", NULL},
+        {"na-with-ci", "RKM", "1;0;5;0;2\n", "1;1;NA;0;1\n1;2;5;0;2\n", "not a run;count;sse;ci;ms row"},
+        {"na-with-sentinel-ci", "RKM", "1;0;5;0;2\n", "1;1;NA;18446744073709551615;1\n1;2;5;0;2\n",
+         "not a run;count;sse;ci;ms row"},
+        {"na-after-finite", "RKM", "1;0;5;0;2\n", "1;1;5;0;1\n1;2;NA;NA;2\n", "unavailable SSE after a finite repeat"},
+        {"all-na", "RKM", "1;0;5;0;2\n", "1;1;NA;NA;1\n", "no finite SSE in _log.csv"},
+        {"other-algorithm", "KM", "1;0;5;0;2\n", "1;1;NA;NA;1\n", "not a run;count;sse;ci;ms row"},
+        {"na-run", "RKM", "1;0;NA;NA;2\n", "1;1;NA;NA;1\n", "not a run;seed;sse;ci;ms row"}};
+    char input[PATH_MAX], output[PATH_MAX], folder[PATH_MAX], path[PATH_MAX], name[128];
+    char arguments[3 * PATH_MAX + 256];
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i)
+    {
+        joinPath(input, sizeof(input), directory, cases[i].name);
+        joinPath(folder, sizeof(folder), input, "sample");
+        require(platform_make_directories(folder), "could not create RKM report fixture");
+        joinPath(path, sizeof(path), input, "run_config.txt");
+        writeTextFixture(path, "fixture: RKM unavailable SSE\ncalls:\n");
+        joinPath(path, sizeof(path), folder, "dataset.txt");
+        writeTextFixture(path, "k: 2\n");
+        int length = snprintf(name, sizeof(name), "%s_runs.csv", cases[i].algorithm);
+        require(length >= 0 && (size_t)length < sizeof(name), "RKM report run name too long");
+        joinPath(path, sizeof(path), folder, name);
+        FILE* file = writeFixture(path);
+        require(fputs("run;seed;sse;ci;ms\n", file) >= 0 && fputs(cases[i].runs, file) >= 0,
+                "could not write RKM report runs");
+        closeFixture(file);
+        length = snprintf(name, sizeof(name), "%s_log.csv", cases[i].algorithm);
+        require(length >= 0 && (size_t)length < sizeof(name), "RKM report log name too long");
+        joinPath(path, sizeof(path), folder, name);
+        file = writeFixture(path);
+        require(fputs("run;count;sse;ci;ms\n", file) >= 0 && fputs(cases[i].log, file) >= 0,
+                "could not write RKM report log");
+        closeFixture(file);
+
+        length = snprintf(name, sizeof(name), "%s-report", cases[i].name);
+        require(length >= 0 && (size_t)length < sizeof(name), "RKM report output name too long");
+        joinPath(output, sizeof(output), directory, name);
+        length = snprintf(arguments, sizeof(arguments), "report --no-time %s -o \"%s\" \"%s\"",
+                          cases[i].error == NULL ? "--curve-run 2" : "", output, input);
+        require(length >= 0 && (size_t)length < sizeof(arguments), "RKM report fixture command too long");
+        expectCli(executable, arguments, capture, cases[i].error == NULL);
+        if (cases[i].error != NULL)
+        {
+            expectText(capture, cases[i].error);
+            require(!fileExists(output), "malformed RKM log created a report");
+        }
+        else
+        {
+            joinPath(path, sizeof(path), output, "curves_sample.csv");
+            expectText(path, "1;NA;NA\n2;5.000000;1.0000\n");
+        }
+    }
+}
+
 static void testNonfiniteRandomSwap(const char* executable, const char* directory)
 {
     char capture[PATH_MAX];
@@ -3898,6 +4460,10 @@ static void testCliIterationLimit(const char* directory, const char* executable,
     testCsvNames(root, executable, batch, capture);
     testCsvBatchNames(root, executable);
     testGtFromPartitionStreams(root, executable);
+    testRkmMixedRepeats(root, executable, capture);
+    testRkmFailedRuns(root, executable, capture);
+    testRkmMaxFinite(root, executable, capture);
+    testRkmReportUnavailable(root, executable, capture);
     testSseCommand(root, executable);
     testFiniteRunAverages(root, executable, capture);
 
@@ -4287,7 +4853,7 @@ int main(int argc, char* argv[])
     testLastStateSplitRunners();
     testBisectingLastTrialWins();
     testKmAndRkmLastState(argv[1]);
-    testRkmNoFiniteFallback(argv[1]);
+    testRkmNoFinite(argv[1]);
     testRepartition();
     testRandomSwapRepartition();
     testAffectedCentroidStep();

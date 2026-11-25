@@ -194,7 +194,7 @@ double randomSwap(Dataset* dataPoints, Centroids* centroids, size_t maxSwaps, si
             bestCI = trackerRecord(tracker, i + 1, "step", dataPoints, centroids, SIZE_MAX);
 
             // Alternative: the row without the snapshot files
-            // trackerAddRow(tracker, i + 1, resultSse, trackerCi(tracker, centroids));
+            // trackerAddRow(tracker, i + 1, resultSse, trackerCi(tracker, centroids), true);
 
             if (logLevel >= 2)
             {
@@ -209,7 +209,7 @@ double randomSwap(Dataset* dataPoints, Centroids* centroids, size_t maxSwaps, si
             memcpy(dataPoints->partitions, backupPartitions, dataPoints->size * sizeof(size_t));
 
             // Alternative (v1): one row per swap; a rejected swap repeats the best solution so far
-            // trackerAddRow(tracker, i + 1, bestSse, bestCI);
+            // trackerAddRow(tracker, i + 1, bestSse, bestCI, true);
 
             // Alternative: row and snapshot also for a rejected swap (the restored best solution)
             // trackerRecord(tracker, i + 1, "step", dataPoints, centroids, SIZE_MAX);

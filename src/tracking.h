@@ -29,7 +29,8 @@ typedef struct
 {
     size_t count; /**< Split number, swap, repeat or iteration; 0 is the initial state. */
     double sse;
-    size_t ci; /**< CI_NA without ground truth. */
+    bool sseAvailable; /**< False before RKM has found a finite repeat. */
+    size_t ci;         /**< CI_NA when unavailable. */
     double ms; /**< Counted run time when the state was reached. */
 } TrackRow;
 
@@ -120,7 +121,7 @@ void trackerBeginRun(Tracker* tracker, size_t run);
 double trackerEndRun(Tracker* tracker);
 size_t trackerRecord(Tracker* tracker, size_t count, const char* phase, const Dataset* dataPoints,
                      const Centroids* centroids, size_t splitCluster);
-/* Snapshot and row writers check open failures but not all subsequent write or close failures. */
+/* Snapshot and row writers exit on file I/O failures. */
 void trackerSnapshot(Tracker* tracker, size_t count, const char* phase, const Dataset* dataPoints,
                      const Centroids* centroids, size_t splitCluster);
 void trackerInnerRow(Tracker* tracker, KMeansStage stage, size_t iteration, const Centroids* centroids, double sse);
@@ -130,14 +131,15 @@ void trackerInnerRow(Tracker* tracker, KMeansStage stage, size_t iteration, cons
 InnerTrace trackerCaptureBegin(Tracker* tracker, InnerTrace* trace);
 void trackerCaptureEnd(Tracker* tracker, InnerTrace* trace, InnerTrace previous);
 void trackerAppendTrace(Tracker* tracker, const InnerTrace* trace, size_t count);
-void trackerAddRow(Tracker* tracker, size_t count, double sse, size_t ci);
+/* An unavailable SSE requires CI_NA and is written as NA. */
+void trackerAddRow(Tracker* tracker, size_t count, double sse, size_t ci, bool sseAvailable);
 /* Pauses are not nested: tracking helpers may resume the stopwatch, so do not call them inside an outer pause. */
 void trackerPause(Tracker* tracker);
 void trackerResume(Tracker* tracker);
 size_t trackerCi(Tracker* tracker, const Centroids* centroids);
 void trackerSplitSnapshot(Tracker* tracker, const Dataset* dataPoints, const Centroids* centroids,
                           size_t splitCluster);
-/* run is zero-based; the file records run + 1 and milliseconds. Open/path errors exit; writes and close are unchecked. */
+/* run is zero-based; the file records run + 1 and milliseconds. File I/O failures exit. */
 void appendRunCsv(const char* outputDirectory, const char* algorithmName, size_t run, uint64_t seed,
                   double sse, size_t ci, double ms);
 void algorithmFilePath(Algorithm algorithm, const char* outputDirectory, const char* suffix, char* path, size_t pathSize);

@@ -336,12 +336,10 @@ void runKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_
 /**
  * @brief Repeated k-means runs firstRun..loopCount-1 (see runKMeansAlgorithm for the shared run loop and outputs).
  *
- * Each run makes `maxRepeats` k-means from new initial centroids (by `init`) and keeps the lowest SSE.
- * The winning repeat's partition is copied with the stopwatch paused for example snapshots; if no repeat
- * has an SSE below DBL_MAX, the fallback reports DBL_MAX and relabels against zero-initialized centroids.
- * Tracking: one row per repeat with the best SSE and CI so far, snapshots at the improvements.
+ * Each run keeps the lowest finite SSE from `maxRepeats` k-means and its actual partition.
+ * Invalid repeats are skipped; a run with no finite repeat returns false without writing its result.
  */
-void runRepeatedKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
+bool runRepeatedKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
                                 size_t maxIterations, size_t maxRepeats, size_t firstRun, size_t loopCount,
                                 size_t scaling, const char* fileName, const char* outputDirectory,
                                 const TrackOptions* track, InitMethod init, uint64_t seed)
@@ -373,6 +371,8 @@ void runRepeatedKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTrut
 
         double bestSse = DBL_MAX;
         size_t bestCI = CI_NA;
+        size_t invalidRepeats = 0;
+        bool hasBest = false;
 
         Centroids bestCentroids = allocateCentroids(numCentroids, dataPoints->dimensions);
         size_t* bestPartitions = malloc(dataPoints->size * sizeof(*bestPartitions));
@@ -389,7 +389,14 @@ void runRepeatedKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTrut
             initialCentroids(init, numCentroids, dataPoints, &centroids, rng, &initScratch);
             double resultSse = runKMeans(dataPoints, maxIterations, &centroids, &tracker, KM_STAGE_NONE, &scratch);
 
-            if (resultSse < bestSse)
+            trackerPause(&tracker);
+            const bool valid = isfinite(resultSse);
+            if (!valid) ++invalidRepeats;
+            const bool improves = valid && (!hasBest || resultSse < bestSse);
+            if (improves) hasBest = true;
+            trackerResume(&tracker);
+
+            if (improves)
             {
                 bestSse = resultSse;
                 deepCopyCentroids(&centroids, &bestCentroids);
@@ -403,24 +410,27 @@ void runRepeatedKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTrut
             }
 
             // One row per repeat (count = repeat): the best solution so far
-            trackerAddRow(&tracker, j + 1, bestSse, bestCI);
+            trackerAddRow(&tracker, j + 1, bestSse, bestCI, hasBest);
         }
 
         freeInitScratch(&initScratch);
         freeKMeansScratch(&scratch);
         freeCentroids(&centroids);
+        trackerPause(&tracker);
+        if (invalidRepeats > 0)
+            fprintf(stderr, "Warning: run %zu: %zu of %zu repeats had non-finite SSE and were skipped\n", i + 1,
+                    invalidRepeats, maxRepeats);
+        if (!hasBest)
+        {
+            fprintf(stderr, "Error: run %zu: Repeated k-means produced no finite SSE\n", i + 1);
+            free(bestPartitions);
+            freeCentroids(&bestCentroids);
+            trackerFree(&tracker);
+            return false;
+        }
         duration = trackerEndRun(&tracker);
 
-        // bestPartitions holds labels only after an improvement, that is, when bestSse is below DBL_MAX
-        if (bestSse < DBL_MAX)
-        {
-            memcpy(dataPoints->partitions, bestPartitions, dataPoints->size * sizeof(*bestPartitions));
-        }
-        else
-        {
-            // The labels are from the last repeat; the snapshot needs those of the best centroids
-            partitionStep(dataPoints, &bestCentroids);
-        }
+        memcpy(dataPoints->partitions, bestPartitions, dataPoints->size * sizeof(*bestPartitions));
         free(bestPartitions);
 
         size_t centroidIndex = centroidIndexOrNA(&bestCentroids, groundTruth);
@@ -439,6 +449,7 @@ void runRepeatedKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTrut
 
     printStatistics("Repeated K-means", stats, loopCount - firstRun, numCentroids, scaling);
     writeResultsToFile(fileName, stats, numCentroids, "RKM", loopCount - firstRun, scaling, outputDirectory);
+    return true;
 }
 
 /**

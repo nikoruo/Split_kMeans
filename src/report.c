@@ -24,6 +24,7 @@ typedef struct
     size_t run; /**< 1-based. */
     size_t count;
     double sse;
+    bool sseAvailable;
     size_t ci; /**< CI_NA when not available. */
     double ms;
     size_t order; /**< Position in its ReportRows (set by reportPush), so sorting keeps the file order. */
@@ -79,6 +80,7 @@ typedef struct
     size_t count;
     double ms;
     double sse;
+    bool sseAvailable;
     double ci;
     bool ciAvailable;
 } CurvePoint;
@@ -162,11 +164,10 @@ static bool reportNumber(const char* text, double* value)
 /**
  * @brief Appends the rows of a `_runs.csv` (run;seed;sse;ci;ms) or `_log.csv` (run;count;sse;ci;ms) file to `rows`.
  *
- * Skips the header line (a first line that is not the header is read as data: a file emptied by an interrupted
- * call gets no header on the next append); exits on a malformed line. For `_runs.csv`, a run number that is
- * already in `rows` (the same run twice, in one or more run folders) is an error.
+ * Skips the header line; a missing header is read as data. RKM logs may have unavailable SSE and CI.
+ * Returns false for malformed or duplicate runs.
  */
-static void reportReadCsv(const char* path, bool isLog, ReportRows* rows)
+static bool reportReadCsv(const char* path, bool isLog, bool allowUnavailableSse, ReportRows* rows)
 {
     FILE* file;
     if (FOPEN(file, path, "r") != 0)
@@ -202,22 +203,27 @@ static void reportReadCsv(const char* path, bool isLog, ReportRows* rows)
 
         uint64_t run = 0;
         uint64_t second = 0;
-        ReportRow row;
+        ReportRow row = {0};
         row.ci = CI_NA;
+        row.sseAvailable = true;
         bool ok = fieldCount == 5 && field == NULL && parseUint64(fields[0], &run) && run >= 1 &&
-                  parseUint64(fields[1], &second) && reportNumber(fields[2], &row.sse) &&
-                  reportNumber(fields[4], &row.ms);
+                  parseUint64(fields[1], &second) && reportNumber(fields[4], &row.ms);
+        if (ok && allowUnavailableSse && strcmp(fields[2], "NA") == 0)
+            row.sseAvailable = false;
+        else if (ok)
+            ok = reportNumber(fields[2], &row.sse);
         if (ok && strcmp(fields[3], "NA") != 0)
         {
             uint64_t ci = 0;
             ok = parseUint64(fields[3], &ci);
             row.ci = (size_t)ci;
         }
+        if (!row.sseAvailable && strcmp(fields[3], "NA") != 0) ok = false;
         if (!ok)
         {
             closeInputFile(file, path);
             fprintf(stderr, "Error: %s line %zu is not a %s row\n", path, lineNumber, header);
-            exit(EXIT_FAILURE);
+            return false;
         }
         row.run = (size_t)run;
         row.count = isLog ? (size_t)second : 0;
@@ -231,13 +237,14 @@ static void reportReadCsv(const char* path, bool isLog, ReportRows* rows)
                     closeInputFile(file, path);
                     fprintf(stderr, "Error: run %zu appears twice (in %s, or in it and an earlier run folder)\n",
                             row.run, path);
-                    exit(EXIT_FAILURE);
+                    return false;
                 }
             }
         }
         reportPush(rows, &row);
     }
     closeInputFile(file, path);
+    return true;
 }
 
 /** @brief Reads the shared header of `<directory>/run_config.txt` (the lines up to "calls:") into `header`. */
@@ -392,14 +399,13 @@ static size_t reportRunRows(const ReportRows* log, size_t run, size_t* first)
 }
 
 /**
- * @brief Sorts the `_log.csv` rows of one algorithm by run and count and checks them against its `_runs.csv`; exits on
- * a mismatch.
+ * @brief Sorts and checks `_log.csv` against `_runs.csv`; returns false on a mismatch.
  *
  * Every row must belong to a run of `_runs.csv`; every run must have rows, or none may (tracked and untracked calls
  * in one report would mix the curves); RS must have them (its results end at the last improvement of each run);
- * with rows, the RS and RKM curve run must exist.
+ * with rows, the RS and RKM curve run must exist. Unavailable RKM scores may only precede a finite score.
  */
-static void reportPrepareLog(const char* dataset, ReportAlgorithm* data, Algorithm algorithm, size_t curveRun)
+static bool reportPrepareLog(const char* dataset, ReportAlgorithm* data, Algorithm algorithm, size_t curveRun)
 {
     ReportRows* log = &data->log;
     const char* name = getAlgorithmName(algorithm);
@@ -423,7 +429,7 @@ static void reportPrepareLog(const char* dataset, ReportAlgorithm* data, Algorit
         {
             fprintf(stderr, "Error: %s %s: _log.csv has rows of run %zu, which is not in _runs.csv\n", dataset, name,
                     log->rows[i].run);
-            exit(EXIT_FAILURE);
+            return false;
         }
     }
 
@@ -435,9 +441,9 @@ static void reportPrepareLog(const char* dataset, ReportAlgorithm* data, Algorit
                     "Error: %s RS has no _log.csv rows; its results end at the last SSE improvement of each run, "
                     "so run RS with tracking (batch mode or --track-progress)\n",
                     dataset);
-            exit(EXIT_FAILURE);
+            return false;
         }
-        return;
+        return true;
     }
 
     size_t first = 0;
@@ -449,14 +455,36 @@ static void reportPrepareLog(const char* dataset, ReportAlgorithm* data, Algorit
                     "Error: %s %s: run %zu has no _log.csv rows but other runs have (calls with and without tracking "
                     "are mixed)\n",
                     dataset, name, data->runs.rows[r].run);
-            exit(EXIT_FAILURE);
+            return false;
         }
     }
     if ((algorithm == ALGO_RS || algorithm == ALGO_RKM) && reportRunRows(log, curveRun, &first) == 0)
     {
         fprintf(stderr, "Error: --curve-run %zu: %s %s has no run %zu\n", curveRun, dataset, name, curveRun);
-        exit(EXIT_FAILURE);
+        return false;
     }
+    if (algorithm == ALGO_RKM)
+    {
+        bool haveSse = false;
+        for (size_t i = 0; i < log->count; ++i)
+        {
+            if (i == 0 || log->rows[i].run != log->rows[i - 1].run) haveSse = false;
+            if (log->rows[i].sseAvailable)
+                haveSse = true;
+            else if (haveSse)
+            {
+                fprintf(stderr, "Error: %s RKM: run %zu has unavailable SSE after a finite repeat\n", dataset,
+                        log->rows[i].run);
+                return false;
+            }
+            if ((i + 1 == log->count || log->rows[i + 1].run != log->rows[i].run) && !haveSse)
+            {
+                fprintf(stderr, "Error: %s RKM: run %zu has no finite SSE in _log.csv\n", dataset, log->rows[i].run);
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 /**
@@ -494,6 +522,7 @@ static void reportPoint(CurvePoint* point, const ReportRow* row, size_t count)
     point->count = count;
     point->ms = row->ms;
     point->sse = row->sse;
+    point->sseAvailable = row->sseAvailable;
     point->ciAvailable = row->ci != CI_NA;
     point->ci = point->ciAvailable ? (double)row->ci : 0.0;
 }
@@ -560,6 +589,7 @@ static size_t reportCurve(const ReportAlgorithm* data, Algorithm algorithm, size
         point->count = counts[i];
         point->ms = 0.0;
         point->sse = 0.0;
+        point->sseAvailable = true;
         point->ci = 0.0;
         point->ciAvailable = true;
         size_t members = 0;
@@ -650,7 +680,7 @@ static void reportWriteCurves(const char* outputDirectory, const ReportDataset* 
         }
         for (size_t i = 0; i < lengths[a]; ++i)
         {
-            if (curves[a][i].sse > 0.0 && curves[a][i].sse < smallest)
+            if (curves[a][i].sseAvailable && curves[a][i].sse > 0.0 && curves[a][i].sse < smallest)
             {
                 smallest = curves[a][i].sse;
             }
@@ -723,7 +753,7 @@ static void reportWriteCurves(const char* outputDirectory, const ReportDataset* 
             {
                 reportCell(file, path, formatFixed(point->ms, 3, text), false);
             }
-            reportCell(file, path, formatFixed(point->sse / scale, 6, text), false);
+            reportCell(file, path, point->sseAvailable ? formatFixed(point->sse / scale, 6, text) : "NA", false);
             reportCell(file, path, point->ciAvailable ? formatFixed(point->ci, 4, text) : "NA", last);
         }
     }
@@ -882,11 +912,23 @@ static bool reportCollect(const char* const* directories, size_t directoryCount,
                     ++datasetCount;
                 }
                 ReportDataset* dataset = &(*datasets)[d];
-                reportReadCsv(path, false, &dataset->algorithms[a].runs);
+                if (!reportReadCsv(path, false, false, &dataset->algorithms[a].runs))
+                {
+                    freeStringList(names, nameCount);
+                    reportFreeDatasets(*datasets, datasetCount);
+                    *datasets = NULL;
+                    return false;
+                }
                 algorithmFilePath(algorithmOptions[a].id, folder, "_log.csv", path, sizeof(path));
                 if (fileExists(path))
                 {
-                    reportReadCsv(path, true, &dataset->algorithms[a].log);
+                    if (!reportReadCsv(path, true, algorithmOptions[a].id == ALGO_RKM, &dataset->algorithms[a].log))
+                    {
+                        freeStringList(names, nameCount);
+                        reportFreeDatasets(*datasets, datasetCount);
+                        *datasets = NULL;
+                        return false;
+                    }
                 }
                 const size_t k = reportReadK(folder);
                 if (dataset->k == 0)
@@ -1160,8 +1202,13 @@ int commandReport(int argc, char* argv[])
         {
             if (datasets[d].algorithms[a].runs.count > 0)
             {
-                reportPrepareLog(datasets[d].name, &datasets[d].algorithms[a], algorithmOptions[a].id,
-                                 options.curveRun);
+                if (!reportPrepareLog(datasets[d].name, &datasets[d].algorithms[a], algorithmOptions[a].id,
+                                      options.curveRun))
+                {
+                    reportFreeDatasets(datasets, datasetCount);
+                    free(order);
+                    return EXIT_FAILURE;
+                }
             }
         }
     }
