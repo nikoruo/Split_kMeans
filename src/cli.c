@@ -1068,6 +1068,7 @@ int cliMain(int argc, char* argv[])
                    cliMode, argc, argv);
 
     const size_t firstRun = opt.firstRun - 1;
+    int status = EXIT_SUCCESS;
 
     for (size_t i = 0; i < dataCount; ++i)
     {
@@ -1197,9 +1198,10 @@ int cliMain(int argc, char* argv[])
                                        scaling, baseName, datasetDirectory, &track, opt.init, opt.seed);
                     break;
                 case ALGO_RKM:
-                    runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, currentK, opt.maxIterations, opt.maxRepeats,
-                                               firstRun, rkmRsLoops, scaling, baseName, datasetDirectory, &track,
-                                               opt.init, opt.seed);
+                    if (!runRepeatedKMeansAlgorithm(&dataPoints, &groundTruth, currentK, opt.maxIterations,
+                                                    opt.maxRepeats, firstRun, rkmRsLoops, scaling, baseName,
+                                                    datasetDirectory, &track, opt.init, opt.seed))
+                        status = EXIT_FAILURE;
                     break;
                 case ALGO_RS:
                     runRandomSwapAlgorithm(&dataPoints, &groundTruth, currentK, opt.maxSwaps, firstRun, rkmRsLoops,
@@ -1220,11 +1222,13 @@ int cliMain(int argc, char* argv[])
                                          opt.seed);
                     break;
             }
+            if (status != EXIT_SUCCESS) break;
         }
 
         // Clean up
         freeDataset(&dataPoints);
         freeCentroids(&groundTruth);
+        if (status != EXIT_SUCCESS) break;
     }
 
     freeStringList(dataNames, dataCount);
@@ -1232,5 +1236,5 @@ int cliMain(int argc, char* argv[])
     freeStringList(kNames, dataCount);
     free(selectedSets);
 
-    return 0;
+    return status;
 }
