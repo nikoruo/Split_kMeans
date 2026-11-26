@@ -1,0 +1,22 @@
+# Split_kMeans run configuration. Every call that writes to this folder must match the lines above "calls:".
+version: 2.0.0
+commit: 9132652
+compiler: gcc 13.3.0
+flags: gcc -DNDEBUG -std=c11 -Wall -Wextra -Wpedantic -ffp-contract=off -O3 -Werror
+asserts: off (NDEBUG)
+timer: clock_gettime(CLOCK_MONOTONIC) (monotonic wall clock)
+machine: Linux 6.18.58.1-microsoft-standard-WSL2, 16 logical processors
+cpu: AMD Ryzen 7 7800X3D 8-Core Processor
+seed: 20261119
+log-level: 1
+max-iterations: until the SSE stops improving
+max-swaps: 5000
+repeats: 1000
+bisect-tries: 5
+bisect-select: sse
+init: random
+repartition: both
+decimal-comma: off
+calls:
+2026-11-26 14:21:39 | split_kmeans --seed 20261119 --log-level 1 --track-progress --snapshots none --algo km,skm-intra,skm-global,skm-local,bisecting -r 2 --batch --datasets worms_64d,birch3 -o <LINUX_ROOT>/l1/heavy
+  mode: batch; algorithms: km skm-intra skm-global skm-local bisecting; runs: 1 to 2 (RKM and RS: to 2); datasets: worms_64d,birch3; track-progress: on; snapshots: none; track-inner: off

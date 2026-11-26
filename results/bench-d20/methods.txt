@@ -1,0 +1,61 @@
+D20 timing-build comparison on the desktop, 2026-11-26
+
+Question: should the Phase 9 times come from the MinGW gcc release build
+on Windows (D3) or from the Linux gcc release build in WSL2? In 8.3b the
+Linux build measured 0.92 times the MinGW time on identical runs, but it
+ran alongside the Visual Studio runs.
+
+Builds, both of commit 9132652, whose sources, build files and tests
+equal the v2.0.0 tag (2a25474); only docs and results differ:
+- MinGW: WinLibs gcc 16.2.0, mingw32-make WERROR=1, -O3
+  -ffp-contract=off. SHA-256
+  A8D0F2921EAB4AE7B1A354A349D524BAD1002B54452F0DCAB4296CC19748BD1C.
+- Linux: gcc 13.3.0, GNU Make 4.3 in WSL2 Ubuntu 24.04 (kernel
+  6.18.58.1-microsoft-standard-WSL2), make WERROR=1, same flags, in a
+  clone in the WSL file system with byte-identical inputs (sha256sum -c
+  tests/realdata-sha256.txt passed). SHA-256
+  718aa807ecddd2ca7345d6fc008115789192543d25f7a601d9511f3b34a0733a.
+
+Conditions: the desktop (AMD Ryzen 7 7800X3D), F-Secure scanning and
+heavy applications off as for 8.3b, nothing else run by the agent.
+Six sessions alternated MinGW and Linux (w1, l1, w2, l2, w3, l3), about
+165 s each. Before each MinGW session WSL was shut down; before each
+Linux session WSL was started; both then waited 15 s. No CPU pinning
+(the 7800X3D has one CCD of identical cores).
+
+Each session ran, from the repository root (Linux: the clone root):
+1. The make bench jobs with no reference build (bench.exe <build> -
+   <dir> NUL, as mingw32-make bench BENCH_REF=-): s1, dim064, worms_2d,
+   birch1 and a3, seed 20261119, log level 1, no tracking, 25 RKM
+   repeats, 300 RS swaps, four rounds; the runner reports the sum of
+   per-run minima.
+2. A Phase-9-like job on the sets that dominate the Phase 9 budget:
+   --seed 20261119 --log-level 1 --track-progress --snapshots none
+   --algo km,skm-intra,skm-global,skm-local,bisecting -r 2 --batch
+   --datasets worms_64d,birch3 (heavy-run-config-*.txt).
+
+Identity: all 64 bench and 20 heavy run/seed/SSE/CI values are equal in
+every session of both builds.
+
+Results (sessions.csv; per run in bench-runs.csv and heavy-runs.csv):
+- Bench sum of per-run minima per session: MinGW 5837.3, 5848.5 and
+  5856.2 ms; Linux 5176.8, 5155.9 and 5156.0 ms. Over all three
+  sessions: MinGW 5819.6 ms, Linux 5140.4 ms, Linux/MinGW 0.883.
+  Per case: 2-D sets 0.83 to 0.95 (worms_2d 0.83 to 0.87, birch1
+  SKM-Intra and SKM-Local 0.83, a3 SKM-Global 0.89); dim064 1.00 to
+  1.02 for every algorithm.
+- Heavy job per session: MinGW 121.5, 122.0 and 122.6 s; Linux 117.9,
+  117.6 and 117.5 s. Minimum over sessions: MinGW 121.4 s, Linux
+  117.2 s, Linux/MinGW 0.966. worms_64d 0.97 to 1.02 per algorithm
+  (KM 0.97, SKM-Global 0.99, SKM-Local 1.02); birch3 0.88 to 0.92.
+
+So the Linux build is faster on 2-D data and equal on 64-D data. With
+these ratios applied per dataset to results/release-2.0.0/phase9-budget.csv
+(worms_64d 0.99, birch3 0.90, birch1 0.85, birch2 0.87, worms_2d 0.85,
+dim sets 1.01, other sets 0.89), Phase 9 would take about 9.4 h instead
+of 10.1 h (sections A 1.2, B 3.4 and C 4.8 h instead of 1.35, 3.95 and
+4.83 h). The cause (compiler version, C library or OS) was not
+investigated.
+
+The run folders and logs remain in %TEMP%\skm_d20_20261126_141736 and
+~/skm-d20 in WSL.
