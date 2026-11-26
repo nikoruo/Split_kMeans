@@ -30,7 +30,7 @@ Milestone mode (M0 to M4; plan section "Milestones"):
 
 Before/after mode (an older commit against the current code): `git worktree add <folder outside OneDrive> <commit>`, build there with `mingw32-make`, run that build with absolute paths to the repo's `data/` and `gt/` (they are not in git), then `git worktree remove <folder>`.
 
-Final-run mode (Phase 9, from tag v2.0.0, Linux build in WSL2 per D20): the design frozen in plan step 9.1 (datasets, algorithms, run counts D1, seed). Split the runs into jobs with `--datasets` and `--first-run` (step 3.5) using the sections in plan step 9.2, run the jobs one at a time, merge them with `report` (step 3.9) and keep the summaries in `results/final`.
+Final-run mode (Phase 9, from tag v2.0.1, Linux build in WSL2 per D20): the design frozen in plan step 9.1 (datasets, algorithms, run counts D1, seed). Split the runs into jobs with `--datasets` and `--first-run` (step 3.5) using the sections in plan step 9.2, run the jobs one at a time, merge them with `report` (step 3.9) and keep the summaries in `results/final`.
 
 Other experiments (6.1b, 6.7 or the user's own):
 1. Pilot first: run each configuration once on each dataset (`-r 1`) and report the pilot times. Ask before the full run if any configuration takes long: RKM and RS on birch and worms run for hours, SKM-Global on worms too.

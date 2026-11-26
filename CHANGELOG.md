@@ -1,8 +1,11 @@
 # Changelog
 
-## Unreleased
+## v2.0.1 - 26-11-2026
 
-- 8.5: the Windows builds embed a version resource (`src/version.rc`; `version.h` now holds the version as major, minor and patch numbers, and `SKM_VERSION` is still 2.0.0), and the Makefile's Windows release executables are stripped (`-s`). F-Secure's real-time scanner had quarantined the unstripped `-O3` MinGW release build of 8.2j and later as `TR/W64.Evo`, a machine-learning false positive; the hardened Makefile and Visual Studio builds are clean in its on-access and on-demand scans. Program code, results, goldens and Linux builds are unchanged.
+Windows build hardening after v2.0.0; the program and its results are unchanged.
+
+- 8.5: the Windows builds embed a version resource (`src/version.rc`; `version.h` now holds the version as major, minor and patch numbers), and the Makefile's Windows release executables are stripped (`-s`). F-Secure's real-time scanner had quarantined the unstripped `-O3` MinGW release build of 8.2j and later as `TR/W64.Evo`, a machine-learning false positive; the hardened Makefile and Visual Studio builds are clean in its on-access and on-demand scans. Program code, results, goldens and Linux builds are unchanged.
+- 8.6: version 2.0.1.
 
 ## v2.0.0 - 26-11-2026
 
