@@ -1,0 +1,7 @@
+data: data/birch2.txt
+ground-truth: gt/b2-gt.txt
+k: 100
+n: 100000
+d: 2
+data-sha256: 4d8babe0a92e4bf3011bde7c60656cf96cef177e25d1e12e7961e6f9c77f568e
+ground-truth-sha256: d18032af004324d24ae117794519aedfe55f948ec3ed37eccd8a0635053767ce

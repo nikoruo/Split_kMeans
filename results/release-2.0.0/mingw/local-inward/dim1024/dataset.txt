@@ -1,0 +1,7 @@
+data: data/dim1024.txt
+ground-truth: gt/dim1024.txt
+k: 16
+n: 1024
+d: 1024
+data-sha256: 853209f2d4f8a90200e0d23dba64598a7a947b21a6b9f243aa5e47398e45cb78
+ground-truth-sha256: d9e0de1c028a574476885ec9bcb072809966bd31304a91e2c66e62397f6ed8ae

@@ -1,0 +1,6 @@
+Bisecting KM count;Bisecting KM time (ms);Bisecting KM SSE (10^8);Bisecting KM CI
+end;1.061;1.519185;0.0000
+0;0.012;9.035072;2.0000
+1;0.450;2.475997;1.0000
+2;0.952;1.534668;0.0000
+3;1.051;1.519185;0.0000

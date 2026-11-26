@@ -1,0 +1,24 @@
+# Windows calls run from the repository root; Linux calls from <LINUX_ROOT>/src. <ROOT> is the Windows run folder.
+# mingw
+<ROOT>\bin\mingw.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --runs 1 --repeats 100 --max-swaps 5000 --bisect-tries 5 --batch --algo km,rkm,rs,skm-random,skm-intra,skm-global,skm-global-basic,skm-local,bisecting -o <ROOT>\mingw\standard
+<ROOT>\bin\mingw.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --runs 1 --repeats 100 --max-swaps 5000 --bisect-tries 5 --batch --algo skm-local --repartition inward -o <ROOT>\mingw\local-inward
+<ROOT>\bin\mingw.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --runs 1 --repeats 100 --max-swaps 5000 --bisect-tries 5 --batch --algo skm-local --repartition inward-nonchild -o <ROOT>\mingw\local-inward-nonchild
+<ROOT>\bin\mingw.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --runs 1 --repeats 100 --max-swaps 5000 --bisect-tries 5 --batch --algo bisecting --bisect-select size -o <ROOT>\mingw\bisect-size
+<ROOT>\bin\mingw.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --runs 1 --repeats 100 --max-swaps 5000 --bisect-tries 5 --batch --algo km,rkm,rs --init kmeans++ --datasets s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d -o <ROOT>\mingw\kmeanspp
+# msvc
+<ROOT>\bin\msvc.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --runs 1 --repeats 100 --max-swaps 5000 --bisect-tries 5 --batch --algo km,rkm,rs,skm-random,skm-intra,skm-global,skm-global-basic,skm-local,bisecting --datasets s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d -o <ROOT>\msvc\standard
+<ROOT>\bin\msvc.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --runs 1 --repeats 100 --max-swaps 5000 --bisect-tries 5 --batch --algo skm-local --repartition inward --datasets s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d -o <ROOT>\msvc\local-inward
+<ROOT>\bin\msvc.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --runs 1 --repeats 100 --max-swaps 5000 --bisect-tries 5 --batch --algo skm-local --repartition inward-nonchild --datasets s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d -o <ROOT>\msvc\local-inward-nonchild
+<ROOT>\bin\msvc.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --runs 1 --repeats 100 --max-swaps 5000 --bisect-tries 5 --batch --algo bisecting --bisect-select size --datasets s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d -o <ROOT>\msvc\bisect-size
+<ROOT>\bin\msvc.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --runs 1 --repeats 100 --max-swaps 5000 --bisect-tries 5 --batch --algo km,rkm,rs --init kmeans++ --datasets s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d -o <ROOT>\msvc\kmeanspp
+<ROOT>\bin\mingw.exe report -o <ROOT>\reports\mingw\standard <ROOT>\mingw\standard
+<ROOT>\bin\mingw.exe report -o <ROOT>\reports\mingw\local-inward <ROOT>\mingw\local-inward
+<ROOT>\bin\mingw.exe report -o <ROOT>\reports\mingw\local-inward-nonchild <ROOT>\mingw\local-inward-nonchild
+<ROOT>\bin\mingw.exe report -o <ROOT>\reports\mingw\bisect-size <ROOT>\mingw\bisect-size
+<ROOT>\bin\mingw.exe report -o <ROOT>\reports\mingw\kmeanspp <ROOT>\mingw\kmeanspp
+# linux
+./build/release/split_kmeans --seed 20261119 --log-level 1 --track-progress --snapshots none --runs 1 --repeats 100 --max-swaps 5000 --bisect-tries 5 --batch --algo km,rkm,rs,skm-random,skm-intra,skm-global,skm-global-basic,skm-local,bisecting --datasets s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d -o <LINUX_ROOT>/out/standard
+./build/release/split_kmeans --seed 20261119 --log-level 1 --track-progress --snapshots none --runs 1 --repeats 100 --max-swaps 5000 --bisect-tries 5 --batch --algo skm-local --repartition inward --datasets s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d -o <LINUX_ROOT>/out/local-inward
+./build/release/split_kmeans --seed 20261119 --log-level 1 --track-progress --snapshots none --runs 1 --repeats 100 --max-swaps 5000 --bisect-tries 5 --batch --algo skm-local --repartition inward-nonchild --datasets s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d -o <LINUX_ROOT>/out/local-inward-nonchild
+./build/release/split_kmeans --seed 20261119 --log-level 1 --track-progress --snapshots none --runs 1 --repeats 100 --max-swaps 5000 --bisect-tries 5 --batch --algo bisecting --bisect-select size --datasets s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d -o <LINUX_ROOT>/out/bisect-size
+./build/release/split_kmeans --seed 20261119 --log-level 1 --track-progress --snapshots none --runs 1 --repeats 100 --max-swaps 5000 --bisect-tries 5 --batch --algo km,rkm,rs --init kmeans++ --datasets s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d -o <LINUX_ROOT>/out/kmeanspp

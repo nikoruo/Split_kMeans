@@ -1,0 +1,7 @@
+data: data/s4.txt
+ground-truth: gt/s4-cb.txt
+k: 15
+n: 5000
+d: 2
+data-sha256: e340dfe24b2aed3cdc9480a0b783b2b902ca4fabb3ec19ff969963224600898c
+ground-truth-sha256: e2d7bbac383c331f6678cd15f631ab54204335dea3b57bbaa35087e2b5ee4a82

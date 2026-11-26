@@ -1,0 +1,7 @@
+data: data/dim032.txt
+ground-truth: gt/dim032.txt
+k: 16
+n: 1024
+d: 32
+data-sha256: 222e3b59bc6221c27d1bff01185a27c7d2432af99d7d894e28f13b28bcbeedce
+ground-truth-sha256: 8cc3245c8bea07ffca44bb8ddce304f009416f126907a0f1ed0720f719f7213c
