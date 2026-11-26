@@ -5,7 +5,14 @@
 #ifndef VERSION_H
 #define VERSION_H
 
-#define SKM_VERSION "2.0.0"
+/* Release number; version.rc also uses it for the Windows version resource. */
+#define SKM_VERSION_MAJOR 2
+#define SKM_VERSION_MINOR 0
+#define SKM_VERSION_PATCH 0
+
+#define SKM_STRINGIFY_(x) #x
+#define SKM_STRINGIFY(x) SKM_STRINGIFY_(x)
+#define SKM_VERSION SKM_STRINGIFY(SKM_VERSION_MAJOR.SKM_VERSION_MINOR.SKM_VERSION_PATCH)
 
 #ifdef SKM_BUILD_INFO
 #    include "build_info.h"

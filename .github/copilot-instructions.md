@@ -18,6 +18,7 @@
 - Tests: `make check`. Sanitizers: `make asan check`, `make ubsan check`.
 - Warning-free requirement: `make WERROR=1` must pass on gcc, clang and MinGW-w64. MSVC must build with `/W4`.
 - Visual Studio project lives in `msvc/` and must keep building.
+- Windows release builds embed `src/version.rc` (the Makefile through `windres`, and the Visual Studio project), and the Makefile strips its Windows release executables: without them F-Secure on the desktop quarantined the `-O3` MinGW build as `TR/W64.Evo`, a false positive (plan 8.5). Keep both. A quarantined file's path stays locked until its F-Secure entry is handled, so linking it fails with "Permission denied".
 - Golden files are regenerated only with `make golden-update`, and only in algorithm-change commits.
 - Thesis timings (Phase 9) come from the Linux gcc release build in WSL2 Ubuntu on the desktop at log level 1 (plan D20: 0.88 times the MinGW time on the bench jobs, equal on 64-D data, same SSE and CI). MinGW gcc is the Windows reference build; Visual Studio Release took 1.185 times the MinGW time (step 8.3). Never time debug or sanitizer builds.
 - Windows dev machine and timing reference: your personal desktop (AMD Ryzen 7 7800X3D, 16 logical processors, Windows 11) from plan step 8.3; the company laptop's security software blocks newly built executables. WinLibs GCC 16.2.0, `mingw32-make` 4.4.1 and cppcheck 2.22 (winget `BrechtSanders.WinLibs.POSIX.UCRT`); Visual Studio 2026 18.12 (MSVC 19.52, toolset v145) with MSBuild and its bundled clang 22.1 (component "C++ Clang tools for Windows"), which runs ASan and UBSan (see the verify skill; MinGW gcc has no sanitizers, Windows ASan no leak checker); WSL2 Ubuntu 24.04 with `build-essential` (gcc 13.3, GNU Make 4.3) for the real-data Linux gcc comparison (plan D13) and the Phase 9 timings (D20), run from a clone in the WSL file system (run `wsl --shutdown` before timed Windows runs); GNU Octave 11.3 for `visuals/` (winget `GNU.Octave --scope user`; `octave-cli` is not on PATH but in `%LOCALAPPDATA%\Programs\GNU Octave\Octave-11.3.0\mingw64\bin`; run it headless, figures with `'Visible', 'off'`, which use the gnuplot toolkit there because Octave's OpenGL printing hangs on invisible figures). Recipes run in cmd.exe. If `gcc` is missing in a terminal, reload PATH from the registry. Check copied inputs with `sha256sum -c tests/realdata-sha256.txt`.
@@ -48,7 +49,7 @@
 - `experiment.[ch]`: algorithm run loops, statistics, run configuration and dataset metadata.
 - `tracking.[ch]`: paused stopwatch, progress rows, snapshots and run CSV output.
 - `report.[ch]`: merge finished runs and produce summary tables and curves.
-- `util.[ch]`, `version.h`: shared parsing, formatting, errors, paths and build/version information.
+- `util.[ch]`, `version.h`, `version.rc`: shared parsing, formatting, errors, paths, build/version information and the Windows version resource.
 - `platform.[ch]`, `rng.[ch]`, `locale_utils.[ch]`: platform shims and clock, seeded PCG32, and the retained locale helper.
 
 ## Working agreement

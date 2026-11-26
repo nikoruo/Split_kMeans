@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- 8.5: the Windows builds embed a version resource (`src/version.rc`; `version.h` now holds the version as major, minor and patch numbers, and `SKM_VERSION` is still 2.0.0), and the Makefile's Windows release executables are stripped (`-s`). F-Secure's real-time scanner had quarantined the unstripped `-O3` MinGW release build of 8.2j and later as `TR/W64.Evo`, a machine-learning false positive; the hardened Makefile and Visual Studio builds are clean in its on-access and on-demand scans. Program code, results, goldens and Linux builds are unchanged.
+
 ## v2.0.0 - 26-11-2026
 
 Refactor of v1.0.0 for reproducible thesis experiments. Results differ from v1.0.0: the random stream changed in 1.5 and the algorithm fixes of Phases 2, 6 and 8 are listed below.
