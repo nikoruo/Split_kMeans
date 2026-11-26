@@ -1,0 +1,7 @@
+data: data\\a3.txt
+ground-truth: gt\\a3-ga-cb.txt
+k: 50
+n: 7500
+d: 2
+data-sha256: c203634e4b011e4f756735a5cd03053996a0ce6fccc1eaa73df6ed80db5f6c42
+ground-truth-sha256: 97ee042f1c38b624c4ed0d5c57cad4e7cdad7e9aae246e9e65dd317259fa9723

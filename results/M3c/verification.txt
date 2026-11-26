@@ -1,0 +1,42 @@
+Step 8.3 verification on the desktop, 2026-11-26
+
+Reproduction of results/M3b-ref (desktop MinGW gcc 16.2.0, commit d7cad6f):
+- compare_runs, time excluded: default 51 of 51, local-both 6 of 6,
+  bisect-size 6 of 6 files match; 63 files, 4590 runs, 0 SSE/CI
+  differences. Repeated on the tracked copies in this folder.
+- Reports: table_ci.csv, table_sse.csv and table_success.csv are
+  byte-identical with M3b-ref in all three modes; summary.csv matches in
+  every column except the three time columns.
+- Inputs: all 69 hashes in tests/realdata-sha256.txt before and after
+  the runs; the 36 hashes in the 18 dataset.txt files match the list.
+
+Builds and tests (main working tree, production sources of d7cad6f;
+check roots under %TEMP%):
+- MinGW gcc 16.2.0 release and debug, WERROR=1 check: passed. Unit
+  tests passed; 108 of 108, 3 x 63, 3 of 3, 1 of 1 and 9 of 9 golden
+  comparisons; default-invocation and subcommand smoke tests passed.
+- Visual Studio 2026 18.12.1 Release x64 rebuild (MSVC 19.52.37029,
+  toolset v145, /W4 /WX): 0 warnings, 0 errors.
+- check CHECK_BIN=build\msvc\x64\Release\Split_kMeans.exe: passed.
+- The "Build and run MSVC unit tests" step of windows-build.yml, run
+  locally with CHECK_ROOT and RUNNER_TEMP in the temp folder: passed.
+- Windows clang 22.1.3 (Visual Studio "C++ Clang tools for Windows")
+  ASan and UBSan check: passed, no sanitizer reports. Both builds show
+  the known deprecation warnings of the test tools for the MSVC target;
+  UBSan also the known LNK4217 runtime-library linker warnings.
+- clang 22.1.3 --target=x86_64-w64-mingw32 -std=c11 -Wall -Wextra
+  -Wpedantic -Werror -fsyntax-only -Isrc: all 21 C files in src/ and
+  tests/ passed.
+- cppcheck 2.22.0 --std=c11 --enable=warning,performance,portability
+  -q src: 25 findings, all in the known false-positive categories:
+  21 null-pointer-after-failed-allocation (the allocation helpers exit
+  on failure) and 4 resource leaks through error helpers (cli.c,
+  dataset.c, input_identity.c, tracking.c). No source changed in 8.3.
+- Golden files unchanged.
+
+Benchmark: see methods.txt (64 identities matched; MSVC/MinGW 1.185).
+
+Not run here: Linux builds, LeakSanitizer and the real-data Linux
+comparison belong to 8.3b. WSL2 Ubuntu 24.04 (gcc 13.3.0, GNU Make 4.3)
+is installed; a small ASan/UBSan program and sha256sum -c of the inputs
+passed there. Hosted CI was not rerun.
