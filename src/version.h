@@ -8,7 +8,7 @@
 /* Release number; version.rc also uses it for the Windows version resource. */
 #define SKM_VERSION_MAJOR 2
 #define SKM_VERSION_MINOR 0
-#define SKM_VERSION_PATCH 0
+#define SKM_VERSION_PATCH 1
 
 #define SKM_STRINGIFY_(x) #x
 #define SKM_STRINGIFY(x) SKM_STRINGIFY_(x)
