@@ -9,7 +9,7 @@
 - Datasets (untracked): `data/`, `gt/`, `centroids/` (and `Backups/`) in the repo root.
 - Compares k-means variants and split-based clustering (SKM Intra, Global, Local) against Repeated K-means, Random Swap, Random Split and Bisecting K-means.
 - Results must be reproducible and statistically comparable. Thesis is in progress: algorithm fixes are the default behavior.
-- Code: v2.0.0 was developed on `feature/refactor` and is released by your reviewed pull-request merge into `main` (plan D14; agents never merge it). The tag `v2.0.0` marks the tested release commit; Phase 9 (final experiments) continues on `main`. v1.0.0 is `465a294` on `main`. The refactor plan lives in `docs/refactor-plan.md`; see the module map below.
+- Code: v2.0.0 was developed on `feature/refactor` and is released by your reviewed pull-request merge into `main` (plan D14; agents never merge it). The tag `v2.0.0` marks the tested release commit; Phase 9 (final experiments) continues on `main`. v1.0.0 is `465a294` on `main` (tag `v1.0.0`). The refactor plan lives in `docs/refactor-plan.md`; see the module map below.
 - Layout: sources in `src/`, Visual Studio project in `msvc/` (solution at the root), Makefile at the root, cluster figures in `visuals/` (MATLAB code that must also run unchanged in GNU Octave); Makefile builds go to `build/<config>/` (release, debug, asan, ubsan), Visual Studio builds to `build/msvc/`. Milestone and final result summaries go to `results/<name>/` (tracked in git, plan D4); run folders with tracking logs and snapshots stay local, outside OneDrive.
 
 ## Build and test
