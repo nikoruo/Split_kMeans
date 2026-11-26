@@ -9,7 +9,7 @@ Run the experiment the user describes. Do not edit source files and do not commi
 Preconditions: the root `Makefile` exists (step 1.3), `--seed`, `--algo` and `--log-level` exist (steps 1.6 and 1.6b), and the per-run `<Algo>_runs.csv` is written (step 1.6). If one is missing, report which step is needed and stop.
 
 Rules for every mode:
-- Build the MinGW gcc release configuration (`mingw32-make` on Windows, `make` on Linux), the expected thesis build (plan D3). Never use a debug or sanitizer build for timings. The Visual Studio Release build gives identical SSE and CI but was about 8 % slower.
+- Build the MinGW gcc release configuration (`mingw32-make` on Windows, `make` on Linux), the expected thesis build (plan D3). Never use a debug or sanitizer build for timings. The Visual Studio Release build gives identical SSE and CI but is slower (1.185 times the MinGW time on the desktop in step 8.3).
 - `--log-level 1` for every timed run. A fixed `--seed`: take the user's seed or pick one and report it.
 - Until step 3.3, timed runs use CLI mode (`-k K data.txt gt.txt`), one dataset per call, because batch mode writes tracking rows inside the timed code on every run. From 3.10, every timed run (CLI or batch mode) adds `--track-progress --snapshots none`: the rows cost no measured time (the stopwatch pauses; A/B test in plan step 3.10), `report` needs them for RS (its results end at the last SSE improvement of each run, plan "Thesis results"), and no snapshot files are written around the timed runs. Never use `--no-track` for runs that go through `report`. Figure snapshots come from a separate call with the same seed.
 - `-r N` also applies to RKM and RS; without it they run once. Run them in a separate call without `-r` unless the user asks for more runs.
