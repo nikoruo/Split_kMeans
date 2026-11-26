@@ -1,0 +1,71 @@
+Step 8.3b release check, 2026-11-26
+
+Builds, all from commit b2231d7e0369c87d423101c3fbc07fcf31b9d893
+(8.3a, version 2.0.0); every --version reports commit b2231d7 without
+-dirty:
+- MinGW (thesis build, plan D3): WinLibs gcc 16.2.0, mingw32-make 4.4.1,
+  -O3 -ffp-contract=off -Werror, built in a detached git worktree.
+  SHA-256 496DD19BC3FCBCCE42A3DF7DEC7F7D825A879D7882BA466851F1A8C8CB290156.
+- Visual Studio 2026 18.12.1 Release x64 (MSVC 19.52.37029, toolset
+  v145, /W4 /WX), same worktree. SHA-256
+  30C4B9123D9B256F4B6E0762E73AB4A94444F5B7BA3083C5C1DE8E44BF035B9E.
+  MSBuild printed two MSB8029 notices because the worktree was under
+  %TEMP%; the compiler gave no warnings.
+- Linux: gcc 13.3.0 and GNU Make 4.3 in WSL2 Ubuntu 24.04 (kernel
+  6.18.58.1-microsoft-standard-WSL2), make WERROR=1 in a fresh clone
+  checked out at b2231d7. SHA-256
+  14af5dd7584b10f5b3eaa819b7645f25c5aba164aa4fd44ea6fb6b7e242560a5.
+
+Machine: the desktop (AMD Ryzen 7 7800X3D, 16 logical processors).
+Inputs: sha256sum -c tests/realdata-sha256.txt passed for all 69 files
+on Windows before and after the runs, and in the WSL clone after the
+copy. The 404 data and ground-truth hashes recorded in the dataset.txt
+files of all three platforms match the list.
+
+Options common to every call: --seed 20261119 --log-level 1
+--track-progress --snapshots none --runs 1 --repeats 100 --max-swaps
+5000 --bisect-tries 5 --batch, default iteration limit, random
+initialization unless stated. Configurations, one output folder each:
+- standard: all nine algorithms with the final defaults (SKM-Local
+  repartition both, bisecting select sse).
+- local-inward and local-inward-nonchild: SKM-Local with the other two
+  --repartition modes.
+- bisect-size: bisecting with --bisect-select size.
+- kmeanspp: KM, RKM and RS with --init kmeans++.
+MinGW ran standard and the three mode folders on all 23 datasets and
+kmeanspp on the ten milestone datasets (s1, s4, a3, unbalance, dim064,
+worms_2d, birch1, birch2, birch3, worms_64d). Visual Studio and Linux
+ran all five configurations on the ten milestone datasets. commands.txt
+lists every call; <ROOT> and <LINUX_ROOT> stand for the local run folders
+%TEMP%\skm_8_3b_b2231d7_20261126_111139 and ~/skm-8.3b, which keep the
+binaries, full tracking output and console logs.
+
+MinGW timed block, run alone after wsl --shutdown, with F-Secure
+scanning and heavy applications off: standard 2861 s, local-inward 12 s,
+local-inward-nonchild 12 s, bisect-size 16 s, kmeanspp 1999 s; 4899 s
+in total (11:12:32 to 12:34:11). Every call exited 0 without warnings.
+Afterwards Visual Studio (5088 s) and Linux (4281 s) ran at the same
+time, partly also with the Linux build checks, so their times are not
+comparable with each other or with the MinGW block.
+
+Phase 9 budget (phase9-budget.csv): from the single MinGW runs of the
+standard folder, 100 times each one-run time of KM, the five split
+variants and bisecting, ten times the 100-repeat RKM time for 1000
+repeats (rough: repeat costs vary and fixed overhead is not scaled), and
+the full 5000-swap RS time (full_time_ms_mean, not the last-improvement
+time). Total about 10.1 h: worms_64d 4.8 h, birch1 2.5 h, birch3 1.4 h,
+worms_2d 0.7 h, birch2 0.5 h, the other 18 datasets about 10 min
+together. One run per algorithm cannot show run-to-run spread; on the
+laptop, SKM-Global runs on birch1 ranged from 49 to 245 s.
+
+Timing observation, not a controlled benchmark: on the 150 identical
+milestone runs the Linux build measured 71.2 min against 77.3 min for
+MinGW (Linux/MinGW 0.921; 0.70 to 1.00 per dataset), although Linux ran
+concurrently with the Visual Studio runs. worms_64d took longer on the
+desktop than on the laptop (RS 845.5 s for 5000 swaps against 636.3 s
+in results/M4/6.7/prior-6.6), like dim064 in 8.3.
+
+Saved here: for each platform and configuration run_config.txt and every
+<dataset>/<Algo>_runs.csv with its dataset.txt; for MinGW also the report
+of each configuration (report/). Local paths are replaced by the
+placeholders above.

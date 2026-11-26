@@ -1,0 +1,7 @@
+data: data\\worms_64d.txt
+ground-truth: gt\\worms_64d-gt.txt
+k: 25
+n: 105000
+d: 64
+data-sha256: d01092f09a9f4015a4e7a264cf084b98540be9fd932631b9c5313a085411d8df
+ground-truth-sha256: 4a9c9d05e0d39b0357a96a251122a71d207d9fc5c3d1a788990faa7327e2d283

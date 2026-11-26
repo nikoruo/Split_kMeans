@@ -1,0 +1,7 @@
+data: data/g2-1-20.txt
+ground-truth: gt/g2-1-20-gt.txt
+k: 2
+n: 2048
+d: 1
+data-sha256: 9dc38c49aea593e67c3ae855944b9191d7f4adbc10d20cd7c8af0d95ae72e4fc
+ground-truth-sha256: 9a9dfe0e2ecbf0e5eab8a4501e2e4e0f26c8b303e254753216b17e0d8822b46b

@@ -1,0 +1,28 @@
+Step 8.3b verification, 2026-11-26
+
+Real-data cross-platform identity (compare_runs: run, seed, SSE and CI;
+time excluded), against the MinGW run files:
+- Linux gcc 13.3.0: standard 90 of 90, local-inward 10 of 10,
+  local-inward-nonchild 10 of 10, bisect-size 10 of 10, kmeanspp 30 of
+  30; 150 files, 150 runs, no difference.
+- Visual Studio Release: the same 150 files, no difference.
+- Repeated on the tracked copies in this folder.
+
+Runs: all 15 calls (5 per platform) and the 5 MinGW reports exited 0;
+the console logs contain no warning or error. The MinGW folders hold
+306 run files: 23 datasets x 9 algorithms, 3 x 23 mode runs and 30
+k-means++ runs. No crash, hang or rejected input on any of the 23
+datasets.
+
+Linux build checks in WSL (separate clone at b2231d7, gcc 13.3.0):
+make -B CC=gcc WERROR=1 check, debug check, asan check and ubsan check
+all passed with no compiler warnings and no AddressSanitizer,
+LeakSanitizer or UBSan report: unit tests, 108 of 108, 3 x 63, 3 of 3,
+1 of 1 and 9 of 9 golden comparisons, default-invocation and
+subcommand smoke tests. clang is not installed in WSL; hosted CI covers
+the Linux clang build.
+
+Inputs: 69 of 69 hashes before and after the runs on Windows and in the
+WSL copy; 404 of 404 recorded dataset.txt hashes match.
+
+Not covered: hosted CI on the release candidate (8.4).

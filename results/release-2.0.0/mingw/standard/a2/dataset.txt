@@ -1,0 +1,7 @@
+data: data/a2.txt
+ground-truth: gt/a2-ga-cb.txt
+k: 35
+n: 5250
+d: 2
+data-sha256: 609cc04f224718a5ce60cbda37285143fe7a0fe5f4f1427007ab29fa27c5dda7
+ground-truth-sha256: 9edea1c66c7a594a5ed912416d87adaea29ea096084aad5119ef1369a0d8adcf
