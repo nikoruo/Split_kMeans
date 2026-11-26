@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased (v2.0.0 refactor)
+## v2.0.0 - 26-11-2026
+
+Refactor of v1.0.0 for reproducible thesis experiments. Results differ from v1.0.0: the random stream changed in 1.5 and the algorithm fixes of Phases 2, 6 and 8 are listed below.
 
 - 2.3: K=1 runs without a split (SKM variants and bisecting crashed with a heap overflow); the final k-means gives the dataset mean. SKM-Global and SKM-Global-Basic with K=2 now run global k-means after the initial split; before, they skipped it and reported SSE 1.7976931348623157e+308 (DBL_MAX). Golden: e04_tiny SSE DBL_MAX -> 0, e07_k2 SSE DBL_MAX -> 107718.06 (same as SKM-Intra); new edge case e01_k1 (SSE 14686.68 for every algorithm).
 - 2.4: split selection considers only clusters with 2 or more points (SKM variants, Random Split, bisecting); exits with an error if none is left. Fixes the hangs on one-point clusters (SKM-Local on e04_tiny with K=3, bisecting on e02_k_equals_n). Golden files unchanged; bisecting joins the edge runs (7 new golden files).

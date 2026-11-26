@@ -1,6 +1,6 @@
 # Split_kMeans
 
-> **Work in progress:** the v2.0.0 refactor is on `feature/refactor`; v1.0.0 is on `main`. See the [refactor plan](docs/refactor-plan.md) and [changelog](CHANGELOG.md).
+> **Status:** version 2.0.0 replaces v1.0.0 (October 2025). It was developed on `feature/refactor` and is released by a reviewed merge into `main`; the tag `v2.0.0` marks the tested release commit. The thesis experiments continue on `main`. See the [refactor plan](docs/refactor-plan.md) and [changelog](CHANGELOG.md).
 
 Split_kMeans is a C11 program for reproducible clustering experiments. It compares k-means and split-based variants using sum of squared errors (SSE), Centroid Index (CI), and elapsed time. The project is licensed under [AGPL-3.0](LICENSE).
 

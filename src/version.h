@@ -5,7 +5,7 @@
 #ifndef VERSION_H
 #define VERSION_H
 
-#define SKM_VERSION "2.0.0-dev"
+#define SKM_VERSION "2.0.0"
 
 #ifdef SKM_BUILD_INFO
 #    include "build_info.h"
