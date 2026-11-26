@@ -43,7 +43,7 @@ mingw32-make WERROR=1
 mingw32-make WERROR=1 check CHECK_ROOT=C:\Temp\skm-check
 ```
 
-The Makefile builds `build/release/split_kmeans` on Linux and `build\release\split_kmeans.exe` on Windows. For Visual Studio, open `Split_kMeans.sln` and build **Release | x64**; the executable is `build\msvc\x64\Release\Split_kMeans.exe`.
+The Makefile builds `build/release/split_kmeans` on Linux and `build\release\split_kmeans.exe` on Windows. For Visual Studio, open `Split_kMeans.sln` and build **Release | x64**; the executable is `build\msvc\x64\Release\Split_kMeans.exe`. On Windows, the Makefile's release build and the Visual Studio project embed a version resource (`src/version.rc`; the Makefile compiles it with `windres` from MinGW-w64 binutils), and the Makefile's Windows release executables are stripped, to avoid antivirus false positives (plan step 8.5).
 
 `check` regenerates synthetic data in `build/testdata`, runs unit and golden tests, checks tracking variants and report output, and smoke-tests the default batch and single-dataset invocations. Most check output goes under `CHECK_ROOT`, whose `check` subfolder is **deleted first**; the default-invocation smoke tests also write under `build/testdata/main/outputs`. Use a disposable `CHECK_ROOT` path without spaces, outside OneDrive on Windows. To test the Visual Studio executable with the same golden suite:
 

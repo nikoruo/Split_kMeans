@@ -111,6 +111,17 @@ else ifeq ($(CONFIG),ubsan)
   BASE_LDFLAGS  += -fsanitize=undefined
 endif
 
+# Windows release builds embed the version resource src/version.rc and drop the symbol table: without
+# them F-Secure quarantined the -O3 MinGW build as TR/W64.Evo, a machine-learning false positive (plan 8.5).
+RES_OBJ :=
+ifeq ($(OS),Windows_NT)
+  ifeq ($(CONFIG),release)
+    WINDRES      ?= windres
+    RES_OBJ      := $(BUILD_DIR)/version_rc.o
+    BASE_LDFLAGS += -s
+  endif
+endif
+
 ifeq ($(WERROR),1)
   BASE_CFLAGS += -Werror
 endif
@@ -146,11 +157,16 @@ all: $(BIN)
 
 debug asan ubsan: all
 
-$(BIN): $(OBJ)
+$(BIN): $(OBJ) $(RES_OBJ)
 	$(CC) $(ALL_LDFLAGS) $^ -o $@ $(ALL_LDLIBS)
 
 $(BUILD_DIR)/%.o: src/%.c | $(BUILD_DIR)
 	$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) -DSKM_BUILD_INFO -I$(BUILD_DIR) -MMD -MP -c $< -o $@
+
+ifneq ($(RES_OBJ),)
+$(RES_OBJ): src/version.rc src/version.h | $(BUILD_DIR)
+	$(WINDRES) -O coff -i $< -o $@
+endif
 
 $(BUILD_DIR):
 	$(call MKDIR,$@)
@@ -242,7 +258,7 @@ bench: $(BIN) $(BENCH_RUNNER)
 
 ifeq ($(OS),Windows_NT)
 ifeq ($(subst \,/,$(BENCH_REF)),$(BENCH_DEFAULT_REF))
-$(BENCH_DEFAULT_REF): $(SRC) $(wildcard src/*.h) msvc/Split_kMeans.vcxproj Split_kMeans.sln
+$(BENCH_DEFAULT_REF): $(SRC) $(wildcard src/*.h) src/version.rc msvc/Split_kMeans.vcxproj Split_kMeans.sln
 	@echo Build Visual Studio 2026 Release x64 before running make bench.
 	@exit 1
 bench: $(BENCH_DEFAULT_REF)
@@ -261,6 +277,7 @@ clean:
 help:
 	@echo Targets:
 	@echo   all            release build: build/release/split_kmeans, -O3, NDEBUG
+	@echo                  on Windows stripped and with the version resource src/version.rc
 	@echo   debug          -O0 -g3 build in build/debug, asserts on
 	@echo   asan, ubsan    sanitizer builds in build/asan and build/ubsan, asserts on
 	@echo   run            build and run from the repo root, arguments via ARGS="..."
@@ -275,6 +292,7 @@ help:
 	@echo   CHECK_BIN=exe   run check with another binary, for example build/msvc/x64/Release/Split_kMeans.exe
 	@echo   BENCH_ROOT=dir  benchmark output root, default build/bench; each run gets a new folder
 	@echo   BENCH_REF=exe   compare another release binary; Windows defaults to Visual Studio, - disables
+	@echo   WINDRES=exe     resource compiler of the Windows release build, default windres
 	@echo   CFLAGS, CPPFLAGS, LDFLAGS, LDLIBS are appended to the defaults
 
 -include $(DEP)
