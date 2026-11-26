@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 8.7: the repository history was cleaned: the 67 commits since `main` now use the GitHub noreply identity, local laptop paths in `results/` became placeholders, notes refer to the thesis supervisor by role, and the Copilot co-author lines were removed. Commit IDs changed; `docs/commit-map.txt` maps them, and the tags `v2.0.0` and `v2.0.1` were recreated on the rewritten commits. Code archives (git archive, GitHub ZIP) leave out `.github/`, `docs/`, `results/` and `university/`. No code or result changes.
 - Phase 8 review: the `report.h` summary now describes the input-identity checks that `report` has made since 8.2j (comment only; no code or result change).
 
 ## v2.0.1 - 26-11-2026

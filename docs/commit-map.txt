@@ -1,0 +1,71 @@
+# Commit IDs of feature/refactor before and after the history cleanup of 2026-11-26 (plan step 8.7).
+# Commit IDs in earlier plan notes, commit messages and results/ (for example run_config.txt) are the old IDs.
+# Tags: v2.0.0 2a25474 -> bd0f39a; v2.0.1 819cb97 -> e5642e1; v1.0.0 (465a294 on main) is unchanged.
+# old    new      subject (after the cleanup)
+40f43a4  ddabd04  instructions, guidelines, helpers
+3242f4d  d377836  Phase 1: build system, seeded RNG, CLI and golden-file regression tests
+5d2564d  f44d98f  updated yml to include features
+86d43e3  eaf1df5  clang pipeline fixes
+d29d23b  85d876e  pipeline updates
+25b116f  84bdd8d  Steps 2.1 and 2.2: boundary validation and optional ground truth
+a8583ea  6cda9a6  Step 2.4: split selection skips clusters with fewer than 2 points
+04b9db6  6899ac8  Steps 2.5 to 2.8: RKM tracking, strict parser, file listing, sanitizers
+d741bef  2eb4282  plan refactor post phase2
+8c20537  b9a2881  updated mds based on the previous change of plan
+b225b9b  33f9368  added a benchmark notes about the difficult sets
+4c7b221  a615b50  M0 benchmark run
+f80f938  27e0def  Phase3 + review
+3ab8146  da381fd  rerun of M1
+f9e3c4d  3d52ea7  refactor: extract utility and dataset modules
+7f8be79  8a15c95  style: format utility and dataset modules
+b9093ca  0342597  refactor: extract metrics and k-means modules
+580fd70  a5baa38  style: format metrics and k-means modules
+148e503  471f6f5  refactor: extract split and baseline algorithms
+f346236  80b9ea4  style: format split and baseline modules
+c9d830d  88baf88  refactor: extract application modules
+c078933  bea94f1  style: format application modules
+300b06a  b6f3943  Phase 4 code review
+ac2bd61  7cbdc3e  Phase 5: flat buffers, cluster index, shared two-means and benchmark (M3a)
+41df73a  7640252  Phase 5 code review
+ffd2c9d  0fce27e  Phase 5.5 + code review
+3c6c851  3412ed8  6.7: fix report statistics for identical runs
+6b9da8e  38d7940  Phase 6: consolidate steps 6.1-6.6b
+b26c7f8  8fe3b1f  docs: update agent sources and commit workflow
+5594dba  153c850  6.7: record paired Phase 6 comparisons
+7836c4a  7678697  Phase 6 code review + Phase 6b implementation
+7d71c5e  45c2f88  7.0: establish Phase 7 benchmark and reference results
+44b9763  3a94e8c  7.1: reuse per-run clustering scratch
+9d0c970  dc91512  7.2: sum cluster SSE over stable membership slices
+c11436e  6695ac5  security related clarifications
+06f6228  80bdeb8  7.3: remove redundant clustering work
+64f3bc8  e99c037  M3b: verify Phase 7 references and benchmark table
+5735107  fb6f0e0  Plan Phase 7b follow-up and Phase 8 release
+2ac0bb8  79645d6  7b.1: document Phase 7 and hosted CI results
+e5cd22c  ff22cd3  Plan documentation audit and final results check
+1430a49  5696910  8.0a: default SKM-Local to both
+b13e230  67b8337  8.0b: skip unused two-cluster trials
+cff9485  9d42843  8.1: rewrite project README
+351bf0a  ba11896  8.2: run MSVC unit tests in Windows CI
+6b12c51  c9bc6d4  8.2b: audit documentation and source contracts
+75e2264  e5ad2f8  8.2c: record release robustness decisions
+7e94aa2  a845286  8.2d: detect file and directory I/O failures
+d02d6a7  1b0515a  8.2e: reject non-finite SSE and protect means
+64ee798  c5b76d1  8.2f: validate output paths and local time
+e2572e4  11172b7  8.2g: send ground-truth diagnostics to stderr
+a957e6a  e340e61  8.2h: reject unsafe CSV names before processing
+a135a0e  ae8dcf3  Update copilot-instructions.md
+3fcce68  f0b3e11  8.2i: reject RKM runs without finite repeats
+8470abc  53d9ca4  8.2j: verify input identity with SHA-256
+1f1ff53  67aadc2  Instructions: plan-step and multi-phase commit workflow
+3ddbf2e  be53407  Plan: add open decisions D17 to D19 for Phase 9
+d7cad6f  b8498ab  Plan the desktop move and drop the hosted real-data run
+f6fcf17  6f3789e  8.3: move to the desktop and reproduce the M3b reference
+f34feee  0865d85  8.3: record that ci/realdata-v2.0.0 no longer exists
+b2231d7  bb605cf  8.3a: prepare the v2.0.0 release
+2a25474  bd0f39a  8.3b: release check on the desktop, Windows and WSL2 Linux
+9132652  95c6b31  8.4: record the v2.0.0 tag
+7c0030f  0772294  D20: time the Phase 9 runs with the Linux gcc build in WSL2
+04f0f8a  ed09e1b  8.5: harden the Windows builds against an antivirus false positive
+819cb97  e5642e1  8.6: prepare the v2.0.1 release
+c8fadbb  d2e544c  8.6: record the v2.0.1 tag
+6dc7dbb  c4684de  Phase 8 review: record the findings and Phase 9 notes

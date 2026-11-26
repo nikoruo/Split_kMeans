@@ -59,6 +59,7 @@
 - Ask for the user's explicit approval before running newly downloaded scripts or executables.
 - Ask for the user's explicit approval before deleting datasets or results, or rewriting Git history. Temporary run outputs created for the current task may be deleted without approval if neither the plan nor the user requires keeping them.
 - Never disclose secrets. Ask for the user's explicit approval before uploading files or logs to external services.
+- Treat the repository as public. Committed files and commit messages name no people except authors in literature citations (refer to the professor as the thesis supervisor) and contain no user names, e-mail addresses, employer names or local paths; `results/` files use placeholders such as `<REPO>`, `<ROOT>`, `%TEMP%` and `%USERPROFILE%`. Commits use the personal GitHub noreply identity and carry no Co-authored-by lines (plan 8.7).
 - Follow the plan execution workflow below. For other work, commit only when asked; push only when explicitly requested or authorized by a request to work on multiple phases.
 - Never delete unused functions, macros, files or commented-out code without the user's confirmation, except temporary run outputs as described above. List them instead (see the Unused code review section in docs/refactor-plan.md).
 - Functions marked keep in that table are ported, not dropped, when their surroundings are refactored.

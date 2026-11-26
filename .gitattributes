@@ -15,3 +15,9 @@ tests/realdata-sha256.txt text eol=lf
 *.pdf binary
 *.docx binary
 *.pptx binary
+
+# Left out of shared code archives (git archive, GitHub ZIP); they stay in the repository
+/.github export-ignore
+/docs export-ignore
+/results export-ignore
+/university export-ignore
