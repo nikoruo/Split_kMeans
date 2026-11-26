@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Phase 8 review: the `report.h` summary now describes the input-identity checks that `report` has made since 8.2j (comment only; no code or result change).
+
 ## v2.0.1 - 26-11-2026
 
 Windows build hardening after v2.0.0; the program and its results are unchanged.

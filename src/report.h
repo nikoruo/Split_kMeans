@@ -5,7 +5,8 @@
 #ifndef REPORT_H
 #define REPORT_H
 
-/* argv excludes "report"; merges by name and checks K when present, not input contents; returns status or exits. */
+/* argv excludes "report"; merges by name, requires each dataset folder's dataset.txt and the same input identity
+ * (SHA-256, K, N, D) across folders; returns status or exits. */
 int commandReport(int argc, char* argv[]);
 
 #endif /* REPORT_H */
