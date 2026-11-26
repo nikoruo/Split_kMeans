@@ -55,7 +55,7 @@ That `CHECK_BIN` check uses the Makefile's MinGW-built unit runner. Windows CI a
 
 Other useful targets are `debug check` (assertions enabled), `asan check`, `ubsan check`, `testdata`, `bench`, `help` and `clean`. Sanitizers require a supporting compiler; the [Windows verification recipe](.github/skills/verify/SKILL.md) uses Visual Studio's clang because MinGW gcc has no sanitizers. Windows ASan has no leak checker. `golden-update` regenerates golden files and is for algorithm-change commits only. `clean` removes Makefile builds, `build/testdata` and `build/check`, not the Visual Studio output; preserve any wanted files before using it.
 
-`make bench` runs fixed jobs on local real datasets; on Windows it compares the MinGW build with Visual Studio by default. `BENCH_REF` selects another reference binary and `BENCH_ROOT` selects an output root. Thesis timings use the MinGW gcc release build at log level 1 on an idle, plugged-in reference machine; do not time debug or sanitizer builds.
+`make bench` runs fixed jobs on local real datasets; on Windows it compares the MinGW build with Visual Studio by default. `BENCH_REF` selects another reference binary and `BENCH_ROOT` selects an output root. Thesis timings use the Linux gcc release build (WSL2 Ubuntu on the reference desktop) at log level 1 on an idle, plugged-in machine; do not time debug or sanitizer builds.
 
 ## Input files
 
