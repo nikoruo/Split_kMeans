@@ -1,0 +1,7 @@
+data: data/worms_2d.txt
+ground-truth: gt/worms_2d-gt.txt
+k: 35
+n: 105600
+d: 2
+data-sha256: 730419d15b9b49aedfb313873aca083a919f25bfc8fdd73d7d52c501fd1906e5
+ground-truth-sha256: 6d3d955730706562d560fb00e6b4b95c0c0d154c0c23540f2d675d5c8b88900d

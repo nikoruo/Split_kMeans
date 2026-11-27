@@ -1,0 +1,162 @@
+Step 6.2: every changed golden line (seed 20251026)
+SSE-selected variants now apply their cached best trial rather than drawing a new split; subsequent RNG draws and intermediate states consequently change. Report lines aggregate those changes. SKM-Global-Basic and unrelated algorithms remain unchanged.
+Changed files: 11; changed lines: 45.
+
+main\s03_overlap\SKM_Global_runs.csv
+  line 2:
+    sse: 13018755.31907147 -> 13007999.205424512
+  line 4:
+    sse: 13018860.940437546 -> 13007999.205424512
+  line 5:
+    sse: 13018755.31907147 -> 13018860.940437546
+  line 6:
+    sse: 13018755.31907147 -> 13007999.205424512
+
+main\s03_overlap\SKM_Intra_runs.csv
+  line 4:
+    sse: 13259312.681247201 -> 13009044.925920192
+
+modes\both\s03_overlap\SKM_Local_runs.csv
+  line 2:
+    sse: 14405727.626124823 -> 13281111.728836477
+    ci: 1 -> 0
+  line 3:
+    sse: 15916103.992189925 -> 13800387.066889014
+    ci: 1 -> 0
+  line 4:
+    sse: 13218647.909606179 -> 13280842.306356743
+  line 5:
+    sse: 13070519.683597835 -> 14746931.736293156
+    ci: 0 -> 1
+  line 6:
+    sse: 13133837.913049856 -> 13814832.90075068
+
+modes\inward-nonchild\s03_overlap\SKM_Local_runs.csv
+  line 2:
+    sse: 15191398.079342365 -> 13611659.961193234
+    ci: 1 -> 0
+  line 3:
+    sse: 13490464.538864827 -> 13648105.787655657
+  line 4:
+    sse: 15428425.782360326 -> 15118144.334676119
+  line 5:
+    sse: 16083609.08926986 -> 14394503.150522463
+  line 6:
+    sse: 13667925.760096652 -> 13566366.784600835
+
+modes\inward\s03_overlap\SKM_Local_runs.csv
+  line 2:
+    sse: 14612918.599654952 -> 13818134.022717286
+    ci: 1 -> 0
+  line 3:
+    sse: 14793082.197147226 -> 13758738.67622293
+  line 4:
+    sse: 13038019.058786504 -> 13179844.538311472
+  line 5:
+    sse: 13249609.428449564 -> 14808032.410892809
+    ci: 0 -> 1
+  line 6:
+    sse: 13133837.913049856 -> 13814832.90075068
+
+report\curves_s01_blobs2d.csv
+  line 5:
+    SKM - Intra SSE (10^5): 507.039860 -> 508.077751
+    SKM - Global SSE (10^5): 507.039860 -> 508.077751
+    SKM - Local SSE (10^5): 507.039860 -> 508.077751
+
+report\curves_s02_blobs8d.csv
+  line 5:
+    SKM - Intra SSE (10^7): 1340.270098 -> 1320.809280
+    SKM - Global SSE (10^7): 1340.270098 -> 1320.809280
+    SKM - Local SSE (10^7): 1340.270098 -> 1320.809280
+  line 6:
+    SKM - Intra SSE (10^7): 744.808212 -> 711.596891
+    SKM - Intra CI: 2.2000 -> 2.0000
+    SKM - Global SSE (10^7): 747.290932 -> 679.327136
+    SKM - Local SSE (10^7): 744.808212 -> 711.596891
+    SKM - Local CI: 2.2000 -> 2.0000
+  line 7:
+    SKM - Intra SSE (10^7): 266.739674 -> 323.613751
+    SKM - Global SSE (10^7): 300.947767 -> 327.808266
+    SKM - Local SSE (10^7): 266.739674 -> 323.613751
+
+report\curves_s03_overlap.csv
+  line 2:
+    SKM - Intra SSE (10^7): 1.305910 -> 1.300904
+    SKM - Global SSE (10^7): 1.301663 -> 1.301017
+  line 6:
+    SKM - Intra SSE (10^7): 1.611469 -> 1.611429
+    SKM - Local SSE (10^7): 1.626759 -> 1.627304
+  line 7:
+    SKM - Intra SSE (10^7): 1.447542 -> 1.429086
+    SKM - Intra CI: 0.4000 -> 0.0000
+    SKM - Global SSE (10^7): 1.301663 -> 1.301017
+    SKM - Local SSE (10^7): 1.324971 -> 1.324378
+  line 8:
+    SKM - Intra SSE (10^7): 1.305910 -> 1.300904
+
+report\curves_s05_k15.csv
+  line 5:
+    SKM - Intra SSE (10^5): 1305.444386 -> 1315.055908
+    SKM - Global SSE (10^5): 1305.444386 -> 1315.055908
+    SKM - Local SSE (10^5): 1305.444386 -> 1315.055908
+  line 6:
+    SKM - Intra SSE (10^5): 1055.808039 -> 1034.394349
+    SKM - Global SSE (10^5): 993.092444 -> 998.755111
+    SKM - Local SSE (10^5): 1047.978709 -> 1019.617703
+  line 7:
+    SKM - Intra SSE (10^5): 830.631230 -> 774.117987
+    SKM - Global SSE (10^5): 730.660591 -> 725.672686
+    SKM - Local SSE (10^5): 829.520542 -> 746.061299
+  line 8:
+    SKM - Intra SSE (10^5): 639.594783 -> 612.378874
+    SKM - Global SSE (10^5): 583.116466 -> 565.444690
+    SKM - Local SSE (10^5): 616.753674 -> 577.455902
+  line 9:
+    SKM - Intra SSE (10^5): 519.511123 -> 504.906430
+    SKM - Global SSE (10^5): 486.996586 -> 470.577145
+    SKM - Local SSE (10^5): 499.569373 -> 470.429018
+  line 10:
+    SKM - Intra SSE (10^5): 396.440121 -> 405.092073
+    SKM - Global SSE (10^5): 389.704300 -> 379.962331
+    SKM - Local SSE (10^5): 402.243089 -> 383.728560
+  line 11:
+    SKM - Intra SSE (10^5): 319.266481 -> 321.796411
+    SKM - Global SSE (10^5): 309.723712 -> 309.456214
+    SKM - Local SSE (10^5): 324.187372 -> 315.357131
+  line 12:
+    SKM - Intra SSE (10^5): 261.756013 -> 251.845985
+    SKM - Global SSE (10^5): 252.348369 -> 252.305953
+    SKM - Local SSE (10^5): 257.014093 -> 252.175357
+  line 13:
+    SKM - Intra SSE (10^5): 201.485679 -> 201.371967
+    SKM - Global SSE (10^5): 201.691944 -> 201.849236
+    SKM - Local SSE (10^5): 206.250058 -> 201.771603
+  line 14:
+    SKM - Intra SSE (10^5): 151.490988 -> 151.298470
+    SKM - Global SSE (10^5): 151.526789 -> 151.779054
+    SKM - Local SSE (10^5): 155.889552 -> 151.716024
+  line 15:
+    SKM - Intra SSE (10^5): 101.812680 -> 101.616973
+    SKM - Global SSE (10^5): 101.662730 -> 101.944496
+    SKM - Local SSE (10^5): 106.007267 -> 101.991136
+  line 16:
+    SKM - Intra SSE (10^5): 52.493948 -> 52.335061
+    SKM - Global SSE (10^5): 52.212538 -> 52.522898
+    SKM - Local SSE (10^5): 56.863248 -> 52.530868
+  line 17:
+    SKM - Intra SSE (10^5): 3.884422 -> 3.451605
+
+report\summary.csv
+  line 24:
+    sse_mean: 13059098.476986 -> 13009044.925920
+    sse_sd: 111923.142697 -> 0.000000
+  line 25:
+    sse_mean: 13016625.220615 -> 13010171.552427
+    sse_sd: 4822.305971 -> 4857.515569
+
+report\table_sse.csv
+  line 6:
+    s03_overlap: 13059098.48 -> 13009044.93
+  line 7:
+    s03_overlap: 13016625.22 -> 13010171.55

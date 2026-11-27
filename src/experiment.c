@@ -1,0 +1,914 @@
+/* SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2025 Niko Ruohonen and contributors
+ */
+
+#define _CRT_SECURE_NO_WARNINGS
+#include "platform.h"
+#include "experiment.h"
+#include "baselines.h"
+#include "metrics.h"
+#include "util.h"
+#include "version.h"
+
+#include <assert.h>
+#include <float.h>
+#include <inttypes.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+/**
+ * @brief Aggregate statistics across runs.
+ *
+ * - sseSum: Sum of per-run SSE values.
+ * - sseSumScaled: Sum of SSE values scaled by 2^-64, for an overflowing sseSum.
+ * - ciSum: Sum of per-run CI values.
+ * - timeSum: Sum of durations across runs in milliseconds.
+ * - successRate: Count of runs meeting success criteria (e.g., CI==0).
+ */
+typedef struct
+{
+    double sseSum;       /**< Sum of SSE values across runs. */
+    double sseSumScaled; /**< Sum of SSE values scaled by 2^-64. */
+    size_t ciSum;        /**< Sum of Centroid Index (CI) values across runs. */
+    double timeSum;      /**< Total time across runs in milliseconds. */
+    double successRate;  /**< Success count across runs (used as count, averaged later). */
+    bool ciAvailable;    /**< False once a run had no CI (no ground truth); CI and success rate print as NA. */
+} Statistics;
+
+/**
+ * @brief Resets all statistic accumulators to their baseline.
+ */
+static void initializeStatistics(Statistics* stats)
+{
+    assert(stats != NULL);
+
+    stats->sseSum = 0.0;
+    stats->sseSumScaled = 0.0;
+    stats->ciSum = 0;
+    stats->timeSum = 0.0;
+    stats->successRate = 0.0; /* used as count; averaged later */
+    stats->ciAvailable = true;
+}
+
+/**
+ * @brief Adds one run's SSE, CI and time to the totals; a CI of CI_NA marks CI as not available.
+ */
+static void addRunStatistics(Statistics* stats, double sse, size_t ci, double ms)
+{
+    stats->sseSum += sse;
+    stats->sseSumScaled += ldexp(sse, -64);
+    stats->timeSum += ms;
+    if (ci == CI_NA)
+    {
+        stats->ciAvailable = false;
+        return;
+    }
+    stats->ciSum += ci;
+    if (ci == 0) stats->successRate++;
+}
+
+static double meanSse(const Statistics* stats, size_t count)
+{
+    assert(count > 0);
+    double mean = stats->sseSum / (double)count;
+    if (!isfinite(stats->sseSum))
+    {
+        mean = ldexp(stats->sseSumScaled / (double)count, 64);
+        if (!isfinite(mean))
+        {
+            fprintf(stderr, "Error: statistics exceed the numeric range\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+    return mean;
+}
+
+/**
+ * @brief Appends the summary row of one algorithm to `<outputDirectory>/<filename>.csv` (header when the file is
+ * empty).
+ *
+ * Algorithm;Average CI;SSE;Relative CI;MS;Success Rate, averaged over `loopCount` runs (> 0); SSE divided by
+ * `scaling` (> 0); CI, relative CI and success rate NA without ground truth. Success Rate is a fraction, while
+ * console/report success is a percentage. Fixed decimals through formatFixed (decimal comma with --decimal-comma).
+ * Exits on file I/O failure.
+ */
+static void writeResultsToFile(const char* filename, Statistics stats, size_t numCentroids, const char* algorithm,
+                               size_t loopCount, size_t scaling, const char* outputDirectory)
+{
+    char csvFileName[PATH_MAX];
+    char outputFilePath[PATH_MAX];
+    if (snprintf(csvFileName, sizeof(csvFileName), "%s.csv", filename) >= (int)sizeof(csvFileName) ||
+        snprintf(outputFilePath, sizeof(outputFilePath), "%s%c%s", outputDirectory, PATHSEP, csvFileName) >=
+            (int)sizeof(outputFilePath))
+    {
+        fprintf(stderr, "Buffer too small in writeResultsToFile\n");
+        exit(EXIT_FAILURE);
+    }
+
+    double sse = meanSse(&stats, loopCount);
+    sse /= (double)scaling;
+
+    FILE* file;
+    if (FOPEN(file, outputFilePath, "a+") != 0)
+    {
+        handleFileError(outputFilePath);
+    }
+
+    /* Write header once when the file is empty */
+    if (fileIsEmpty(file, outputFilePath))
+    {
+        checkFileWrite(file, outputFilePath, fprintf(file, "Algorithm;Average CI;SSE;Relative CI;MS;Success Rate\n"));
+    }
+
+    double avgCI = (double)stats.ciSum / loopCount;
+    double relCI = avgCI / (double)numCentroids;
+    double avgTime = stats.timeSum / (double)loopCount;
+    double succRate = (stats.successRate / (double)loopCount);
+
+    char ciText[NUMBER_TEXT_SIZE];
+    char sseText[NUMBER_TEXT_SIZE];
+    char relText[NUMBER_TEXT_SIZE];
+    char msText[NUMBER_TEXT_SIZE];
+    char rateText[NUMBER_TEXT_SIZE];
+    if (stats.ciAvailable)
+    {
+        checkFileWrite(file, outputFilePath,
+                       fprintf(file, "%s;%s;%s;%s;%s;%s\n", algorithm, formatFixed(avgCI, 2, ciText),
+                               formatFixed(sse, 0, sseText), formatFixed(relCI, 2, relText),
+                               formatFixed(avgTime, 0, msText), formatFixed(succRate, 2, rateText)));
+    }
+    else
+    {
+        checkFileWrite(file, outputFilePath,
+                       fprintf(file, "%s;NA;%s;NA;%s;NA\n", algorithm, formatFixed(sse, 0, sseText),
+                               formatFixed(avgTime, 0, msText)));
+    }
+
+    closeOutputFile(file, outputFilePath);
+}
+
+static bool readLocalTime(struct tm* result)
+{
+    const time_t now = time(NULL);
+    if (now == (time_t)-1)
+    {
+        fprintf(stderr, "Error: Unable to obtain current time\n");
+        return false;
+    }
+    if (!platform_localtime(result, &now))
+    {
+        fprintf(stderr, "Error: Unable to convert local time\n");
+        return false;
+    }
+    return true;
+}
+
+/** @brief Creates `outputs/<timestamp>` with numeric suffixes for existing directories. */
+void createUniqueDirectory(char* outputDirectory, size_t size)
+{
+    struct tm t = {0};
+    if (!readLocalTime(&t)) exit(EXIT_FAILURE);
+
+    char datebuf[32];
+
+    if (strftime(datebuf, sizeof datebuf, "%Y-%m-%d_%H-%M-%S", &t) == 0)
+    {
+        fprintf(stderr, "Error: Unable to format local time\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (!platform_make_directory("outputs", NULL))
+    {
+        fprintf(stderr, "Error: Unable to create directory 'outputs': %s\n", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    // A second call in the same second gets <timestamp>_2, _3, ...: never two calls in one folder
+    for (unsigned attempt = 1; attempt < 100; ++attempt)
+    {
+        const int length = attempt == 1 ? snprintf(outputDirectory, size, "outputs%c%s", PATHSEP, datebuf)
+                                        : snprintf(outputDirectory, size, "outputs%c%s_%u", PATHSEP, datebuf, attempt);
+        if (length < 0 || (size_t)length >= size)
+        {
+            fprintf(stderr, "Buffer too small in createUniqueDirectory\n");
+            exit(EXIT_FAILURE);
+        }
+
+        bool created = false;
+        if (!platform_make_directory(outputDirectory, &created))
+        {
+            fprintf(stderr, "Error: Unable to create directory '%s': %s\n", outputDirectory, strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        if (created)
+        {
+            return;
+        }
+    }
+    fprintf(stderr, "Error: Unable to create a new folder under outputs for %s\n", datebuf);
+    exit(EXIT_FAILURE);
+}
+
+/**
+ * @brief Ensures a per-dataset subdirectory exists under a base path.
+ *
+ * Builds `<baseDirectory>/<datasetName>` and creates the directory if missing.
+ *
+ * @param baseDirectory Parent path under which the dataset folder is created.
+ * @param datasetName Leaf folder name (dataset identifier).
+ * @param datasetDirectory Output buffer receiving the combined path.
+ * @param size Capacity of `datasetDirectory` in bytes.
+ * @return void
+ * @errors Exits on buffer overflow or directory-creation failure.
+ */
+void createDatasetDirectory(const char* baseDirectory, const char* datasetName, char* datasetDirectory, size_t size)
+{
+    joinPath(datasetDirectory, size, baseDirectory, datasetName);
+
+    if (!platform_make_directory(datasetDirectory, NULL))
+    {
+        fprintf(stderr, "Error: Unable to create dataset directory '%s': %s\n", datasetDirectory, strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+}
+
+/**
+ * @brief Prints the averages over `loopCount` runs (> 0) to stdout: CI, SSE divided by `scaling`, relative CI, time,
+ * success rate.
+ *
+ * CI, relative CI and success rate print as NA without ground truth.
+ */
+static void printStatistics(const char* algorithmName, Statistics stats, size_t loopCount, size_t numCentroids,
+                            size_t scaling)
+{
+    const double sse = meanSse(&stats, loopCount) / (double)scaling;
+    if (!stats.ciAvailable)
+    {
+        printf("(%s) Average CI: NA and SSE: %.0f\n", algorithmName, sse);
+        printf("(%s) Relative CI: NA\n", algorithmName);
+        printf("(%s) Average time taken: %.0f ms\n", algorithmName, stats.timeSum / loopCount);
+        printf("(%s) Success rate: NA\n\n", algorithmName);
+        return;
+    }
+
+    printf("(%s) Average CI: %.2f and SSE: %.0f\n", algorithmName, (double)stats.ciSum / loopCount, sse);
+    printf("(%s) Relative CI: %.2f\n", algorithmName, (double)stats.ciSum / loopCount / numCentroids);
+    printf("(%s) Average time taken: %.0f ms\n", algorithmName, stats.timeSum / loopCount);
+    printf("(%s) Success rate: %.2f%%\n\n", algorithmName, stats.successRate / loopCount * 100);
+}
+
+/**
+ * @brief K-means runs firstRun..loopCount-1 (0-based): initial centroids by `init`, k-means until the SSE stops
+ * improving.
+ *
+ * Shared by the six algorithm wrappers: run i uses rng_derive_seed(seed, i); the stopwatch measures the run
+ * (tracking paused); after each run one `_runs.csv` row and, for the first run with CI = 0 and with CI > 0,
+ * the example snapshots; at the end the console statistics and the summary row (SSE divided by `scaling`).
+ * `groundTruth` may be empty (CI is then NA); K must be 1 to the number of distinct data points (the CLI checks it).
+ * Exits on a zero iteration limit, allocation failure or file errors.
+ * KM tracking: one row per k-means iteration (runKMeansWithTracking).
+ */
+void runKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxIterations,
+                        size_t firstRun, size_t loopCount, size_t scaling, const char* fileName,
+                        const char* outputDirectory, const TrackOptions* track, InitMethod init, uint64_t seed)
+{
+    if (maxIterations == 0)
+    {
+        fprintf(stderr, "Error: K-means requires at least one iteration\n");
+        exit(EXIT_FAILURE);
+    }
+    Statistics stats;
+    initializeStatistics(&stats);
+
+    Tracker tracker = trackerCreate(ALGO_KM, outputDirectory, groundTruth, track);
+    double duration;
+    bool savedZeroResults = false;
+    bool savedNonZeroResults = false;
+
+    printf("K-means\n");
+
+    for (size_t i = firstRun; i < loopCount; ++i)
+    {
+        if (logLevel >= 2) printf("Round %zu\n", i + 1);
+
+        const uint64_t runSeed = rng_derive_seed(seed, i);
+        Rng runRng;
+        rng_seed(&runRng, runSeed);
+        Rng* rng = &runRng;
+
+        resetPartitions(dataPoints);
+
+        Centroids centroids = allocateCentroids(numCentroids, dataPoints->dimensions);
+
+        trackerBeginRun(&tracker, i);
+
+        KMeansScratch scratch = allocateKMeansScratch(numCentroids, dataPoints->dimensions);
+        InitScratch initScratch = allocateInitScratch(dataPoints->size, init);
+        initialCentroids(init, numCentroids, dataPoints, &centroids, rng, &initScratch);
+        freeInitScratch(&initScratch);
+
+        double resultSse = runKMeansWithTracking(dataPoints, maxIterations, &centroids, &tracker, &scratch);
+        freeKMeansScratch(&scratch);
+
+        duration = trackerEndRun(&tracker);
+
+        size_t centroidIndex = centroidIndexOrNA(&centroids, groundTruth);
+
+        addRunStatistics(&stats, resultSse, centroidIndex, duration);
+
+        appendRunCsv(outputDirectory, "KM", i, runSeed, resultSse, centroidIndex, duration);
+
+        saveExampleSnapshots(&centroids, dataPoints, centroidIndex, "KM", outputDirectory, &savedZeroResults,
+                             &savedNonZeroResults);
+
+        freeCentroids(&centroids);
+    }
+
+    trackerFree(&tracker);
+
+    printStatistics("K-means", stats, loopCount - firstRun, numCentroids, scaling);
+    writeResultsToFile(fileName, stats, numCentroids, "KM", loopCount - firstRun, scaling, outputDirectory);
+}
+
+/**
+ * @brief Repeated k-means runs firstRun..loopCount-1 (see runKMeansAlgorithm for the shared run loop and outputs).
+ *
+ * Each run keeps the lowest finite SSE from `maxRepeats` k-means and its actual partition.
+ * Invalid repeats are skipped; a run with no finite repeat returns false without writing its result.
+ */
+bool runRepeatedKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
+                                size_t maxIterations, size_t maxRepeats, size_t firstRun, size_t loopCount,
+                                size_t scaling, const char* fileName, const char* outputDirectory,
+                                const TrackOptions* track, InitMethod init, uint64_t seed)
+{
+    if (maxIterations == 0)
+    {
+        fprintf(stderr, "Error: Repeated k-means requires at least one iteration\n");
+        exit(EXIT_FAILURE);
+    }
+    Statistics stats;
+    initializeStatistics(&stats);
+
+    Tracker tracker = trackerCreate(ALGO_RKM, outputDirectory, groundTruth, track);
+    double duration;
+
+    bool savedZeroResults = false;
+    bool savedNonZeroResults = false;
+
+    printf("Repeated K-means\n");
+
+    for (size_t i = firstRun; i < loopCount; ++i)
+    {
+        if (logLevel >= 2) printf("Round %zu\n", i + 1);
+
+        const uint64_t runSeed = rng_derive_seed(seed, i);
+        Rng runRng;
+        rng_seed(&runRng, runSeed);
+        Rng* rng = &runRng;
+
+        double bestSse = DBL_MAX;
+        size_t bestCI = CI_NA;
+        size_t invalidRepeats = 0;
+        bool hasBest = false;
+
+        Centroids bestCentroids = allocateCentroids(numCentroids, dataPoints->dimensions);
+        size_t* bestPartitions = malloc(dataPoints->size * sizeof(*bestPartitions));
+        handleMemoryError(bestPartitions);
+
+        trackerBeginRun(&tracker, i);
+
+        Centroids centroids = allocateCentroids(numCentroids, dataPoints->dimensions);
+        KMeansScratch scratch = allocateKMeansScratch(numCentroids, dataPoints->dimensions);
+        InitScratch initScratch = allocateInitScratch(dataPoints->size, init);
+        for (size_t j = 0; j < maxRepeats; ++j)
+        {
+            if (logLevel >= 3) printf("Repeat %zu\n", j + 1);
+            initialCentroids(init, numCentroids, dataPoints, &centroids, rng, &initScratch);
+            double resultSse = runKMeans(dataPoints, maxIterations, &centroids, &tracker, KM_STAGE_NONE, &scratch);
+
+            trackerPause(&tracker);
+            const bool valid = isfinite(resultSse);
+            if (!valid) ++invalidRepeats;
+            const bool improves = valid && (!hasBest || resultSse < bestSse);
+            if (improves) hasBest = true;
+            trackerResume(&tracker);
+
+            if (improves)
+            {
+                bestSse = resultSse;
+                deepCopyCentroids(&centroids, &bestCentroids);
+                trackerPause(&tracker);
+                memcpy(bestPartitions, dataPoints->partitions, dataPoints->size * sizeof(*bestPartitions));
+                trackerResume(&tracker);
+
+                // CI of the new best solution, only for the rows (stopwatch paused)
+                if (tracker.logRows) bestCI = trackerCi(&tracker, &centroids);
+                trackerSnapshot(&tracker, j + 1, "step", dataPoints, &centroids, SIZE_MAX);
+            }
+
+            // One row per repeat (count = repeat): the best solution so far
+            trackerAddRow(&tracker, j + 1, bestSse, bestCI, hasBest);
+        }
+
+        freeInitScratch(&initScratch);
+        freeKMeansScratch(&scratch);
+        freeCentroids(&centroids);
+        trackerPause(&tracker);
+        if (invalidRepeats > 0)
+            fprintf(stderr, "Warning: run %zu: %zu of %zu repeats had non-finite SSE and were skipped\n", i + 1,
+                    invalidRepeats, maxRepeats);
+        if (!hasBest)
+        {
+            fprintf(stderr, "Error: run %zu: Repeated k-means produced no finite SSE\n", i + 1);
+            free(bestPartitions);
+            freeCentroids(&bestCentroids);
+            trackerFree(&tracker);
+            return false;
+        }
+        duration = trackerEndRun(&tracker);
+
+        memcpy(dataPoints->partitions, bestPartitions, dataPoints->size * sizeof(*bestPartitions));
+        free(bestPartitions);
+
+        size_t centroidIndex = centroidIndexOrNA(&bestCentroids, groundTruth);
+
+        addRunStatistics(&stats, bestSse, centroidIndex, duration);
+
+        appendRunCsv(outputDirectory, "RKM", i, runSeed, bestSse, centroidIndex, duration);
+
+        saveExampleSnapshots(&bestCentroids, dataPoints, centroidIndex, "RKM", outputDirectory, &savedZeroResults,
+                             &savedNonZeroResults);
+
+        freeCentroids(&bestCentroids);
+    }
+
+    trackerFree(&tracker);
+
+    printStatistics("Repeated K-means", stats, loopCount - firstRun, numCentroids, scaling);
+    writeResultsToFile(fileName, stats, numCentroids, "RKM", loopCount - firstRun, scaling, outputDirectory);
+    return true;
+}
+
+/**
+ * @brief Random Swap runs firstRun..loopCount-1 (see runKMeansAlgorithm for the shared run loop and outputs).
+ *
+ * Each run starts from initial centroids by `init` and their optimal partition and makes at most `maxSwaps` trial
+ * swaps (none when K equals the distinct-row count). Tracking: the initial solution and every improvement.
+ */
+void runRandomSwapAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids, size_t maxSwaps,
+                            size_t firstRun, size_t loopCount, size_t scaling, const char* fileName,
+                            const char* outputDirectory, const TrackOptions* track, InitMethod init,
+                            size_t distinctRows, uint64_t seed)
+{
+    Statistics stats;
+    initializeStatistics(&stats);
+
+    Tracker tracker = trackerCreate(ALGO_RS, outputDirectory, groundTruth, track);
+    double duration;
+
+    bool savedZeroResults = false;
+    bool savedNonZeroResults = false;
+
+    printf("Random swap\n");
+
+    for (size_t i = firstRun; i < loopCount; ++i)
+    {
+        if (logLevel >= 2) printf("Round %zu\n", i + 1);
+
+        const uint64_t runSeed = rng_derive_seed(seed, i);
+        Rng runRng;
+        rng_seed(&runRng, runSeed);
+        Rng* rng = &runRng;
+
+        Centroids centroids = allocateCentroids(numCentroids, dataPoints->dimensions);
+
+        trackerBeginRun(&tracker, i);
+
+        InitScratch initScratch = allocateInitScratch(dataPoints->size, init);
+        initialCentroids(init, numCentroids, dataPoints, &centroids, rng, &initScratch);
+        freeInitScratch(&initScratch);
+        partitionStep(dataPoints, &centroids); // Local repartition requires this
+
+        double resultSse = randomSwap(dataPoints, &centroids, maxSwaps, distinctRows, &tracker, rng);
+
+        duration = trackerEndRun(&tracker);
+
+        size_t centroidIndex = centroidIndexOrNA(&centroids, groundTruth);
+
+        addRunStatistics(&stats, resultSse, centroidIndex, duration);
+
+        appendRunCsv(outputDirectory, "RS", i, runSeed, resultSse, centroidIndex, duration);
+
+        saveExampleSnapshots(&centroids, dataPoints, centroidIndex, "RS", outputDirectory, &savedZeroResults,
+                             &savedNonZeroResults);
+
+        freeCentroids(&centroids);
+    }
+
+    trackerFree(&tracker);
+
+    printStatistics("Random Swap", stats, loopCount - firstRun, numCentroids, scaling);
+    writeResultsToFile(fileName, stats, numCentroids, "RS", loopCount - firstRun, scaling, outputDirectory);
+}
+
+static void initializeSplitCentroid(const Dataset* dataPoints, Centroids* centroids, KMeansScratch* scratch)
+{
+    assert(centroids->size == 1);
+    centroidStep(centroids, dataPoints, scratch);
+    for (size_t d = 0; d < centroids->dimensions; ++d)
+    {
+        if (!isfinite(centroidRow(centroids, 0)[d]))
+        {
+            fprintf(stderr, "Error: Initial split centroid is not finite\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
+/**
+ * @brief Random Split runs firstRun..loopCount-1 (see runKMeansAlgorithm for the shared run loop and outputs).
+ *
+ * Each run starts from the dataset mean and splits random eligible clusters before final k-means.
+ */
+void runRandomSplitAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
+                             size_t maxIterations, size_t firstRun, size_t loopCount, size_t scaling,
+                             const char* fileName, const char* outputDirectory, const TrackOptions* track,
+                             uint64_t seed)
+{
+    Statistics stats;
+    initializeStatistics(&stats);
+
+    Tracker tracker = trackerCreate(ALGO_SKM_RANDOM, outputDirectory, groundTruth, track);
+    double duration;
+
+    bool savedZeroResults = false;
+    bool savedNonZeroResults = false;
+
+    printf("Random Split k-means\n");
+
+    for (size_t i = firstRun; i < loopCount; ++i)
+    {
+        if (logLevel >= 2) printf("Round %zu\n", i + 1);
+
+        const uint64_t runSeed = rng_derive_seed(seed, i);
+        Rng runRng;
+        rng_seed(&runRng, runSeed);
+        Rng* rng = &runRng;
+
+        resetPartitions(dataPoints);
+
+        Centroids centroids = allocateCentroids(numCentroids, dataPoints->dimensions);
+        centroids.size = 1;
+
+        trackerBeginRun(&tracker, i);
+
+        KMeansScratch scratch = allocateKMeansScratch(numCentroids, dataPoints->dimensions);
+        initializeSplitCentroid(dataPoints, &centroids, &scratch);
+
+        double resultSse = runRandomSplit(dataPoints, &centroids, numCentroids, maxIterations, &tracker, rng, &scratch);
+        freeKMeansScratch(&scratch);
+
+        duration = trackerEndRun(&tracker);
+
+        size_t centroidIndex = centroidIndexOrNA(&centroids, groundTruth);
+
+        addRunStatistics(&stats, resultSse, centroidIndex, duration);
+
+        appendRunCsv(outputDirectory, "SKM_Random", i, runSeed, resultSse, centroidIndex, duration);
+
+        saveExampleSnapshots(&centroids, dataPoints, centroidIndex, "SKM_Random", outputDirectory, &savedZeroResults,
+                             &savedNonZeroResults);
+
+        freeCentroids(&centroids);
+    }
+
+    trackerFree(&tracker);
+
+    printStatistics("Random Split", stats, loopCount - firstRun, numCentroids, scaling);
+    writeResultsToFile(fileName, stats, numCentroids, "SKM_Random", loopCount - firstRun, scaling, outputDirectory);
+}
+
+/**
+ * @brief SSE-based split k-means runs firstRun..loopCount-1 (see runKMeansAlgorithm for the shared run loop and
+ * outputs).
+ *
+ * Each run starts from the dataset mean and calls runSseSplit with `splitType` (SKM-Intra, SKM-Global,
+ * SKM-Global-Basic or SKM-Local).
+ */
+void runSseSplitAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
+                          size_t maxIterations, size_t firstRun, size_t loopCount, size_t scaling, const char* fileName,
+                          const char* outputDirectory, Algorithm splitType, RepartitionMode repartition,
+                          const TrackOptions* track, uint64_t seed)
+{
+    Statistics stats;
+    initializeStatistics(&stats);
+
+    Tracker tracker = trackerCreate(splitType, outputDirectory, groundTruth, track);
+    double duration;
+
+    const char* splitTypeName = getAlgorithmName(splitType);
+
+    bool savedZeroResults = false;
+    bool savedNonZeroResults = false;
+
+    printf("%s\n", splitTypeName);
+
+    for (size_t i = firstRun; i < loopCount; ++i)
+    {
+        if (logLevel >= 2) printf("Round %zu\n", i + 1);
+
+        const uint64_t runSeed = rng_derive_seed(seed, i);
+        Rng runRng;
+        rng_seed(&runRng, runSeed);
+        Rng* rng = &runRng;
+
+        resetPartitions(dataPoints);
+
+        Centroids centroids = allocateCentroids(numCentroids, dataPoints->dimensions);
+        centroids.size = 1;
+
+        trackerBeginRun(&tracker, i);
+
+        KMeansScratch scratch = allocateKMeansScratch(numCentroids, dataPoints->dimensions);
+        initializeSplitCentroid(dataPoints, &centroids, &scratch);
+
+        double resultSse =
+            runSseSplit(dataPoints, &centroids, numCentroids, maxIterations, splitType, repartition, &tracker, rng,
+                        &scratch);
+        freeKMeansScratch(&scratch);
+
+        duration = trackerEndRun(&tracker);
+
+        size_t centroidIndex = centroidIndexOrNA(&centroids, groundTruth);
+
+        addRunStatistics(&stats, resultSse, centroidIndex, duration);
+
+        appendRunCsv(outputDirectory, splitTypeName, i, runSeed, resultSse, centroidIndex, duration);
+
+        saveExampleSnapshots(&centroids, dataPoints, centroidIndex, splitTypeName, outputDirectory, &savedZeroResults,
+                             &savedNonZeroResults);
+
+        freeCentroids(&centroids);
+    }
+
+    trackerFree(&tracker);
+
+    printStatistics(splitTypeName, stats, loopCount - firstRun, numCentroids, scaling);
+    writeResultsToFile(fileName, stats, numCentroids, splitTypeName, loopCount - firstRun, scaling, outputDirectory);
+}
+
+/**
+ * @brief Bisecting k-means runs firstRun..loopCount-1 (see runKMeansAlgorithm for the shared run loop and outputs).
+ *
+ * Each run starts from the dataset mean and uses `bisectingIterations` tries per split.
+ */
+void runBisectingKMeansAlgorithm(Dataset* dataPoints, const Centroids* groundTruth, size_t numCentroids,
+                                 size_t maxIterations, size_t firstRun, size_t loopCount, size_t scaling,
+                                 const char* fileName, const char* outputDirectory, const TrackOptions* track,
+                                 size_t bisectingIterations, BisectSelect selection, uint64_t seed)
+{
+    Statistics stats;
+    initializeStatistics(&stats);
+
+    Tracker tracker = trackerCreate(ALGO_BISECTING, outputDirectory, groundTruth, track);
+    double duration;
+
+    bool savedZeroResults = false;
+    bool savedNonZeroResults = false;
+
+    printf("Bisecting k-means\n");
+
+    for (size_t i = firstRun; i < loopCount; ++i)
+    {
+        if (logLevel >= 2) printf("Round %zu\n", i + 1);
+
+        const uint64_t runSeed = rng_derive_seed(seed, i);
+        Rng runRng;
+        rng_seed(&runRng, runSeed);
+        Rng* rng = &runRng;
+
+        resetPartitions(dataPoints);
+
+        Centroids centroids = allocateCentroids(numCentroids, dataPoints->dimensions);
+        centroids.size = 1;
+
+        trackerBeginRun(&tracker, i);
+
+        KMeansScratch scratch = allocateKMeansScratch(numCentroids, dataPoints->dimensions);
+        initializeSplitCentroid(dataPoints, &centroids, &scratch);
+
+        double resultSse = runBisectingKMeans(dataPoints, &centroids, numCentroids, maxIterations, bisectingIterations,
+                                               selection, &tracker, rng, &scratch);
+        freeKMeansScratch(&scratch);
+
+        duration = trackerEndRun(&tracker);
+
+        size_t centroidIndex = centroidIndexOrNA(&centroids, groundTruth);
+
+        addRunStatistics(&stats, resultSse, centroidIndex, duration);
+
+        appendRunCsv(outputDirectory, "Bisecting_KM", i, runSeed, resultSse, centroidIndex, duration);
+
+        saveExampleSnapshots(&centroids, dataPoints, centroidIndex, "Bisecting_KM", outputDirectory, &savedZeroResults,
+                             &savedNonZeroResults);
+
+        freeCentroids(&centroids);
+    }
+
+    trackerFree(&tracker);
+
+    printStatistics("Bisecting", stats, loopCount - firstRun, numCentroids, scaling);
+    writeResultsToFile(fileName, stats, numCentroids, "Bisecting_KM", loopCount - firstRun, scaling, outputDirectory);
+}
+
+/**
+ * @brief Writes the shared part of run_config.txt into `text`: what must agree for every call that writes to one
+ * folder.
+ *
+ * Version, commit, compiler and flags, timer, machine, CPU, master seed, log level and the algorithm parameters.
+ */
+static void runConfigHeader(char* text, size_t size, const Options* opt)
+{
+    char machine[512];
+    char cpu[256];
+    char iterations[32];
+    platform_machine(machine, sizeof(machine));
+    platform_cpu(cpu, sizeof(cpu));
+    if (opt->maxIterations == SIZE_MAX)
+    {
+        snprintf(iterations, sizeof(iterations), "until the SSE stops improving");
+    }
+    else
+    {
+        snprintf(iterations, sizeof(iterations), "%zu", opt->maxIterations);
+    }
+
+#ifdef NDEBUG
+    const char* asserts = "off (NDEBUG)";
+#else
+    const char* asserts = "on";
+#endif
+
+    const int length =
+        snprintf(text, size,
+                 "# Split_kMeans run configuration. Every call that writes to this folder must match the lines above "
+                 "\"calls:\".\n"
+                 "version: %s\n"
+                 "commit: %s\n"
+                 "compiler: %s\n"
+                 "flags: %s\n"
+                 "asserts: %s\n"
+                 "timer: %s\n"
+                 "machine: %s\n"
+                 "cpu: %s\n"
+                 "seed: %" PRIu64 "\n"
+                 "log-level: %d\n"
+                 "max-iterations: %s\n"
+                 "max-swaps: %zu\n"
+                 "repeats: %zu\n"
+                 "bisect-tries: %zu\n"
+                 "bisect-select: %s\n"
+                 "init: %s\n"
+                 "repartition: %s\n"
+                 "decimal-comma: %s\n"
+                 "calls:\n",
+                 SKM_VERSION, SKM_GIT_COMMIT, platform_compiler(), SKM_BUILD_FLAGS, asserts, platform_clock_name(),
+                 machine, cpu, opt->seed, logLevel, iterations, opt->maxSwaps, opt->maxRepeats, opt->bisectTries,
+                 bisectSelectName(opt->bisectSelect),
+                 opt->init == INIT_KMEANSPP ? "kmeans++" : "random", repartitionModeName(opt->repartition),
+                 decimalComma ? "on" : "off");
+    if (length < 0 || (size_t)length >= size)
+    {
+        fprintf(stderr, "Error: run_config.txt header too long\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+/** @brief Copies line `index` (0-based) of `text` into `line`, or "(none)". */
+void textLine(const char* text, size_t index, char* line, size_t size)
+{
+    for (size_t i = 0; i < index && text != NULL; ++i)
+    {
+        text = strchr(text, '\n');
+        if (text != NULL) ++text;
+    }
+    if (text == NULL || *text == '\0')
+    {
+        snprintf(line, size, "(none)");
+        return;
+    }
+    const size_t length = strcspn(text, "\n");
+    snprintf(line, size, "%.*s", (int)(length < size ? length : size - 1), text);
+}
+
+void checkRunConfig(const char* outputDirectory, const Options* opt)
+{
+    char header[RUN_CONFIG_SIZE];
+    runConfigHeader(header, sizeof(header), opt);
+
+    char path[PATH_MAX];
+    joinPath(path, sizeof(path), outputDirectory, "run_config.txt");
+
+    if (fileExists(path))
+    {
+        FILE* file;
+        if (FOPEN(file, path, "r") != 0)
+        {
+            handleFileError(path);
+        }
+        char existing[RUN_CONFIG_SIZE];
+        const size_t length = fread(existing, 1, sizeof(existing) - 1, file);
+        existing[length] = '\0';
+        closeInputFile(file, path);
+
+        const size_t headerLength = strlen(header);
+        if (length < headerLength || memcmp(existing, header, headerLength) != 0)
+        {
+            size_t line = 0;
+            char ours[1024];
+            char theirs[1024];
+            do
+            {
+                textLine(header, line, ours, sizeof(ours));
+                textLine(existing, line, theirs, sizeof(theirs));
+                ++line;
+            } while (strcmp(ours, theirs) == 0 && strcmp(ours, "(none)") != 0);
+            fprintf(stderr, "Error: %s belongs to another configuration; write to a new -o folder\n", path);
+            fprintf(stderr, "  this call:   %s\n  that folder: %s\n", ours, theirs);
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
+/**
+ * @brief Creates or extends `<outputDirectory>/run_config.txt` after checking its shared header.
+ *
+ * One entry per call records the time, command line and resolved options.
+ */
+void writeRunConfig(const char* outputDirectory, const Options* opt, const TrackOptions* track,
+                    const char* snapshotsText, const char* datasetsText, bool cliMode, int argc, char* argv[])
+{
+    checkRunConfig(outputDirectory, opt);
+    char header[RUN_CONFIG_SIZE];
+    runConfigHeader(header, sizeof(header), opt);
+    char path[PATH_MAX];
+    joinPath(path, sizeof(path), outputDirectory, "run_config.txt");
+    const bool exists = fileExists(path);
+
+    FILE* file;
+    if (FOPEN(file, path, exists ? "a" : "w") != 0)
+    {
+        handleFileError(path);
+    }
+    if (!exists)
+    {
+        checkFileWrite(file, path, fputs(header, file));
+    }
+
+    struct tm local = {0};
+    if (!readLocalTime(&local))
+    {
+        closeOutputFile(file, path);
+        exit(EXIT_FAILURE);
+    }
+    char stamp[32];
+    if (strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S", &local) == 0)
+    {
+        fprintf(stderr, "Error: Unable to format local time\n");
+        closeOutputFile(file, path);
+        exit(EXIT_FAILURE);
+    }
+    checkFileWrite(file, path, fprintf(file, "%s | ", stamp));
+    // The program by file name only: argv[0] can be an absolute path with the user name (PowerShell passes one)
+    const char* program = argc > 0 && argv[0] != NULL ? argv[0] : "split_kmeans";
+    for (const char* c = program; *c != '\0'; ++c)
+    {
+        if (*c == '/' || *c == '\\')
+        {
+            program = c + 1;
+        }
+    }
+    checkFileWrite(file, path, fputs(program, file));
+    for (int i = 1; i < argc; ++i)
+    {
+        checkFileWrite(file, path, fprintf(file, " %s", argv[i]));
+    }
+    checkFileWrite(file, path, fprintf(file, "\n  mode: %s; algorithms:", cliMode ? "cli" : "batch"));
+    for (size_t a = 0; a < ALGORITHM_COUNT; ++a)
+    {
+        if (opt->algorithms[a])
+        {
+            checkFileWrite(file, path, fprintf(file, " %s", algorithmOptions[a].name));
+        }
+    }
+    checkFileWrite(file, path,
+                   fprintf(file,
+                           "; runs: %zu to %zu (RKM and RS: to %zu); datasets: %s; track-progress: %s; snapshots: %s; "
+                           "track-inner: %s\n",
+                           opt->firstRun, opt->runs, opt->runsGiven ? opt->runs : (size_t)1, datasetsText,
+                           track->rows ? "on" : "off", snapshotsText, track->inner ? "on" : "off"));
+    closeOutputFile(file, path);
+}

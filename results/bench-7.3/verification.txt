@@ -1,0 +1,29 @@
+Step 7.3 verification, 2026-11-24
+
+- Random Swap recomputes affected means in dataset order using run-level
+  scratch rather than rebuilding membership; a rounding-sensitive test
+  compares the prior index-based means and checks untouched and empty
+  centroids. The positive-limit local pre-partition and overwritten label
+  copy are removed. Local touched counts are computed only for level 3.
+  Size-based bisecting no longer computes or allocates its unused SSE
+  selection list. K=2 tentative trials remain.
+- All 63 M3b-ref files and 4590 run/seed/SSE/CI rows match. All 63
+  progress logs match excluding time, and 148 example centroid and
+  partition files match byte-for-byte.
+- With capped iterations and tracking enabled, default and alternative
+  modes each matched 24 CSV files and 393 rows excluding time; 138 and
+  136 selected snapshots respectively matched byte-for-byte. Twelve
+  level-3 repartition/warning diagnostics matched in order.
+- MinGW gcc 16 release and debug, WERROR=1 check: passed.
+- Visual Studio 2026 Release /W4 and CHECK_BIN: passed. Direct MSVC /W4
+  /WX unit tests passed in release and debug.
+- Clang MinGW-target warnings-as-errors: all 19 C files passed.
+- Windows clang ASan and UBSan checks passed without sanitizer reports;
+  UBSan emitted 10 existing runtime-library LNK4217 warnings.
+- Each complete suite matched 108 golden run files, 3 x 63 tracking
+  variants, 3 repartition-mode files, 1 bisect-size file and 9 report
+  files, and passed the default invocation smoke tests. Goldens unchanged.
+- Cppcheck with identical options reported 18 source diagnostics both
+  before and after, with no new findings.
+- Linux and LeakSanitizer were not run locally; Windows ASan has no leak
+  checker. Raw outputs and logs remain at the ROOT named in methods.txt.

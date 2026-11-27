@@ -1,0 +1,24 @@
+Step 6.5 split initialization milestone, 2026-11-22
+
+The six split-based algorithms used MinGW release, seed 20261119,
+log level 1, tracking rows, no selected snapshots and convergence defaults.
+The five small main datasets have 100 runs; worms_2d has 10, except Local
+has 100. On the hard group Random, Intra, Local and bisecting have 100 runs;
+Global and Global-Basic have 10. Global is omitted on worms_2d.
+
+The before Intra, Global and Local results reuse 6.2-after; bisecting reuses
+6.3-after. A current-build pilot matched their first runs on all applicable
+datasets. Random and Global-Basic before results were interrupted by a PC
+shutdown: completed rows are in extra-original and the remaining runs in
+extra-resumed; extra-report is the merged report. Birch3 Random runs 1-5
+precede the restart and 6-100 follow it. Their matching configuration and
+disjoint run indices were checked by report.
+
+Before and after were measured in separate blocks, across two days, and
+timing differences include noise. Removing the initial random-row draw
+changes later random choices even with the same per-run seed. The 127
+changed golden lines are listed in golden-changes.txt.
+Full tracking runs remain outside OneDrive:
+%TEMP%\skm_M4_6_5_before_extra_20261121_182943
+%TEMP%\skm_M4_6_5_resume_20261122_073708
+%TEMP%\skm_M4_6_5_after_20261122_081400

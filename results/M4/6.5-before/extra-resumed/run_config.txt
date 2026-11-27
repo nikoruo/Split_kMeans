@@ -1,0 +1,25 @@
+# Split_kMeans run configuration. Every call that writes to this folder must match the lines above "calls:".
+version: 2.0.0-dev
+commit: ffd2c9d-dirty
+compiler: gcc 16.2.0
+flags: gcc -DNDEBUG -std=c11 -Wall -Wextra -Wpedantic -ffp-contract=off -O3 -Werror
+asserts: off (NDEBUG)
+timer: QueryPerformanceCounter (monotonic wall clock)
+machine: Windows, 20 logical processors
+cpu: 12th Gen Intel(R) Core(TM) i7-12800H
+seed: 20261119
+log-level: 1
+max-iterations: until the SSE stops improving
+max-swaps: 5000
+repeats: 1000
+bisect-tries: 5
+init: random
+repartition: inward
+decimal-comma: off
+calls:
+2026-11-22 07:37:08 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo skm-random --first-run 6 -r 100 --datasets birch3 -o %TEMP%\skm_M4_6_5_resume_20261122_073708
+  mode: batch; algorithms: skm-random; runs: 6 to 100 (RKM and RS: to 100); datasets: birch3; track-progress: on; snapshots: none; track-inner: off
+2026-11-22 07:41:01 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo skm-random --first-run 1 -r 100 --datasets worms_64d -o %TEMP%\skm_M4_6_5_resume_20261122_073708
+  mode: batch; algorithms: skm-random; runs: 1 to 100 (RKM and RS: to 100); datasets: worms_64d; track-progress: on; snapshots: none; track-inner: off
+2026-11-22 07:52:17 | split_kmeans.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --algo skm-global-basic --first-run 1 -r 10 --datasets birch1,birch2,birch3,worms_64d -o %TEMP%\skm_M4_6_5_resume_20261122_073708
+  mode: batch; algorithms: skm-global-basic; runs: 1 to 10 (RKM and RS: to 10); datasets: birch1,birch2,birch3,worms_64d; track-progress: on; snapshots: none; track-inner: off

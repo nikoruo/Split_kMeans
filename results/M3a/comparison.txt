@@ -1,0 +1,15 @@
+M3a, 2026-11-20
+
+The 11 main-group CLI calls used MinGW gcc release, seed 20261119,
+log level 1, --track-progress and --snapshots none. The complete run,
+including tracking rows, is kept outside OneDrive:
+%TEMP%\skm_M3a_final_20261120_194801_27476
+
+compare_runs results/M0 <run folder> <39 main-group run files>:
+39 of 39 files match on run, seed, SSE and CI. The report has 39
+algorithm-dataset rows and 11 tables and curves. Wall time was 107.5 s.
+
+Against the M2 report, the median of 39 mean-time ratios is 0.805
+(range 0.342 to 1.039). RS report times end at each run's last SSE
+improvement; its full-run time is also in report/summary.csv. Timing
+ratios are descriptive and include normal run-to-run noise.

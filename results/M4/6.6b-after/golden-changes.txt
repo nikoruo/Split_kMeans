@@ -1,0 +1,12 @@
+Step 6.6b, seed 20251026
+
+All existing golden files are unchanged. The new size-selection golden
+uses s03_overlap, five runs, and one iteration per k-means call. It records
+the results of choosing the largest eligible cluster by assigned row count.
+
+run;seed;sse;ci
+1;18034142682028873040;13355363.551157104;0
+2;3190705922383895576;13434232.735931024;0
+3;12925314852715080382;13386317.08543732;0
+4;12799277926106245722;14156103.363146178;1
+5;6714313215413888446;13355636.318786807;0

@@ -1,0 +1,53 @@
+M3b final Phase 7 milestone, 2026-11-24
+
+The clean committed 06f6228 MinGW gcc 16.2.0 release build uses -O3,
+-ffp-contract=off and -Werror. Its SHA-256 is
+D9A04412D6C40B3B3C2BB87B2D278806FD4F2795734DF922211C42337DB44FA0.
+The clean Visual Studio 2026 Release x64 benchmark binary's SHA-256 is
+72E465809CFD02E2A7995A25FE7A855C9ED967ED730AEDC3A7447304DB169A8E.
+Run configurations record 06f6228 without -dirty. source-hashes.csv
+records the source, tests and build definitions; input-hashes.csv records
+the 21 reference and benchmark inputs, checked before and after the runs.
+The laptop was on AC power.
+
+All real-data calls use master seed 20261119, log level 1, progress
+tracking and no selected snapshots. The default folder explicitly uses
+inward repartition and SSE-based bisecting. On s1, s4, a3, unbalance and
+dim064, KM, Random, Intra, Global, Global-Basic, Local and bisecting
+each have 100 runs; RKM and RS have one run each with 1000 repeats and
+5000 swaps. worms_2d has 10 runs each of KM, Random, Intra, Global-Basic,
+Local and bisecting; Global, RKM and RS are omitted. local-both holds
+Local with both repartition, and bisect-size holds bisecting with size
+selection: each has 100 runs on the five small datasets and 10 on worms_2d.
+
+The 63 run files contain 4590 runs. Each mode has its own configuration
+and report; report uses the full tracking logs to end RS time at its last
+SSE improvement. Run files, dataset metadata and reports are copied
+byte-for-byte; tracking logs and example snapshots stay outside OneDrive.
+comparison.txt records the exact comparisons with M3b-ref. The full
+commands are in commands.txt; the raw outputs and scripts remain at
+%TEMP%\skm_phase7_20261124_081023\ref-M3b\milestone.
+
+benchmark-summary.csv contains four alternating MinGW/MSVC rounds on the
+same five jobs as 7.0. All 64 run/seed/SSE/CI identities match both builds,
+all rounds and the Phase 6b benchmark. The four original jobs give the
+following sums of per-run minima in ms (61 identities):
+                    before 5    after 5    after 6b    after 7
+  MinGW              7827.795    6234.065    5900.663    5732.975
+  Visual Studio      8425.320    7419.101    7074.909    6723.847
+The additional a3 Global job (3 identities) is reported separately in
+benchmark-table.csv. benchmark-algorithms.csv breaks the original jobs
+down by algorithm. Rebuild both tables from the repository root with:
+  python results\M3b\assemble-benchmarks.py
+
+These are sums of minima, not averages or a statistical speedup estimate.
+The four phases are separate sessions, so machine scheduling and timing
+noise remain. Phase 6 included algorithm changes: 22 of the 61 original
+Phase 5 and Phase 6b identities differ in SSE or CI, so their timing
+difference is not a pure performance comparison. The table keeps each
+build's recorded commit, including its original dirty marker.
+
+The benchmark command was:
+  mingw32-make WERROR=1 bench BENCH_ROOT=<ROOT>\bench-M3b
+ROOT is %TEMP%\skm_phase7_20261124_081023; raw benchmark rounds remain
+there. The benchmark was not pinned, matching the earlier phase sessions.

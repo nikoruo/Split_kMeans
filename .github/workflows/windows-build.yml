@@ -1,0 +1,108 @@
+name: Windows CI
+
+on:
+  push:
+    branches: [ main, master, 'feature/**' ]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  mingw:
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      # setup-msys2 installs a fresh MSYS2 into the runner's temp folder, not the bare preinstalled C:\msys64
+      - name: Install MinGW-w64
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-make
+      - name: Build and test
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          $env:PATH = "$env:MSYS2_LOCATION\ucrt64\bin;$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\Wbem;C:\Program Files\Git\cmd"
+          Remove-Item Env:\SHELL -ErrorAction SilentlyContinue
+          if (Get-Command sh.exe -ErrorAction SilentlyContinue) {
+            throw "sh.exe must not be on PATH for mingw32-make"
+          }
+          mingw32-make WERROR=1 check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  msvc:
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Install MinGW-w64 for the test helpers
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-make
+      - name: Build Visual Studio 2026 Release x64
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $msbuild = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
+          if (-not $msbuild) { throw "Visual Studio C++ MSBuild not found" }
+          & $msbuild Split_kMeans.sln /m /p:Configuration=Release /p:Platform=x64 /v:minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test the Visual Studio binary
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          $env:PATH = "$env:MSYS2_LOCATION\ucrt64\bin;$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\Wbem;C:\Program Files\Git\cmd"
+          Remove-Item Env:\SHELL -ErrorAction SilentlyContinue
+          if (Get-Command sh.exe -ErrorAction SilentlyContinue) {
+            throw "sh.exe must not be on PATH for mingw32-make"
+          }
+          mingw32-make WERROR=1 check CHECK_BIN=build\msvc\x64\Release\Split_kMeans.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build and run MSVC unit tests
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1
+          if (-not $vs) { throw "Visual Studio C++ tools not found" }
+          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          if (-not (Test-Path -LiteralPath $vcvars)) { throw "vcvars64.bat not found: $vcvars" }
+          if (-not $env:RUNNER_TEMP) { throw "RUNNER_TEMP is not set" }
+          $unitDir = Join-Path $env:RUNNER_TEMP 'split-kmeans-msvc-unit'
+          $objectDir = Join-Path $unitDir 'obj'
+          New-Item -ItemType Directory -Force -Path $objectDir | Out-Null
+          # Keep this list aligned with UNIT_OBJECTS in the Makefile.
+          $sources = @(
+            'tests\test_unit.c',
+            'src\algorithms.c', 'src\baselines.c', 'src\dataset.c', 'src\experiment.c', 'src\input_identity.c',
+            'src\kmeans.c', 'src\metrics.c', 'src\platform.c', 'src\rng.c', 'src\sha256.c',
+            'src\split.c', 'src\tracking.c', 'src\util.c'
+          ) -join ' '
+          $testExe = Join-Path $unitDir 'test_unit.exe'
+          # Double the trailing backslash so Windows preserves the /Fo closing quote.
+          $command = 'call "{0}" >nul && cl /nologo /std:c11 /O2 /W4 /WX /utf-8 /fp:precise /DNDEBUG /Isrc /Fo"{1}\\" /Fe"{2}" {3}' -f $vcvars, $objectDir, $testExe, $sources
+          & $env:ComSpec /c $command
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $checkRoot = if ($env:CHECK_ROOT) { $env:CHECK_ROOT } else { 'build' }
+          $checkDir = Join-Path $checkRoot 'check'
+          $fixtures = Join-Path $checkDir 'unit-msvc'
+          New-Item -ItemType Directory -Force -Path $fixtures | Out-Null
+          & $testExe $fixtures 'build\msvc\x64\Release\Split_kMeans.exe' 'build\testdata\main\data\s01_blobs2d.txt' 'build\testdata\main\gt\s01_blobs2d.txt' (Join-Path $checkDir 'cap-batch')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

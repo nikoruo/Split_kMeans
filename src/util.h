@@ -1,0 +1,50 @@
+/* SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2025 Niko Ruohonen and contributors
+ */
+
+#ifndef UTIL_H
+#define UTIL_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <stdint.h>
+
+#define LINE_BUFSZ 16384
+#define CI_TEXT_SIZE 21
+#define NUMBER_TEXT_SIZE 330
+
+extern int logLevel;
+extern bool decimalComma;
+
+void handleMemoryError(void* ptr);
+void handleFileError(const char* filename);
+/* Checks a stdio write result; closes the stream and exits on failure. */
+void checkFileWrite(FILE* file, const char* filename, int result);
+/* Close the stream, checking its read/write state and, for output, the flush. */
+void closeInputFile(FILE* file, const char* filename);
+void closeOutputFile(FILE* file, const char* filename);
+/* Seeks an output stream to the end and checks its position. */
+bool fileIsEmpty(FILE* file, const char* filename);
+
+/* The caller owns the list and its strings; release them with freeStringList. */
+char** createStringList(size_t size);
+void freeStringList(char** list, size_t size);
+
+/* Requires 2 <= size <= INT_MAX; closes and exits on read errors or overlong lines. */
+char* readDataLine(char* buffer, size_t size, FILE* file, const char* filename, size_t lineNumber);
+bool parseFiniteDouble(const char* token, double* value);
+bool parseUint64(const char* text, uint64_t* out);
+size_t countOption(int argc, char* argv[], int* i, uint64_t minimum);
+const char* textOption(int argc, char* argv[], int* i);
+const char* formatCi(size_t ci, char buffer[CI_TEXT_SIZE]);
+/* Fixed-format output is truncated when it needs NUMBER_TEXT_SIZE or more characters. */
+const char* formatFixed(double value, int decimals, char buffer[NUMBER_TEXT_SIZE]);
+bool fileExists(const char* filePath);
+void joinPath(char* out, size_t size, const char* dir, const char* name);
+/* Reports forbidden CSV name characters and returns false. */
+bool validateCsvName(const char* name, const char* kind);
+/* The returned buffer is overwritten by the next call. */
+char* removeExtension(const char* filename);
+
+#endif /* UTIL_H */

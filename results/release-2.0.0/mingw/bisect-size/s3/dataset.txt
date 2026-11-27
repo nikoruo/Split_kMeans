@@ -1,0 +1,7 @@
+data: data/s3.txt
+ground-truth: gt/s3-cb.txt
+k: 15
+n: 5000
+d: 2
+data-sha256: 4814574eb85f3f6f51ec9b72736ee4cac8b54885c6e02a50d872ac236d05ba63
+ground-truth-sha256: 929f7c4b973b6e3621eb88dc39db94dc4902da2f1bb17d7eac85077df70c6b0d

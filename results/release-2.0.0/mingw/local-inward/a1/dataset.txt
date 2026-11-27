@@ -1,0 +1,7 @@
+data: data/a1.txt
+ground-truth: gt/a1-ga-cb.txt
+k: 20
+n: 3000
+d: 2
+data-sha256: 4b744afafcbdb1ec1df8b002d005460e5d64f922ea84d320bc71e997d5e79022
+ground-truth-sha256: 505de23f92d1b0c5fb6918e0245abacc2a61115569c50bd98598f1ad26ef7577

@@ -1,0 +1,20 @@
+Step 6.4 Random Swap milestone, 2026-11-21
+
+Both runs used MinGW release, seed 20261119, log level 1, tracking rows,
+no selected snapshots, random initialization and 5000 swaps. There is one
+run per dataset: the five applicable small main datasets and the four hard
+datasets. worms_2d is excluded for Random Swap by the milestone plan.
+The five main-group before files match M3a exactly.
+
+The report's main RS time is retrospective: it ends at the last improvement,
+or at the initial count-0 row when no swap improves. full_time_ms_mean is
+the time for all swaps. One run cannot estimate a stable success rate.
+Before and after were measured in separate blocks; timing differences include
+noise. Both runs use the same swap proposals for a given seed, but their
+accepted clustering states can diverge.
+
+The 14 changed intermediate golden curve lines are listed in
+golden-changes.txt; final golden run files match.
+Full tracking runs remain outside OneDrive:
+%TEMP%\skm_M4_6_4_before_20261121_173123
+%TEMP%\skm_M4_6_4_after_20261121_175457

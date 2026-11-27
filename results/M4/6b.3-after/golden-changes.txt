@@ -1,0 +1,10 @@
+Step 6b.3 golden changes: none.
+
+The pre-update release check matched all 108 run files, 3 x 63 tracking
+variants, 3 repartition-mode files, the bisect-size file and 9 report files.
+The approved make golden-update target was run on the final implementation;
+git diff reports no changed golden lines.
+
+The integer synthetic data do not establish that last-state and best-state
+behavior always agree. Dedicated finite 1e20 fixtures exercise non-improving
+final iterations, saved trial labels and RKM's winning partition.

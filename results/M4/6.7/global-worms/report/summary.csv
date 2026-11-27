@@ -1,0 +1,2 @@
+dataset;algorithm;runs;sse_mean;sse_sd;ci_mean;relative_ci;success_pct;time_ms_mean;time_ms_sd;full_time_ms_mean
+worms_2d;SKM - Global;10;3719723694.768606;12140618.281855;9.4000;0.2686;0.0;5482.131;137.071;

@@ -1,0 +1,26 @@
+Step 6.1, seed 20251026
+
+The 108 run files are unchanged. Only the SKM-Local columns of two report
+curves changed: both passes now use fixed centroids, then touched means and
+subsequent split scores are updated. This changes intermediate SSE and,
+where shown, CI; the final run results and the other algorithms are unchanged.
+Values below are the scaled mean SSE and mean CI in each changed line.
+
+curves_s03_overlap.csv (SSE in 10^7):
+split 2: SSE 2.406547 -> 2.356655; CI 2.0000 -> 2.0000
+split 3: SSE 1.632959 -> 1.626759; CI 1.0000 -> 1.0000
+split 4: SSE 1.421462 -> 1.324971; CI 0.2000 -> 0.0000
+
+curves_s05_k15.csv (SSE in 10^5):
+split  3: SSE 1053.907788 -> 1047.978709; CI 11.0000 -> 11.0000
+split  4: SSE  830.569625 ->  829.407785; CI 10.0000 -> 10.0000
+split  5: SSE  614.152729 ->  616.857092; CI  9.0000 ->  9.0000
+split  6: SSE  507.478985 ->  503.319632; CI  8.0000 ->  8.0000
+split  7: SSE  399.495551 ->  403.794193; CI  7.0000 ->  7.0000
+split  8: SSE  332.612748 ->  323.732956; CI  6.2000 ->  6.0000
+split  9: SSE  254.967386 ->  256.392841; CI  5.0000 ->  5.0000
+split 10: SSE  203.277834 ->  205.584564; CI  4.0000 ->  4.0000
+split 11: SSE  152.566868 ->  155.201849; CI  3.0000 ->  3.0000
+split 12: SSE  102.344450 ->  105.225930; CI  2.0000 ->  2.0000
+split 13: SSE   52.581380 ->   55.944852; CI  1.0000 ->  1.0000
+split 14: SSE    3.460164 ->    3.451605; CI  0.0000 ->  0.0000

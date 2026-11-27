@@ -1,0 +1,7 @@
+data: data/dim064.txt
+ground-truth: gt/dim064.txt
+k: 16
+n: 1024
+d: 64
+data-sha256: d61f79995b9a091ad866ad95c2666435d526a5d768114a52516886e28f9bc522
+ground-truth-sha256: 9e846732cdbbc318b5bf6985e1283b92d4f3e70a06388fbfab90cd87cd6eabe6

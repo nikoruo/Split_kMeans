@@ -1,0 +1,53 @@
+Step 6b.3 last-state milestone, 2026-11-23
+
+The after run used the MinGW gcc 16.2.0 release build with -O3,
+-ffp-contract=off and -Werror, from HEAD 5594dba with uncommitted changes.
+The exact binary and source-patch SHA-256 values are in build-info.txt;
+source-hashes.csv records every source/header and the Makefile. The patch,
+orchestration script, tracking logs and full run folders remain outside OneDrive:
+%TEMP%\skm_M4_6b3_after_20261123_145906
+
+All 30 dataset, ground-truth and K-file SHA-256 hashes matched the 6.6b
+inputs before and after the runs. All calls used seed 20261119, log level 1,
+tracking rows, no selected snapshots, random initialization, unlimited
+k-means, inward remapping and SSE-based bisecting. commands.txt records
+the exact commands and run_config.txt records the build and parameters.
+The laptop was on AC power. The six calls ran sequentially, taking 124.63
+minutes including report generation and validation.
+
+The five small main sets have 100 runs of KM, Random, Intra, Global,
+Global-Basic, Local and bisecting, and one RKM run. worms_2d has 10 KM,
+Random, Intra and Global-Basic runs, and 100 Local and bisecting runs.
+The four hard sets have 100 KM, Random, Intra, Local and bisecting runs,
+and 10 Global and Global-Basic runs. Hard-set RKM is omitted as before.
+Random Swap was not rerun in M4 because its last-state scoring is unchanged;
+its separate before/after regression is described in verification.txt.
+
+The before run files for non-bisecting algorithms come from
+results/M4/6.6-after; bisecting comes from results/M4/6.6b-after/sse
+(100 worms_2d runs, not the earlier 10). All 83 and 10 stored source files
+were checked byte-for-byte against their original full run folders. Before
+the change, the current binary also reproduced 100 bisecting runs on s1
+and a3 and 10 on worms_2d. The 6.7 comparison had checked the reused
+bisecting results but did not independently rerun them.
+
+run-comparison.csv compares matching run and seed identities and counts
+SSE/CI changes for each file. All 74 files and 5,825 paired runs match
+exactly on run, seed, SSE and CI. The independent compare_runs program also
+matched all 64 non-bisecting and all 10 bisecting files. This is limited
+to these inputs and seeds: the high-magnitude unit fixtures demonstrate
+that a non-improving final iteration can change the result.
+
+comparison.csv pairs the corrected, separately regenerated 6.7 prior reports
+with this run's report by dataset, algorithm and run count. Mean SSE,
+sample SSE deviation, mean CI, relative CI and success rate all match
+exactly. The after/before mean-time ratio has median 1.007 and range
+0.934 to 1.054 across the 74 matched rows. These are separate sessions,
+so ratios include machine and ordering noise and are not a benchmark.
+RKM copies the winning repeat's labels with the stopwatch paused, as the
+previous capped-run implementation did; only snapshot bookkeeping is
+excluded, not a k-means iteration.
+
+No golden line changed; see golden-changes.txt. Verification details are
+in verification.txt. The full tracking logs and source patch were not
+copied into this results folder.

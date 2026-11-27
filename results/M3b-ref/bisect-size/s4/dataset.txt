@@ -1,0 +1,5 @@
+data: data\s4.txt
+ground-truth: gt\s4-cb.txt
+k: 15
+n: 5000
+d: 2

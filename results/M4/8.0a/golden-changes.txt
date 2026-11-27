@@ -1,0 +1,21 @@
+Step 8.0a golden changes, 2026-11-24
+
+mingw32-make WERROR=1 golden-update changed one file:
+  tests/golden/report/curves_s05_k15.csv
+
+The eight changed rows are intermediate SKM-Local SSE values, scaled by 10^5;
+all other columns and the final values are unchanged. The old explicit-both
+binary reproduces the complete new report, including each changed row.
+
+line;SKM-Local count;before inward;after both
+7;4;812.655009;812.128691
+8;5;630.144608;620.114693
+9;6;464.945317;462.330414
+10;7;374.569600;371.954696
+11;8;308.170579;308.134884
+12;9;257.637926;257.602231
+13;10;207.312330;207.276635
+14;11;157.424937;157.421475
+
+All 108 final run files, the other eight report files, and the explicit inward,
+inward-nonchild, both and bisect-size mode files remain unchanged.

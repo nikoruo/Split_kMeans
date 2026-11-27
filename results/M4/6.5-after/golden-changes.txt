@@ -1,0 +1,579 @@
+Step 6.5: every changed golden line (seed 20251026)
+Split runners start at the dataset mean and no longer consume the initial random-row draw. Later split seeds and resulting SSE, CI and curves can therefore change; KM, RKM and Random Swap remain unchanged.
+Changed files: 29; changed lines: 127.
+
+edge\e03_duplicates\SKM_Global_Basic_runs.csv
+  line 2:
+    sse: 20250 -> 0
+    ci: 1 -> 0
+  line 3:
+    sse: 0 -> 20250
+    ci: 0 -> 1
+  line 5:
+    sse: 20250 -> 0
+    ci: 1 -> 0
+
+edge\e03_duplicates\SKM_Random_runs.csv
+  line 4:
+    sse: 0 -> 20250
+    ci: 0 -> 1
+  line 5:
+    sse: 0 -> 20250
+    ci: 0 -> 1
+
+edge\e05_constant_dim\SKM_Global_Basic_runs.csv
+  line 3:
+    sse: 33360.899999999987 -> 2506015.0911010564
+    ci: 0 -> 1
+
+edge\e05_constant_dim\SKM_Random_runs.csv
+  line 2:
+    sse: 2506067.2666666666 -> 33360.899999999987
+    ci: 1 -> 0
+  line 5:
+    sse: 33360.899999999987 -> 2506067.2666666666
+    ci: 0 -> 1
+
+edge\e06_highdim\SKM_Global_Basic_runs.csv
+  line 2:
+    sse: 2589846657.150001 -> 16353833.900000006
+    ci: 1 -> 0
+  line 3:
+    sse: 16353833.900000006 -> 2589908449.8833337
+    ci: 0 -> 1
+
+edge\e06_highdim\SKM_Random_runs.csv
+  line 2:
+    sse: 16353833.900000006 -> 2766450365.1156569
+    ci: 0 -> 1
+  line 3:
+    sse: 16353833.900000006 -> 2766424368.0500016
+    ci: 0 -> 1
+  line 4:
+    sse: 2766364621.0500002 -> 2589839172.9565935
+  line 5:
+    sse: 2589904729.4388895 -> 2967704606.7058077
+  line 6:
+    sse: 2994911816.7250004 -> 16353833.900000006
+    ci: 1 -> 0
+
+main\s01_blobs2d\SKM_Random_runs.csv
+  line 2:
+    sse: 972006.52000000014 -> 50759438.828333326
+    ci: 0 -> 1
+  line 3:
+    sse: 972006.52000000014 -> 50529638.50022544
+    ci: 0 -> 1
+  line 4:
+    sse: 50715052.498397455 -> 134502056.49459895
+    ci: 1 -> 2
+  line 5:
+    sse: 50715052.498397455 -> 51233997.758397453
+  line 6:
+    sse: 134047641.40277781 -> 972006.52000000014
+    ci: 2 -> 0
+
+main\s02_blobs8d\SKM_Global_Basic_runs.csv
+  line 3:
+    sse: 28192614.062499978 -> 6768921974.7692976
+    ci: 0 -> 2
+
+main\s02_blobs8d\SKM_Random_runs.csv
+  line 2:
+    sse: 7592570326.7060919 -> 6769040916.0512915
+  line 3:
+    sse: 14424397769.787409 -> 2765659492.8145847
+    ci: 3 -> 1
+  line 4:
+    sse: 5338577829.4806166 -> 2600979613.5671997
+    ci: 2 -> 1
+  line 5:
+    sse: 5338734931.0225716 -> 16694503411.372721
+    ci: 2 -> 3
+  line 6:
+    sse: 23351659922.539173 -> 10745934677.688812
+    ci: 4 -> 2
+
+main\s03_overlap\SKM_Global_Basic_runs.csv
+  line 2:
+    sse: 13009044.925920192 -> 13008985.195062498
+  line 4:
+    sse: 13018860.940437546 -> 13007999.205424512
+  line 5:
+    sse: 13008985.195062498 -> 13007999.205424512
+
+main\s03_overlap\SKM_Global_runs.csv
+  line 5:
+    sse: 13018860.940437546 -> 13007999.205424512
+
+main\s03_overlap\SKM_Intra_runs.csv
+  line 2:
+    sse: 13009044.925920192 -> 13018860.940437546
+  line 5:
+    sse: 13009044.925920192 -> 13018860.940437546
+
+main\s03_overlap\SKM_Random_runs.csv
+  line 2:
+    sse: 13019902.488169773 -> 13007999.205424512
+  line 3:
+    sse: 13009044.925920192 -> 13007999.205424512
+  line 4:
+    sse: 13252568.799188625 -> 13019902.488169773
+  line 5:
+    sse: 13009044.925920192 -> 13252568.799188625
+  line 6:
+    sse: 13019902.488169773 -> 13259312.681247201
+
+main\s04_unbalanced\SKM_Global_Basic_runs.csv
+  line 3:
+    sse: 414071.94333333347 -> 50060397.207058832
+    ci: 0 -> 1
+
+main\s04_unbalanced\SKM_Random_runs.csv
+  line 2:
+    sse: 414071.94333333347 -> 50060941.357285075
+    ci: 0 -> 1
+  line 3:
+    sse: 100656282.98705883 -> 93667684.971794859
+  line 4:
+    sse: 92476328.621025637 -> 93667684.971794859
+  line 5:
+    sse: 50162275.961025648 -> 93676826.242307723
+  line 6:
+    sse: 50060481.547542095 -> 414071.94333333347
+    ci: 1 -> 0
+
+main\s05_k15\SKM_Global_Basic_runs.csv
+  line 2:
+    sse: 5345393.0249999976 -> 345160.52499999985
+    ci: 1 -> 0
+
+main\s05_k15\SKM_Random_runs.csv
+  line 2:
+    sse: 15073330.424912577 -> 38438653.519143313
+    ci: 3 -> 6
+  line 3:
+    sse: 50280956.643536322 -> 59406261.747916602
+  line 4:
+    sse: 20052236.419863023 -> 20330460.846249688
+  line 5:
+    sse: 10380978.999877816 -> 38660849.157783911
+    ci: 2 -> 6
+  line 6:
+    sse: 15429757.997432671 -> 46878649.871486962
+    ci: 3 -> 8
+
+modes\both\s03_overlap\SKM_Local_runs.csv
+  line 2:
+    sse: 13281111.728836477 -> 13244847.282954117
+  line 3:
+    sse: 13800387.066889014 -> 14587940.834794126
+    ci: 0 -> 1
+  line 4:
+    sse: 13280842.306356743 -> 13690229.698046889
+  line 5:
+    sse: 14746931.736293156 -> 13860300.395478684
+    ci: 1 -> 0
+  line 6:
+    sse: 13814832.90075068 -> 13612642.973347757
+
+modes\inward-nonchild\s03_overlap\SKM_Local_runs.csv
+  line 2:
+    sse: 13611659.961193234 -> 15333825.315712146
+    ci: 0 -> 1
+  line 3:
+    sse: 13648105.787655657 -> 15967704.377887009
+    ci: 0 -> 1
+  line 4:
+    sse: 15118144.334676119 -> 16348568.923129618
+  line 5:
+    sse: 14394503.150522463 -> 14827407.703109588
+    ci: 0 -> 1
+  line 6:
+    sse: 13566366.784600835 -> 13618911.662396755
+
+modes\inward\s03_overlap\SKM_Local_runs.csv
+  line 2:
+    sse: 13818134.022717286 -> 13244847.282954117
+  line 3:
+    sse: 13758738.67622293 -> 14595674.541416276
+    ci: 0 -> 1
+  line 4:
+    sse: 13179844.538311472 -> 13690229.698046889
+  line 5:
+    sse: 14808032.410892809 -> 13779201.669558827
+    ci: 1 -> 0
+  line 6:
+    sse: 13814832.90075068 -> 13612642.973347757
+
+report\curves_s01_blobs2d.csv
+  line 2:
+    SKM - Random SSE (10^5): 474.843519 -> 575.994276
+    SKM - Random CI: 0.8000 -> 1.0000
+  line 3:
+    SKM - Random SSE (10^5): 4088.946096 -> 2007.387079
+    SKM - Intra SSE (10^5): 4088.946096 -> 2007.387079
+    SKM - Global SSE (10^5): 4088.946096 -> 2007.387079
+    SKM - Global basic SSE (10^5): 4088.946096 -> 2007.387079
+    SKM - Local SSE (10^5): 4088.946096 -> 2007.387079
+    Bisecting KM SSE (10^5): 4088.946096 -> 2007.387079
+  line 4:
+    SKM - Random SSE (10^5): 1074.666023 -> 1076.739686
+    SKM - Intra SSE (10^5): 1076.739686 -> 1075.096265
+    SKM - Global SSE (10^5): 1076.739686 -> 1075.096265
+    SKM - Global basic SSE (10^5): 1076.739686 -> 1075.096265
+    SKM - Local SSE (10^5): 1076.739686 -> 1075.096265
+  line 5:
+    SKM - Random SSE (10^5): 674.416050 -> 675.981126
+    SKM - Intra SSE (10^5): 508.077751 -> 507.512396
+    SKM - Global SSE (10^5): 508.077751 -> 507.512396
+    SKM - Local SSE (10^5): 508.077751 -> 507.512396
+  line 6:
+    SKM - Random SSE (10^5): 474.863521 -> 576.032230
+    SKM - Random CI: 0.8000 -> 1.0000
+  line 7:
+    SKM - Random SSE (10^5): 474.843519 -> 575.994276
+    SKM - Random CI: 0.8000 -> 1.0000
+
+report\curves_s02_blobs8d.csv
+  line 2:
+    SKM - Random SSE (10^7): 1120.918816 -> 791.522362
+    SKM - Random CI: 2.6000 -> 1.8000
+    SKM - Global basic SSE (10^7): 2.819261 -> 137.633849
+    SKM - Global basic CI: 0.0000 -> 0.4000
+  line 3:
+    SKM - Random SSE (10^7): 7190.637239 -> 3286.077410
+    SKM - Intra SSE (10^7): 7190.637239 -> 3286.077410
+    SKM - Global SSE (10^7): 7190.637239 -> 3286.077410
+    SKM - Global basic SSE (10^7): 7190.637239 -> 3286.077410
+    SKM - Local SSE (10^7): 7190.637239 -> 3286.077410
+    Bisecting KM SSE (10^7): 7190.637239 -> 3286.077410
+  line 4:
+    SKM - Random SSE (10^7): 2192.394114 -> 2198.886626
+    SKM - Intra SSE (10^7): 2198.886626 -> 2126.958826
+    SKM - Global SSE (10^7): 2198.886626 -> 2126.958826
+    SKM - Global basic SSE (10^7): 2198.886626 -> 2126.958826
+    SKM - Local SSE (10^7): 2198.886626 -> 2126.958826
+    Bisecting KM SSE (10^7): 2084.338962 -> 1978.010512
+  line 5:
+    SKM - Random SSE (10^7): 1689.575001 -> 1554.384529
+    SKM - Random CI: 3.4000 -> 3.2000
+    SKM - Intra SSE (10^7): 1320.809280 -> 1239.739653
+    SKM - Global SSE (10^7): 1320.809280 -> 1239.739653
+    SKM - Global basic SSE (10^7): 1340.270098 -> 1353.709399
+    SKM - Global basic CI: 3.0000 -> 3.2000
+    SKM - Local SSE (10^7): 1320.809280 -> 1239.739653
+    Bisecting KM SSE (10^7): 1197.414203 -> 1192.802653
+  line 6:
+    SKM - Random SSE (10^7): 1330.573481 -> 1213.537968
+    SKM - Intra SSE (10^7): 711.596891 -> 698.667626
+    SKM - Global SSE (10^7): 679.327136 -> 662.301212
+    SKM - Global basic SSE (10^7): 670.708092 -> 829.398538
+    SKM - Global basic CI: 2.0000 -> 2.2000
+    SKM - Local SSE (10^7): 711.596891 -> 698.667626
+    Bisecting KM SSE (10^7): 579.034121 -> 617.831246
+  line 7:
+    SKM - Random SSE (10^7): 1120.959534 -> 1052.539030
+    SKM - Random CI: 2.6000 -> 2.2000
+    SKM - Intra SSE (10^7): 323.613751 -> 333.965242
+    SKM - Global SSE (10^7): 327.808266 -> 303.951665
+    SKM - Global basic SSE (10^7): 263.446221 -> 382.128227
+    SKM - Global basic CI: 1.0000 -> 1.2000
+    SKM - Local SSE (10^7): 323.613751 -> 333.965242
+    Bisecting KM SSE (10^7): 263.446221 -> 266.739674
+  line 8:
+    SKM - Random SSE (10^7): 1120.930883 -> 791.525245
+    SKM - Random CI: 2.6000 -> 1.8000
+    SKM - Global basic SSE (10^7): 2.819261 -> 137.633849
+    SKM - Global basic CI: 0.0000 -> 0.4000
+  line 9:
+    SKM - Random SSE (10^7): 1120.918816 -> 791.522362
+    SKM - Random CI: 2.6000 -> 1.8000
+
+report\curves_s03_overlap.csv
+  line 2:
+    SKM - Random SSE (10^7): 1.306209 -> 1.310956
+    SKM - Intra SSE (10^7): 1.300904 -> 1.301297
+    SKM - Global SSE (10^7): 1.301017 -> 1.300800
+    SKM - Global basic SSE (10^7): 1.301058 -> 1.300820
+  line 3:
+    SKM - Random SSE (10^7): 21.939943 -> 12.507461
+    SKM - Intra SSE (10^7): 21.939943 -> 12.507461
+    SKM - Global SSE (10^7): 21.939943 -> 12.507461
+    SKM - Global basic SSE (10^7): 21.939943 -> 12.507461
+    SKM - Local SSE (10^7): 21.939943 -> 12.507461
+    Bisecting KM SSE (10^7): 21.939943 -> 12.507461
+  line 4:
+    SKM - Intra SSE (10^7): 3.636432 -> 3.636592
+    SKM - Global SSE (10^7): 3.636432 -> 3.636592
+    SKM - Global basic SSE (10^7): 3.636432 -> 3.636592
+    SKM - Local SSE (10^7): 3.636432 -> 3.636592
+  line 5:
+    SKM - Random SSE (10^7): 2.604345 -> 2.658391
+    SKM - Intra SSE (10^7): 2.550399 -> 2.562385
+    SKM - Global basic SSE (10^7): 2.201359 -> 2.201431
+    SKM - Local SSE (10^7): 2.356655 -> 2.359111
+    Bisecting KM SSE (10^7): 2.526402 -> 2.526398
+  line 6:
+    SKM - Random SSE (10^7): 2.118525 -> 2.331748
+    SKM - Random CI: 1.2000 -> 1.6000
+    SKM - Intra SSE (10^7): 1.611429 -> 1.610907
+    SKM - Local SSE (10^7): 1.627304 -> 1.626448
+    Bisecting KM SSE (10^7): 1.612619 -> 1.612606
+  line 7:
+    SKM - Random SSE (10^7): 1.660430 -> 2.237679
+    SKM - Random CI: 0.6000 -> 1.6000
+    SKM - Intra SSE (10^7): 1.429086 -> 1.440040
+    SKM - Global SSE (10^7): 1.301017 -> 1.300800
+    SKM - Global basic SSE (10^7): 1.301058 -> 1.300820
+    SKM - Local SSE (10^7): 1.324378 -> 1.326622
+    Bisecting KM SSE (10^7): 1.425634 -> 1.425082
+  line 8:
+    SKM - Random SSE (10^7): 1.306209 -> 1.310956
+    SKM - Intra SSE (10^7): 1.300904 -> 1.301297
+
+report\curves_s04_unbalanced.csv
+  line 2:
+    SKM - Random SSE (10^5): 587.538882 -> 662.974419
+    SKM - Global basic SSE (10^5): 4.140719 -> 103.433370
+    SKM - Global basic CI: 0.0000 -> 0.2000
+  line 3:
+    SKM - Random SSE (10^5): 3998.412360 -> 3474.060831
+    SKM - Intra SSE (10^5): 3998.412360 -> 3474.060831
+    SKM - Global SSE (10^5): 3998.412360 -> 3474.060831
+    SKM - Global basic SSE (10^5): 3998.412360 -> 3474.060831
+    SKM - Local SSE (10^5): 3998.412360 -> 3474.060831
+    Bisecting KM SSE (10^5): 3998.412360 -> 3474.060831
+  line 4:
+    SKM - Random SSE (10^5): 1411.388213 -> 1432.541887
+    SKM - Intra SSE (10^5): 1432.541887 -> 1355.566105
+    SKM - Global SSE (10^5): 1432.541887 -> 1355.566105
+    SKM - Global basic SSE (10^5): 1432.541887 -> 1355.566105
+    SKM - Local SSE (10^5): 1432.541887 -> 1355.566105
+    Bisecting KM SSE (10^5): 1355.566105 -> 1338.231888
+  line 5:
+    SKM - Random SSE (10^5): 753.924919 -> 763.279376
+    SKM - Random CI: 1.2000 -> 1.0000
+    SKM - Global basic SSE (10^5): 502.218029 -> 756.604222
+    Bisecting KM SSE (10^5): 502.218029 -> 501.745044
+  line 6:
+    SKM - Random SSE (10^5): 587.538882 -> 662.974419
+    SKM - Global basic SSE (10^5): 4.140719 -> 103.433370
+    SKM - Global basic CI: 0.0000 -> 0.2000
+  line 7:
+    SKM - Random SSE (10^5): 587.538882 -> 662.974419
+
+report\curves_s05_k15.csv
+  line 2:
+    SKM - Random SSE (10^5): 222.434521 -> 407.429750
+    SKM - Random CI: 4.0000 -> 6.4000
+    SKM - Global basic SSE (10^5): 13.452070 -> 3.451605
+    SKM - Global basic CI: 0.2000 -> 0.0000
+  line 3:
+    SKM - Random SSE (10^5): 10756.546762 -> 4013.989263
+    SKM - Intra SSE (10^5): 10756.546762 -> 4013.989263
+    SKM - Global SSE (10^5): 10756.546762 -> 4013.989263
+    SKM - Global basic SSE (10^5): 10756.546762 -> 4013.989263
+    SKM - Local SSE (10^5): 10756.546762 -> 4013.989263
+    Bisecting KM SSE (10^5): 10756.546762 -> 4013.989263
+  line 4:
+    SKM - Random SSE (10^5): 2056.733647 -> 1755.957327
+    SKM - Intra SSE (10^5): 1755.957327 -> 1758.941322
+    SKM - Global SSE (10^5): 1755.957327 -> 1758.941322
+    SKM - Global basic SSE (10^5): 1755.957327 -> 1758.941322
+    SKM - Local SSE (10^5): 1755.957327 -> 1758.941322
+  line 5:
+    SKM - Random SSE (10^5): 1545.610641 -> 1369.360363
+    SKM - Intra SSE (10^5): 1315.055908 -> 1305.356800
+    SKM - Global SSE (10^5): 1315.055908 -> 1305.356800
+    SKM - Global basic SSE (10^5): 1327.370497 -> 1342.358736
+    SKM - Local SSE (10^5): 1315.055908 -> 1305.356800
+    Bisecting KM SSE (10^5): 1299.109680 -> 1300.733209
+  line 6:
+    SKM - Random SSE (10^5): 1264.648865 -> 1181.329203
+    SKM - Intra SSE (10^5): 1034.394349 -> 1008.078191
+    SKM - Global SSE (10^5): 998.755111 -> 1005.058464
+    SKM - Global basic SSE (10^5): 979.467445 -> 1004.818481
+    SKM - Local SSE (10^5): 1019.617703 -> 1003.054848
+    Bisecting KM SSE (10^5): 1000.406707 -> 1001.724573
+  line 7:
+    SKM - Random SSE (10^5): 952.843047 -> 1128.209467
+    SKM - Random CI: 10.0000 -> 10.2000
+    SKM - Intra SSE (10^5): 774.117987 -> 791.106009
+    SKM - Global SSE (10^5): 725.672686 -> 723.775818
+    SKM - Global basic SSE (10^5): 733.663312 -> 740.186920
+    SKM - Local SSE (10^5): 746.061299 -> 812.655009
+    Bisecting KM SSE (10^5): 766.878055 -> 768.451887
+  line 8:
+    SKM - Random SSE (10^5): 761.471082 -> 927.416715
+    SKM - Random CI: 9.0000 -> 9.4000
+    SKM - Intra SSE (10^5): 612.378874 -> 614.337095
+    SKM - Global SSE (10^5): 565.444690 -> 561.446401
+    SKM - Global basic SSE (10^5): 557.975597 -> 606.854208
+    SKM - Local SSE (10^5): 577.455902 -> 630.144608
+    Bisecting KM SSE (10^5): 547.053159 -> 548.461739
+  line 9:
+    SKM - Random SSE (10^5): 684.692519 -> 874.409110
+    SKM - Random CI: 8.0000 -> 9.0000
+    SKM - Intra SSE (10^5): 504.906430 -> 497.454777
+    SKM - Global SSE (10^5): 470.577145 -> 450.870278
+    SKM - Global basic SSE (10^5): 477.865662 -> 477.138500
+    SKM - Local SSE (10^5): 470.429018 -> 464.945317
+    Bisecting KM SSE (10^5): 445.059165 -> 446.467744
+  line 10:
+    SKM - Random SSE (10^5): 604.777578 -> 794.794177
+    SKM - Random CI: 7.2000 -> 8.4000
+    SKM - Intra SSE (10^5): 405.092073 -> 387.502185
+    SKM - Global SSE (10^5): 379.962331 -> 360.610521
+    SKM - Global basic SSE (10^5): 404.791325 -> 392.949721
+    SKM - Local SSE (10^5): 383.728560 -> 374.569600
+    Bisecting KM SSE (10^5): 348.904449 -> 349.513132
+  line 11:
+    SKM - Random SSE (10^5): 574.641608 -> 771.144401
+    SKM - Random CI: 6.8000 -> 8.0000
+    SKM - Intra SSE (10^5): 321.796411 -> 317.465073
+    SKM - Global SSE (10^5): 309.456214 -> 303.055109
+    SKM - Global basic SSE (10^5): 321.463681 -> 319.239394
+    SKM - Global basic CI: 6.2000 -> 6.0000
+    SKM - Local SSE (10^5): 315.357131 -> 308.170579
+    Bisecting KM SSE (10^5): 298.546014 -> 299.139665
+  line 12:
+    SKM - Random SSE (10^5): 549.695684 -> 721.426501
+    SKM - Random CI: 6.4000 -> 7.8000
+    SKM - Intra SSE (10^5): 251.845985 -> 253.803956
+    SKM - Global SSE (10^5): 252.305953 -> 252.412218
+    SKM - Global basic SSE (10^5): 264.115497 -> 252.809408
+    SKM - Global basic CI: 5.2000 -> 5.0000
+    SKM - Local SSE (10^5): 252.175357 -> 257.637926
+    Bisecting KM SSE (10^5): 248.675826 -> 249.235528
+  line 13:
+    SKM - Random SSE (10^5): 490.122801 -> 648.021587
+    SKM - Random CI: 6.0000 -> 7.4000
+    SKM - Intra SSE (10^5): 201.371967 -> 203.241621
+    SKM - Global SSE (10^5): 201.849236 -> 202.065800
+    SKM - Global basic SSE (10^5): 213.253178 -> 202.301556
+    SKM - Global basic CI: 4.2000 -> 4.0000
+    SKM - Local SSE (10^5): 201.771603 -> 207.312330
+    Bisecting KM SSE (10^5): 198.997948 -> 199.513408
+  line 14:
+    SKM - Random SSE (10^5): 463.120523 -> 624.410470
+    SKM - Random CI: 5.6000 -> 7.2000
+    SKM - Intra SSE (10^5): 151.298470 -> 152.963539
+    SKM - Global SSE (10^5): 151.779054 -> 151.938623
+    SKM - Global basic SSE (10^5): 162.825625 -> 152.112615
+    SKM - Global basic CI: 3.2000 -> 3.0000
+    SKM - Local SSE (10^5): 151.716024 -> 157.424937
+    Bisecting KM SSE (10^5): 149.712509 -> 150.192273
+  line 15:
+    SKM - Random SSE (10^5): 442.856705 -> 614.298907
+    SKM - Random CI: 5.2000 -> 7.0000
+    SKM - Intra SSE (10^5): 101.616973 -> 103.165779
+    SKM - Global SSE (10^5): 101.944496 -> 102.131400
+    SKM - Global basic SSE (10^5): 112.685663 -> 102.302121
+    SKM - Global basic CI: 2.2000 -> 2.0000
+    SKM - Local SSE (10^5): 101.991136 -> 107.740348
+    Bisecting KM SSE (10^5): 100.706531 -> 100.987026
+  line 16:
+    SKM - Random SSE (10^5): 442.796438 -> 614.259381
+    SKM - Random CI: 5.2000 -> 7.0000
+    SKM - Intra SSE (10^5): 52.335061 -> 53.549436
+    SKM - Global SSE (10^5): 52.522898 -> 52.507992
+    SKM - Global basic SSE (10^5): 62.834198 -> 52.739684
+    SKM - Global basic CI: 1.2000 -> 1.0000
+    SKM - Local SSE (10^5): 52.530868 -> 58.429552
+    Bisecting KM SSE (10^5): 51.844969 -> 51.988405
+  line 17:
+    SKM - Random SSE (10^5): 412.546238 -> 614.205797
+    SKM - Random CI: 4.6000 -> 7.0000
+    SKM - Intra SSE (10^5): 3.451605 -> 4.331245
+    SKM - Global basic SSE (10^5): 13.452070 -> 3.451605
+    SKM - Global basic CI: 0.2000 -> 0.0000
+  line 18:
+    SKM - Random SSE (10^5): 222.434521 -> 407.429750
+    SKM - Random CI: 4.0000 -> 6.4000
+
+report\summary.csv
+  line 5:
+    sse_mean: 47484351.887915 -> 57599427.620311
+    sse_sd: 54407891.173412 -> 48109160.277571
+    ci_mean: 0.8000 -> 1.0000
+    relative_ci: 0.2000 -> 0.2500
+    success_pct: 40.0 -> 20.0
+  line 14:
+    sse_mean: 11209188155.907171 -> 7915223622.298922
+    sse_sd: 7742470611.139612 -> 5940572649.123571
+    ci_mean: 2.6000 -> 1.8000
+    relative_ci: 0.4333 -> 0.3000
+  line 17:
+    sse_mean: 28192614.062500 -> 1376338486.203860
+    sse_sd: 0.000000 -> 3014545813.693820
+    ci_mean: 0.0000 -> 0.4000
+    relative_ci: 0.0000 -> 0.0667
+    success_pct: 100.0 -> 80.0
+  line 23:
+    sse_mean: 13062092.725474 -> 13109556.475891
+    sse_sd: 106617.663851 -> 133739.524395
+  line 24:
+    sse_mean: 13009044.925920 -> 13012971.331727
+    sse_sd: 0.000000 -> 5376.452576
+  line 25:
+    sse_mean: 13010171.552427 -> 13007999.205425
+    sse_sd: 4857.515569 -> 0.000000
+  line 26:
+    sse_mean: 13010577.894454 -> 13008196.403352
+    sse_sd: 4658.186580 -> 440.947971
+  line 32:
+    sse_mean: 58753888.211997 -> 66297441.897303
+    sse_sd: 40143302.547846 -> 41388807.319439
+  line 35:
+    sse_mean: 414071.943333 -> 10343336.996078
+    sse_sd: 0.000000 -> 22202511.624551
+    ci_mean: 0.0000 -> 0.2000
+    relative_ci: 0.0000 -> 0.0500
+    success_pct: 100.0 -> 80.0
+  line 41:
+    sse_mean: 22243452.097124 -> 40742975.028516
+    sse_sd: 16042587.286624 -> 14250268.926853
+    ci_mean: 4.0000 -> 6.4000
+    relative_ci: 0.2667 -> 0.4267
+  line 44:
+    sse_mean: 1345207.025000 -> 345160.525000
+    sse_sd: 2236171.954661 -> 0.000000
+    ci_mean: 0.2000 -> 0.0000
+    relative_ci: 0.0133 -> 0.0000
+    success_pct: 80.0 -> 100.0
+
+report\table_ci.csv
+  line 5:
+    s01_blobs2d: 0.80 -> 1.00
+    s02_blobs8d: 2.60 -> 1.80
+    s05_k15: 4.00 -> 6.40
+  line 8:
+    s02_blobs8d: 0.00 -> 0.40
+    s04_unbalanced: 0.00 -> 0.20
+    s05_k15: 0.20 -> 0.00
+
+report\table_sse.csv
+  line 5:
+    s01_blobs2d: 47484351.89 -> 57599427.62
+    s02_blobs8d: 11209188155.91 -> 7915223622.30
+    s03_overlap: 13062092.73 -> 13109556.48
+    s04_unbalanced: 58753888.21 -> 66297441.90
+    s05_k15: 22243452.10 -> 40742975.03
+  line 6:
+    s03_overlap: 13009044.93 -> 13012971.33
+  line 7:
+    s03_overlap: 13010171.55 -> 13007999.21
+  line 8:
+    s02_blobs8d: 28192614.06 -> 1376338486.20
+    s03_overlap: 13010577.89 -> 13008196.40
+    s04_unbalanced: 414071.94 -> 10343337.00
+    s05_k15: 1345207.02 -> 345160.52
+
+report\table_success.csv
+  line 5:
+    s01_blobs2d: 40.0 -> 20.0
+  line 8:
+    s02_blobs8d: 100.0 -> 80.0
+    s04_unbalanced: 100.0 -> 80.0
+    s05_k15: 80.0 -> 100.0

@@ -1,0 +1,22 @@
+# Split_kMeans run configuration. Every call that writes to this folder must match the lines above "calls:".
+version: 2.0.0
+commit: b2231d7
+compiler: gcc 16.2.0
+flags: gcc -DNDEBUG -std=c11 -Wall -Wextra -Wpedantic -ffp-contract=off -O3 -Werror
+asserts: off (NDEBUG)
+timer: QueryPerformanceCounter (monotonic wall clock)
+machine: Windows, 16 logical processors
+cpu: AMD Ryzen 7 7800X3D 8-Core Processor
+seed: 20261119
+log-level: 1
+max-iterations: until the SSE stops improving
+max-swaps: 5000
+repeats: 100
+bisect-tries: 5
+bisect-select: sse
+init: kmeans++
+repartition: both
+decimal-comma: off
+calls:
+2026-11-26 12:00:52 | mingw.exe --seed 20261119 --log-level 1 --track-progress --snapshots none --runs 1 --repeats 100 --max-swaps 5000 --bisect-tries 5 --batch --algo km,rkm,rs --init kmeans++ --datasets s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d -o <ROOT>\mingw\kmeanspp
+  mode: batch; algorithms: km rkm rs; runs: 1 to 1 (RKM and RS: to 1); datasets: s1,s4,a3,unbalance,dim064,worms_2d,birch1,birch2,birch3,worms_64d; track-progress: on; snapshots: none; track-inner: off

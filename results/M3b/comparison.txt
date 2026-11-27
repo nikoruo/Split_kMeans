@@ -1,0 +1,7 @@
+compare_runs: 51 of 51 files match the golden copies
+compare_runs: 51 of 51 files match the golden copies
+compare_runs: 6 of 6 files match the golden copies
+compare_runs: 6 of 6 files match the golden copies
+compare_runs: 6 of 6 files match the golden copies
+compare_runs: 6 of 6 files match the golden copies
+Matched 63 files, 4590 run identities, 63 progress logs, 148 example files and 63 report rows.

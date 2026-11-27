@@ -1,0 +1,7 @@
+data: data/n1.txt
+ground-truth: gt/n1-gt.txt
+k: 3
+n: 2250
+d: 2
+data-sha256: 4d0c50aef3793c29c9559e3c1000e6e1fcf8bdf45219718ba1a37158405dc5db
+ground-truth-sha256: 89141151d3d6f3465dfdfb3a717aa66defc9e5d56933713f0b37b77665b17ab0

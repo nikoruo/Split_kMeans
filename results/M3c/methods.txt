@@ -1,0 +1,56 @@
+Step 8.3 desktop reproduction of results/M3b-ref, 2026-11-26
+
+Machine: the personal desktop, from 8.3 the timing reference machine
+(plan D3): AMD Ryzen 7 7800X3D (8 cores, 16 logical processors), 31 GB
+RAM, Windows 11 Home build 26300, Balanced power plan, mains powered.
+Before the runs the user turned off F-Secure scanning and other heavy
+applications and shut down WSL.
+
+The clean MinGW release executable was built from commit
+d7cad6f0db31c0de43a45a63e80313cf49ce10c3 in a detached git worktree
+with WinLibs gcc 16.2.0 (r3, UCRT, POSIX threads), mingw32-make 4.4.1,
+-O3, -ffp-contract=off and -Werror. --version reports commit d7cad6f
+without -dirty. Its SHA-256 is
+B6CE8445BF5F473C3292BF2575C26E009B26854546E45C8F307C701AA7F7C75C.
+
+commands.txt holds the 23 run calls and 3 report calls of
+results/M3b-ref/commands.txt with only the executable name
+(desktop-mingw.exe) and the output root changed: same seed 20261119,
+options, run counts, call order and relative input paths, run from the
+repository root. <ROOT> in commands.txt and the run_config.txt files
+stands for the local run folder %TEMP%\skm_8_3_d7cad6f_20261126_094055,
+which keeps the executable, worktree build, full tracking output and
+console logs. All 26 calls exited 0; the runs took 195 s
+(09:41:19 to 09:44:27). Times here are desktop times and must not be
+compared with the laptop times in results/M3b-ref.
+
+Inputs: sha256sum -c tests/realdata-sha256.txt passed for all 69 files
+before and after the runs. Earlier the same day the list entries of
+centroids/dim128, dim256, dim512 and dim1024 were changed to the
+desktop bytes (the value 16 without a line break, as in the other 19 K
+files; the laptop copies ended in CRLF). Each dataset.txt records the
+data and ground-truth SHA-256; all 36 match the list.
+
+Each mode folder holds run_config.txt, every <dataset>/<Algo>_runs.csv
+with its dataset.txt, and the report (report/). Unlike M3b-ref,
+dataset.txt now records input hashes (8.2j) and report writes
+report_info.txt.
+
+Benchmark (D3): mingw32-make WERROR=1 bench BENCH_ROOT=<ROOT>\bench,
+run once without CPU pinning. Primary: build\release\split_kmeans.exe,
+gcc 16.2.0 as above, SHA-256
+9B5847FD0CB434EF41C4AB0E4ACF5C9C53612AD2E454B8CC101A3B9C8290DC94.
+Reference: Visual Studio 2026 18.12.1 Release x64 (MSVC 19.52.37029,
+toolset v145), SHA-256
+7B415C56DE58EC229E1EF82CF415860DB6D5F2B9ABEF76014FE901266A64EFA9.
+Both record d7cad6f-dirty: the working tree differed from d7cad6f only
+in docs/refactor-plan.md and tests/realdata-sha256.txt, not in sources
+or build files. Five jobs (s1, dim064, worms_2d, birch1, a3), seed
+20261119, log level 1, no tracking, 25 RKM repeats and 300 RS swaps,
+four rounds alternating the build order; all 64 run/seed/SSE/CI
+identities matched across both builds and all rounds. Sums of per-run
+minima: MinGW 5823.630 ms, MSVC 6898.463 ms (MSVC/MinGW 1.185). MinGW
+was faster in all 26 dataset/algorithm cases (MSVC/MinGW 1.04 to 1.28).
+bench-summary.csv has every run; bench-mingw-run-config.txt and
+bench-msvc-run-config.txt are the round-1 s1 configurations. MinGW gcc
+remains the thesis build.

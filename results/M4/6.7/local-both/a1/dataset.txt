@@ -1,0 +1,5 @@
+data: data/a1.txt
+ground-truth: gt/a1-ga-cb.txt
+k: 20
+n: 3000
+d: 2

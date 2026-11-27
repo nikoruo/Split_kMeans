@@ -1,0 +1,24 @@
+Phase 7.0 verification, 2026-11-23
+
+- MinGW gcc 16 release and debug, WERROR=1 check: passed.
+- Visual Studio 2026 Release project /W4 build and CHECK_BIN check: passed.
+- Windows clang 22 ASan and UBSan checks: passed, with no sanitizer reports.
+  UBSan emitted 10 existing runtime-library LNK4217 warnings.
+- Clang MinGW-target -Wall -Wextra -Wpedantic -Werror syntax checks:
+  all 19 C files passed.
+- Each complete check matched 108 run files, 3 x 63 tracking variants,
+  3 repartition-mode files, 1 bisect-size file and 9 report files, and
+  passed the default invocation smoke tests. Golden files are unchanged.
+- Cppcheck on src reported 36 diagnostics, the same count as in 6b.3;
+  no production sources changed. On tests/bench.c its negativeIndex
+  diagnostic is also present on the unchanged baseline: the indexed
+  pointers are set to one byte after a separator before restoring it.
+- The standalone benchmark runner builds with MSVC /W4, but emits C4701
+  for ms and consequently fails /WX. The unchanged pre-step runner emits
+  the same warning; this is not a new warning in the Visual Studio project.
+- 117 saved mode files and five saved benchmark files were checked
+  byte-for-byte against the raw results. reference-validation.txt records
+  the complete run, seed, report, benchmark and input-hash checks.
+- Linux and LeakSanitizer were not run locally; Windows ASan has no leak
+  checker. Detailed logs remain in the outside-OneDrive run folder named
+  in methods.txt.

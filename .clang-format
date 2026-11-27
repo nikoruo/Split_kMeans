@@ -1,0 +1,17 @@
+---
+Language: Cpp
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 120
+BreakBeforeBraces: Allman
+PointerAlignment: Left
+IndentCaseLabels: true
+IndentPPDirectives: AfterHash
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: false
+AlignAfterOpenBracket: Align
+BinPackParameters: true
+# platform.h must come before system headers (_CRT_SECURE_NO_WARNINGS)
+SortIncludes: Never
+...

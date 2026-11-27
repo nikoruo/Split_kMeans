@@ -1,0 +1,5 @@
+data: data/s3.txt
+ground-truth: gt/s3-cb.txt
+k: 15
+n: 5000
+d: 2

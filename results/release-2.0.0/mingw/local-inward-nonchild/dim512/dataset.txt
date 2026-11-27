@@ -1,0 +1,7 @@
+data: data/dim512.txt
+ground-truth: gt/dim512.txt
+k: 16
+n: 1024
+d: 512
+data-sha256: 9e63818547a3cb1aff245fdbc10ee495e9736484a12c50361fe55d4ca94a06a4
+ground-truth-sha256: 63144355609ad084b2a9a96f5cabb1f147d33aec520edae37771446195284c5a

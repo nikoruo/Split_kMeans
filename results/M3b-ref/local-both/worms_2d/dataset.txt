@@ -1,0 +1,5 @@
+data: data\worms_2d.txt
+ground-truth: gt\worms_2d-gt.txt
+k: 35
+n: 105600
+d: 2
